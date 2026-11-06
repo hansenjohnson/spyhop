@@ -1,0 +1,5 @@
+aiohttp>=3.9
+pyserial>=3.5
+pygeomag>=1.1          # World Magnetic Model, for "auto" magnetic variation
+tzdata; sys_platform == "win32"
+tzfpy>=0.15            # offline time-zone map, for Settings → Clock → "From the platform's position"

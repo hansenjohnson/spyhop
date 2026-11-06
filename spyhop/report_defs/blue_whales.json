@@ -1,0 +1,20 @@
+{
+  "id": "blue_whales",
+  "title": "Blue whales",
+  "order": 50,
+  "description": "Every blue whale sighting. Positions are the whales’ (SigLat/SigLon), or the vessel’s if none was worked out.",
+  "table": "sightings",
+  "where": [
+    {"species_code": ["BLWH"]},
+    {"column": "Species", "regex": "^(blue whale|balaenoptera musculus)$"}
+  ],
+  "columns": [
+    {"label": "Time", "value": "time"},
+    {"label": "Position", "value": "position"},
+    {"label": "Number", "column": "Count", "align": "right"},
+    {"label": "Calves", "column": "Calves", "align": "right"},
+    {"label": "Notes", "column": "Notes"}
+  ],
+  "totals": {"Number": "sum", "Calves": "sum"},
+  "empty": "No blue whales sighted."
+}

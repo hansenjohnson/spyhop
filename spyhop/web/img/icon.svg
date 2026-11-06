@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7cc4e4"/><stop offset="1" stop-color="#d9f0f7"/>
+    </linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b6a8f"/><stop offset="1" stop-color="#06324a"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2b3a46"/><stop offset="1" stop-color="#16212a"/>
+    </linearGradient>
+    <clipPath id="r"><rect x="40" y="40" width="944" height="944" rx="210"/></clipPath>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#sky)"/>
+    <!-- whale head rising vertically -->
+    <path d="M372 700 C 360 520, 400 330, 470 210 C 492 172, 528 168, 548 206 C 616 330, 664 520, 650 700 Z" fill="url(#body)"/>
+    <!-- pale ventral pleats side -->
+    <path d="M372 700 C 362 560, 388 420, 430 320 C 440 420, 446 560, 452 700 Z" fill="#c9d3da"/>
+    <path d="M392 690 C 392 580, 404 470, 424 380" stroke="#8a99a5" stroke-width="10" fill="none" stroke-linecap="round"/>
+    <path d="M416 690 C 414 590, 420 490, 432 410" stroke="#8a99a5" stroke-width="10" fill="none" stroke-linecap="round"/>
+    <!-- tubercles on the rostrum -->
+    <circle cx="512" cy="262" r="13" fill="#3c4d5a"/><circle cx="532" cy="318" r="13" fill="#3c4d5a"/>
+    <circle cx="500" cy="352" r="12" fill="#3c4d5a"/><circle cx="552" cy="384" r="12" fill="#3c4d5a"/>
+    <!-- eye -->
+    <ellipse cx="560" cy="560" rx="20" ry="16" fill="#e8eef2"/><circle cx="564" cy="561" r="9" fill="#0d151b"/>
+    <!-- sea -->
+    <path d="M0 660 C 90 630, 170 690, 260 660 S 430 630, 512 664 S 700 700, 780 662 S 940 632, 1024 660 L1024 1024 L0 1024 Z" fill="url(#sea)"/>
+    <!-- splash -->
+    <path d="M330 668 C 352 640, 376 634, 392 650 C 372 650, 352 660, 336 676 Z" fill="#ffffff"/>
+    <path d="M694 668 C 672 640, 648 634, 632 650 C 652 650, 672 660, 688 676 Z" fill="#ffffff"/>
+    <circle cx="318" cy="618" r="12" fill="#ffffff"/><circle cx="292" cy="586" r="8" fill="#ffffff"/>
+    <circle cx="708" cy="616" r="12" fill="#ffffff"/><circle cx="736" cy="584" r="8" fill="#ffffff"/>
+    <path d="M120 790 q 60 -24 120 0 M 700 830 q 60 -24 120 0 M 380 900 q 60 -24 120 0" stroke="#3f97bb" stroke-width="14" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>

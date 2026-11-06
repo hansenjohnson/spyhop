@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Spyhop's per-machine files (made by the launchers)
+.venv/requirements.installed
+.venv/spyhop_shortcut.txt
+
+# survey data, if a data folder is kept inside the repository by mistake
+data/
+exports/
+nmea_logs/
+logs/
+*.mbtiles
+
+# editors and systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

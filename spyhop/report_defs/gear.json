@@ -1,0 +1,18 @@
+{
+  "id": "gear",
+  "title": "Gear",
+  "order": 20,
+  "description": "Fishing gear reported or recovered during the survey (Events: Gear Reported, Gear Recovered).",
+  "table": "events",
+  "where": [
+    {"event_code": ["GRPT", "GRCV"]},
+    {"column": "EventType", "in": ["Gear Reported", "Gear Recovered"]}
+  ],
+  "columns": [
+    {"label": "Time", "value": "time"},
+    {"label": "Event", "column": "EventType"},
+    {"label": "Position", "value": "position"},
+    {"label": "Notes", "column": "Notes"}
+  ],
+  "empty": "No fishing gear reported or recovered."
+}
