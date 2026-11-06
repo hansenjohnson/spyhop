@@ -53,7 +53,10 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
 ### Mac
 
 1. Install **Python 3.10 or newer** from [python.org](https://www.python.org/downloads/macos/). Use the installer: the `python3` that comes with Apple's developer tools is too old on many Macs.
-2. Download Spyhop (on GitHub: **Code → Download ZIP**, or `git clone`). Unzip it and put the `spyhop` folder where it will stay, e.g. in Documents.
+2. Download Spyhop from the [latest release](https://github.com/hansenjohnson/spyhop/releases/latest): under **Assets**, click **Source code (zip)**. Unzip it.
+   - **Rename the folder** from `spyhop-0.9.2` (or similar) to `spyhop`. In-app updates replace the files in place, so the folder keeps its name; a version number in it would soon be wrong.
+   - Put the folder where it will stay, e.g. in Documents, **before** the first start: the Spyhop icon points at this folder.
+   - Developers can `git clone https://github.com/hansenjohnson/spyhop.git` instead. Spyhop then updates itself with `git pull`.
 3. Double-click **`Start Spyhop (Mac).command`**.
    - macOS blocks it the first time because it was downloaded. Open **System Settings → Privacy & Security**, scroll down, click **Open Anyway** next to the message about it, then double-click the file again.
    - On older macOS: right-click it, choose **Open**, then **Open**.
@@ -62,13 +65,17 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
 ### Windows
 
 1. Install **Python 3.10 or newer** from [python.org](https://www.python.org/downloads/windows/). In the installer, tick **Add python.exe to PATH**.
-2. Download Spyhop (on GitHub: **Code → Download ZIP**, or `git clone`). Unzip it (right-click → **Extract All…**) and put the `spyhop` folder where it will stay, e.g. in Documents.
+2. Download Spyhop from the [latest release](https://github.com/hansenjohnson/spyhop/releases/latest): under **Assets**, click **Source code (zip)**. Unzip it (right-click → **Extract All…**).
+   - **Rename the folder** from `spyhop-0.9.2` (or similar) to `spyhop`. In-app updates replace the files in place, so the folder keeps its name; a version number in it would soon be wrong.
+   - Windows often unzips into a folder inside a folder of the same name (`spyhop-0.9.2\spyhop-0.9.2`). Use the inner one, which contains `README.md` and the start files.
+   - Put the folder where it will stay, e.g. in Documents, **before** the first start: the Spyhop icon points at this folder.
+   - Developers can `git clone https://github.com/hansenjohnson/spyhop.git` instead. Spyhop then updates itself with `git pull`.
 3. Double-click **`Start Spyhop (Windows).bat`**. If Windows says it protected your PC, click **More info → Run anyway**.
 4. The first start takes a minute: it sets up a private Python environment in `.venv` (it needs internet) and adds a **Spyhop** icon to the **Desktop** and the **Start menu**. Right-click the icon to pin it to the taskbar.
 
 ### Linux
 
-Run `./start-spyhop.sh`. It also adds Spyhop to the applications menu.
+Download and unzip the [latest release](https://github.com/hansenjohnson/spyhop/releases/latest) (or `git clone` the repository), rename the folder to `spyhop`, put it where it will stay, then run `./start-spyhop.sh` in it. It also adds Spyhop to the applications menu.
 
 ### Starting, quitting and updating
 
@@ -81,7 +88,7 @@ Run `./start-spyhop.sh`. It also adds Spyhop to the applications menu.
   - Your lists, settings and surveys live in Spyhop's own folder, not in the program folder, so they carry over:
   - **Mac:** `~/Library/Application Support/Spyhop`
   - **Windows:** `%APPDATA%\Spyhop`
-- If you move the program folder, double-click the start file in its new place once to update the icon.
+- If you move or rename the program folder later, double-click the start file in its new place once to update the icon.
 
 ## Starting a survey
 
