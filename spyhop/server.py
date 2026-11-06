@@ -436,7 +436,7 @@ class App:
     async def export(self, request):
         body = await request.json() if request.can_read_body else {}
         f = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: self.rec.export(body.get("formats"), body.get("html"), body.get("report_as")))
+            None, lambda: self.rec.export(body.get("formats"), body.get("html"), body.get("report_as"), body.get("html_pdf")))
         return json_ok(name=f.name, path=str(f), folder=str(f.parent), zip=f.suffix == ".zip",
                        url=f"/api/download/{quote(f.name)}")
 
@@ -627,7 +627,8 @@ class App:
         dest.parent.mkdir(parents=True, exist_ok=True)
         if fmt == "pdf":
             try:
-                await asyncio.get_running_loop().run_in_executor(None, html_to_pdf, page, dest)
+                await asyncio.get_running_loop().run_in_executor(
+                    None, html_to_pdf, page, dest, 6000 if rid == "summary" else 3000)
             except PdfError as e:
                 raise ValueErrorMsg(str(e))
         else:

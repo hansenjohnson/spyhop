@@ -6,6 +6,14 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.10.1 — 2026-11-06
+
+- **Summary as PDF** (Reports → Summary → Save as PDF…, and in Export Data…): the map is made for paper.
+  - It's zoomed to the extent of the survey.
+  - It uses the Esri Ocean basemap when there's internet, and the offline coastline otherwise (a note under the map says which).
+  - The points have no text labels, and a legend of the point symbols (by species and event type, with counts) sits under the map.
+  - The HTML summary is unchanged: interactive, with labels and popups.
+
 ## 0.10.0 — 2026-11-06
 
 - **Survey → Settings → Sleep:** Spyhop can stop the computer going to sleep, which would stop the trackline and NMEA recording.

@@ -1234,3 +1234,23 @@ def test_keep_awake(tmp_path, monkeypatch):
     assert sum(c[0] == "try" for c in calls) == tries
     k.set(None)
     assert k.status()["error"] == ""
+
+
+def test_summary_pdf_uses_printed_page(tmp_path, monkeypatch):
+    """Export: the summary's PDF is printed from the page made for printing, its HTML stays the interactive one."""
+    import zipfile
+    from spyhop import recorder as recmod
+    printed = []
+    monkeypatch.setattr(recmod, "_pdf_bytes", lambda page, wait_ms=3000: printed.append((page, wait_ms)) or b"%PDF-1.4 fake")
+    rec = Recorder(tmp_path)
+    rec.start_survey("PdfPage")
+    html, html_pdf = "<!DOCTYPE html><p>interactive</p>", "<!DOCTYPE html><p>printed</p>"
+    z = rec.export(["html"], html, ["html", "pdf"], html_pdf)
+    with zipfile.ZipFile(z) as f:
+        names = f.namelist()
+        page = f.read(next(n for n in names if n.endswith("_summary.html"))).decode()
+    assert page == html and any(n.endswith("_summary.pdf") for n in names)
+    assert printed == [(html_pdf, 6000)]
+    printed.clear()
+    rec.export(["html"], html, ["pdf"])          # an older window that sends no printed page
+    assert printed == [(html, 6000)]

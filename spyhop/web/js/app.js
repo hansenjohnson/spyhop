@@ -862,13 +862,16 @@ class App {
     const report_as = asSel.value === 'both' ? ['html', 'pdf'] : [asSel.value];
     try { localStorage.setItem('wsr.exportFormats', JSON.stringify(formats)); localStorage.setItem('wsr.exportReportAs', asSel.value); } catch {}
     if (report_as.includes('pdf') && formats.some((k) => k === 'html' || k.startsWith('report:'))) toast('Making the PDFs (a few seconds each)…', 'info', 4000);
-    let html;
+    let html, html_pdf;
     if (formats.includes('html')) {
       this.renderReports();
-      try { html = await buildSummaryHtml(this); } catch (e) { toast(`Couldn't build the HTML summary: ${e.message}`, 'error'); return; }
+      try {
+        html = await buildSummaryHtml(this);
+        if (report_as.includes('pdf')) html_pdf = await buildSummaryHtml(this, { pdf: true });   // the printed version
+      } catch (e) { toast(`Couldn't build the HTML summary: ${e.message}`, 'error'); return; }
     }
     let r;
-    try { r = await api('/api/export', { formats, html, report_as }); } catch { return; }
+    try { r = await api('/api/export', { formats, html, html_pdf, report_as }); } catch { return; }
     const a = el('a', { href: r.url, download: r.name });
     document.body.append(a); a.click(); a.remove();
     await modal({ title: 'Export complete', body: el('div', {},
@@ -1296,7 +1299,7 @@ class App {
     this.renderReports();
     toast(format === 'pdf' ? 'Making the PDF (a few seconds)…' : 'Building the summary file…', 'info', 3000);
     let html, r;
-    try { html = await buildSummaryHtml(this); } catch (e) { toast(`Couldn't build the summary: ${e.message}`, 'error'); return; }
+    try { html = await buildSummaryHtml(this, { pdf: format === 'pdf' }); } catch (e) { toast(`Couldn't build the summary: ${e.message}`, 'error'); return; }
     if (format === 'pdf') {
       try { r = await api('/api/reports/save', { id: 'summary', format: 'pdf', html }); } catch { return; }
       const a = el('a', { href: r.url, download: r.name });

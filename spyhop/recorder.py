@@ -53,13 +53,13 @@ def parse_time(s: str) -> datetime | None:
     return None
 
 
-def _pdf_bytes(page: str) -> bytes:
+def _pdf_bytes(page: str, wait_ms: int = 3000) -> bytes:
     """A page printed to PDF by headless Chrome / Edge (see browser.py)."""
     import tempfile
     from .browser import html_to_pdf, PdfError
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            p = html_to_pdf(page, Path(tmp) / "page.pdf")
+            p = html_to_pdf(page, Path(tmp) / "page.pdf", wait_ms)
         except PdfError as e:
             raise ValueErrorMsg(str(e))
         return p.read_bytes()
@@ -1109,13 +1109,15 @@ class Recorder:
         return pts
 
     def export(self, formats: list[str] | None = None, html: str | None = None,
-               report_as: list[str] | None = None) -> Path:
+               report_as: list[str] | None = None, html_pdf: str | None = None) -> Path:
         """Write the chosen formats to the exports folder.
 
         One file comes back as itself; several files come back as one zip.
         formats: any of EXPORT_FORMATS (default: all but the summary, which the browser builds),
         plus "report:<id>" for each report in Survey → Reports.
         report_as: how the summary and the reports are saved: "html", "pdf" or both.
+        html_pdf: the summary page made for printing (map fitted to the survey, a legend);
+        the PDF of the summary uses it when given.
         """
         from . import reports as _reports
         if self.survey is None:
@@ -1176,7 +1178,8 @@ class Recorder:
             if "html" in report_as:
                 files[f"{stem}.html"] = page.encode("utf-8")
             if "pdf" in report_as:
-                files[f"{stem}.pdf"] = _pdf_bytes(page)
+                printed = html_pdf if (stem == f"{prefix}_summary" and (html_pdf or "").startswith("<!DOCTYPE html>")) else page
+                files[f"{stem}.pdf"] = _pdf_bytes(printed, 6000 if stem == f"{prefix}_summary" else 3000)
 
         if len(files) == 1:
             name, data = next(iter(files.items()))

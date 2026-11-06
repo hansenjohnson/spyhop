@@ -132,7 +132,8 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
   - Clicking **Survey** returns to the one you used last. "Settings → …", "NMEA" and so on below mean those tabs inside Survey.
 - **Reports** has its own row of tabs. **Summary** comes first, then one tab per report (see *Reports* below). **Summary** shows:
   - the summary numbers, then the survey's start and end times, duration and details (platform, organization, chief scientist and their email)
-  - **Save as HTML…** saves the summary as **one HTML file**, and **Save as PDF…** as a PDF of the same page, with an interactive map of the survey (track, sightings and events, with popups) at the top and the rest in the same order as the Reports tab. Waypoints aren't included, since they don't belong to a survey. It opens in any browser, even offline, with no Spyhop needed, so it's easy to email or share.
+  - **Save as HTML…** saves the summary as **one HTML file**, with an interactive map of the survey (track, sightings and events, with popups) at the top and the rest in the same order as the Reports tab. Waypoints aren't included, since they don't belong to a survey. It opens in any browser, even offline, with no Spyhop needed, so it's easy to email or share.
+  - **Save as PDF…** saves the same summary as a PDF, with a map made for paper: zoomed to the extent of the survey, on the **Esri Ocean** basemap when there's internet (the offline coastline otherwise; a line under the map says which), with no text labels on the points, and a **legend** of the point symbols (by species and event type, with counts) under the map. The summary PDF in **Export Data…** is the same.
     - The offline coastline is the default base map; OpenStreetMap and Esri Ocean are offered when there's internet.
     - A copy goes in the survey's `exports` folder.
   - counts by species (sightings, number, calves) and by event type
