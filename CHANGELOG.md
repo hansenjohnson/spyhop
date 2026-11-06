@@ -6,6 +6,31 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.12.0 — 2026-11-06
+
+- **Survey → Shortcuts** is now an editor.
+  - Click a shortcut's keys and press new ones, choose what it does from a list, and set pre-fills.
+  - Add, delete and reorder shortcuts, restore the defaults, and Save.
+  - Keys used twice, keys without Mod or Alt, and unknown actions or columns are refused, and keys the browser may take are marked.
+- **Survey → Dropdowns** (new, after Shortcuts) edits the Species, Events, Behaviors and Observers lists.
+  - Add, remove, reorder and sort entries, and pick colours.
+  - Names and codes must be unique.
+  - **While a survey is under way the lists are greyed out and can't be changed.**
+- The CSV files can still be edited in a spreadsheet for big changes.
+- The online map layers are now built into Spyhop, and `tile_sources.csv` is no longer created or shared in group config packs. Extra layers in an existing `tile_sources.csv` are still added.
+
+## 0.11.0 — 2026-11-06
+
+- **Group config** (Survey → Settings): a team keeps its config files on the web, and each computer pulls them.
+  - What can be shared: the species, event types, observers and behaviours lists, shortcuts, map display, map sources and report templates.
+  - Where the pack can be: a public GitHub repository (or a folder in one), a Dropbox or Google Drive link, a zip on a website, or a zip or folder on this computer.
+  - **Check for new config** shows each file that would be added, changed or removed (with row counts), the pack's recent changes from its `spyhop-config.csv`, and any problems. A pack with problems can't be pulled.
+  - **Pull and overwrite** replaces this computer's copies of the pack's files, with no merging. A pack's report templates replace all of this computer's templates. It can save a backup zip first, in a folder you choose. A backup can be pulled again to undo.
+  - Pulling during a survey is allowed after a warning. Survey data and personal settings are never changed.
+  - **Make a pack from this computer** downloads the current config files with a starter `spyhop-config.csv`, a plain CSV of Date, Changed by, Files and Notes.
+  - See docs/CONFIG_PACKS.md.
+- The Spyhop folder and the survey data folder are now both in **Survey → File → Folders**, no longer linked from Settings → Config files. Config files gained a link to the report templates folder.
+
 ## 0.10.1 — 2026-11-06
 
 - **Summary as PDF** (Reports → Summary → Save as PDF…, and in Export Data…): the map is made for paper.

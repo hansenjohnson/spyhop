@@ -5,6 +5,7 @@ import csv
 import json
 import os
 import platform
+import re
 from pathlib import Path
 
 APP_DIR_NAME = "Spyhop"
@@ -151,6 +152,42 @@ DEFAULT_SHORTCUTS = ["combo", "action", "prefill"], [
     ["Mod+Shift+M", "toggle-log", ""],
 ]
 
+# what each list's columns are called in Survey → Dropdowns, and which must be unique
+LIST_COLUMNS = {
+    "species": {"name": "Name", "species_code": "Code", "color": "Colour"},
+    "event_types": {"name": "Name", "event_code": "Code", "color": "Colour"},
+    "behaviors": {"name": "Name", "behavior_code": "Code"},
+    "observers": {"name": "Initials", "full_name": "Full name"},
+}
+UNIQUE_COLUMNS = {"name", "species_code", "event_code", "behavior_code"}
+SHORTCUT_VERBS = {"add", "tab"}            # verbs that take ":<argument>"
+SHORTCUT_ACTIONS = {"add-current", "toggle-effort", "undo", "redo", "next-tab", "prev-tab",
+                    "center-vessel", "toggle-log", "max-log", "measure"}
+_COLOR = re.compile(r"^(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6}|[a-zA-Z]{3,30})$")
+_MODS = {"mod": "Mod", "cmd": "Mod", "ctrl": "Mod", "shift": "Shift", "alt": "Alt", "option": "Alt"}
+
+
+def clean_combo(combo: str) -> str:
+    """'shift+mod+r' → 'Mod+Shift+R'. Raises ValueError for a combination that can't work."""
+    parts = [x.strip() for x in str(combo or "").split("+")]
+    if len(parts) > 1 and parts[-1] == "" and parts[-2] == "":      # "Mod++" means the + key
+        parts = parts[:-2] + ["+"]
+    if not parts or not parts[-1]:
+        raise ValueError("no key")
+    key, mods = parts[-1], set()
+    for m in parts[:-1]:
+        if m.lower() not in _MODS:
+            raise ValueError(f"“{m}” isn't Mod, Shift or Alt")
+        mods.add(_MODS[m.lower()])
+    if len(key) == 1:
+        key = key.upper()
+    elif re.fullmatch(r"[fF]([1-9]|1[0-9]|2[0-4])", key):
+        key = key.upper()
+    if not ({"Mod", "Alt"} & mods) and not re.fullmatch(r"F\d+", key):
+        raise ValueError("needs Mod or Alt (or use F1–F12), so it doesn't get in the way of typing")
+    return "+".join([m for m in ("Mod", "Shift", "Alt") if m in mods] + [key])
+
+
 # List entries added in later versions: put into existing list files once (if the
 # user later deletes one, it stays deleted). Recorded in settings/list_rows_added.txt.
 NEW_LIST_ROWS = {"event_types": ["Gear Reported", "Gear Recovered", "Other"], "species": ["Dead bird"]}
@@ -200,6 +237,10 @@ DEFAULT_SETTINGS = {
     "check_updates_on_start": False,  # look on GitHub for a newer Spyhop when it starts (needs internet)
     "keep_awake": "survey",         # stop the computer sleeping: off | survey (while one is active) | always
     "keep_screen_on": False,        # … and keep the screen on too
+    "group_config_url": "",         # web address of the group's config pack (configpack.py)
+    "group_config_backup": True,    # save a backup zip of the config files before each pull
+    "group_config_backup_dir": "",  # where (empty: <Spyhop folder>/config_backups)
+    "group_config_last": {},        # the last pull: {url, pulled, latest: {date, by, files, notes}, changed}
     "bearing_reference": "M",
     "distance_unit": "nm",
     "mag_variation": "auto",
@@ -333,9 +374,6 @@ class Config:
         p = self.root / "display.csv"
         if not p.exists():
             _write_csv(p, ["key", "value"], [[k, v] for k, v in DEFAULT_DISPLAY.items()])
-        p = self.root / "tile_sources.csv"
-        if not p.exists():
-            _write_csv(p, *DEFAULT_TILE_SOURCES)
         readme = self.charts_dir / "README.txt"
         if not readme.exists():
             readme.write_text(
@@ -405,6 +443,87 @@ class Config:
             out.append(row + [by_name.get(name, {}).get(h, "") for h in missing])
         _write_csv(p, have_clean + missing, out)
 
+    def list_header(self, name: str) -> list[str]:
+        """The columns of a list file as they are now (known ones first)."""
+        known = DEFAULT_LISTS[name][0]
+        try:
+            with open(self.list_path(name), newline="", encoding="utf-8-sig") as fh:
+                have = [h.strip() for h in next(csv.reader(fh), []) if h.strip()]
+        except OSError:
+            have = []
+        return known + [h for h in have if h not in known]
+
+    def save_list(self, name: str, rows: list[dict]) -> list[dict]:
+        """Replace a drop-down list (Survey → Dropdowns). Raises ValueError listing the problems."""
+        if name not in DEFAULT_LISTS:
+            raise ValueError("Unknown list")
+        hdr = self.list_header(name)
+        cols = LIST_COLUMNS[name]
+        out, problems, seen = [], [], {c: {} for c in hdr if c in UNIQUE_COLUMNS}
+        for i, r in enumerate(rows or [], 1):
+            row = {c: str((r or {}).get(c, "") or "").strip() for c in hdr}
+            if not any(row.values()):
+                continue                                    # a blank row is simply dropped
+            if not row["name"]:
+                problems.append(f"Row {i}: {cols['name']} is empty.")
+            if row.get("color") and not _COLOR.match(row["color"]):
+                problems.append(f"Row {i}: “{row['color']}” isn't a colour (use a name like red, or #rrggbb).")
+            for c, prev in seen.items():
+                v = row.get(c, "").lower()
+                if v and v in prev:
+                    problems.append(f"Row {i}: {cols.get(c, c)} “{row[c]}” is already used in row {prev[v]}.")
+                elif v:
+                    prev[v] = i
+            out.append(row)
+        if not out:
+            problems.append("The list can't be empty.")
+        if problems:
+            raise ValueError("\n".join(problems[:12]) + (f"\n… and {len(problems) - 12} more." if len(problems) > 12 else ""))
+        _write_csv(self.list_path(name), hdr, [[r[c] for c in hdr] for r in out])
+        self.reload()
+        return out
+
+    def save_shortcuts(self, rows: list[dict], tabs: dict | None = None) -> list[dict]:
+        """Replace the keyboard shortcuts (Survey → Shortcuts). `tabs` maps data tabs to their column keys,
+        to check pre-fills. Raises ValueError listing the problems."""
+        out, problems, seen = [], [], {}
+        for i, r in enumerate(rows or [], 1):
+            combo, action, prefill = (str((r or {}).get(k, "") or "").strip() for k in ("combo", "action", "prefill"))
+            if not combo and not action and not prefill:
+                continue
+            try:
+                combo = clean_combo(combo)
+            except ValueError as e:
+                problems.append(f"Row {i}: the keys {combo or '(none)'} — {e}.")
+            verb, _, arg = action.partition(":")
+            if not (action in SHORTCUT_ACTIONS or (verb in SHORTCUT_VERBS and re.fullmatch(r"[a-z_]+", arg or ""))):
+                problems.append(f"Row {i}: “{action or '(none)'}” isn't an action Spyhop knows.")
+            if verb == "add" and tabs is not None and arg not in tabs:
+                problems.append(f"Row {i}: there's no {arg} table to add a row to.")
+            if prefill:
+                for part in prefill.split(";"):
+                    k, eq, v = part.partition("=")
+                    if not part.strip():
+                        continue
+                    if not eq or not k.strip():
+                        problems.append(f"Row {i}: pre-fill “{part.strip()}” should look like Column=value.")
+                    elif verb == "add" and tabs and arg in tabs and k.strip() not in tabs[arg]:
+                        problems.append(f"Row {i}: the {arg} table has no column “{k.strip()}”.")
+                    elif not (verb == "add" or action == "add-current"):
+                        problems.append(f"Row {i}: only shortcuts that add a row can pre-fill columns.")
+                        break
+            key = combo.lower()
+            if key in seen:
+                problems.append(f"Row {i}: {combo} is already used in row {seen[key]}.")
+            else:
+                seen[key] = i
+            out.append({"combo": combo, "action": action, "prefill": prefill})
+        if problems:
+            raise ValueError("\n".join(problems[:12]) + (f"\n… and {len(problems) - 12} more." if len(problems) > 12 else ""))
+        _write_csv(self.root / "shortcuts.csv", DEFAULT_SHORTCUTS[0], [[r["combo"], r["action"], r["prefill"]] for r in out])
+        self.reload()
+        return out
+
     def reload(self):
         self.lists: dict[str, list[dict]] = {}
         for name in DEFAULT_LISTS:
@@ -424,11 +543,16 @@ class Config:
         except FileNotFoundError:
             pass
         self.display = display
+        # the online map layers are defined in code (DEFAULT_TILE_SOURCES), so fixes arrive with updates;
+        # extra layers in an old tile_sources.csv (names not built in) are still added after them
+        hdr = DEFAULT_TILE_SOURCES[0]
+        self.tile_sources = [dict(zip(hdr, r)) for r in DEFAULT_TILE_SOURCES[1]]
+        builtin = {r["name"].lower() for r in self.tile_sources}
         try:
-            self.tile_sources = [r for r in _read_csv(self.root / "tile_sources.csv")
-                                 if r.get("name") and r.get("url")]
-        except FileNotFoundError:
-            self.tile_sources = []
+            self.tile_sources += [r for r in _read_csv(self.root / "tile_sources.csv")
+                                  if r.get("name") and r.get("url") and r["name"].lower() not in builtin]
+        except (FileNotFoundError, OSError):
+            pass
         self.mbtiles = sorted(p.name for p in self.charts_dir.glob("*.mbtiles"))
 
     def save_display(self, updates: dict):
@@ -490,6 +614,9 @@ class Config:
         return {
             "lists": lists,
             "shortcuts": self.shortcuts,
+            "list_columns": {k: self.list_header(k) for k in DEFAULT_LISTS},
+            "list_labels": LIST_COLUMNS,
+            "default_shortcuts": [dict(zip(DEFAULT_SHORTCUTS[0], r)) for r in DEFAULT_SHORTCUTS[1]],
             "display": self.display,
             "settings": self.settings,
             "tile_sources": self.tile_sources,

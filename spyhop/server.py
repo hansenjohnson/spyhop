@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import quote
 import logging
 import os
@@ -15,7 +15,7 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 
 from .recorder import Recorder, ValueErrorMsg
-from . import awake, __version__, diag, reports, updater
+from . import awake, configpack, __version__, diag, reports, schema, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports
 from .store import safe_name
@@ -468,6 +468,28 @@ class App:
         self._broadcast_soon({"type": "display", "display": self.rec.cfg.display})
         return json_ok(display=self.rec.cfg.display)
 
+    async def save_list(self, request):
+        b = await request.json()
+        if self.rec.survey_active():
+            raise ValueErrorMsg("A survey is under way, so the drop-down lists can't be changed until it ends.")
+        try:
+            self.rec.cfg.save_list(str(b.get("list", "")), b.get("rows") or [])
+        except ValueError as e:
+            raise ValueErrorMsg(str(e))
+        log.info("list %s saved from Survey → Dropdowns (%d rows)", b.get("list"), len(self.rec.cfg.lists.get(b.get("list"), [])))
+        self._broadcast_soon({"type": "reload"})
+        return json_ok()
+
+    async def save_shortcuts(self, request):
+        b = await request.json()
+        tabs = {k: {c["key"] for c in v["columns"]} for k, v in schema.TABS.items()}
+        try:
+            self.rec.cfg.save_shortcuts(b.get("rows") or [], tabs)
+        except ValueError as e:
+            raise ValueErrorMsg(str(e))
+        self._broadcast_soon({"type": "reload"})
+        return json_ok()
+
     async def reload_config(self, request):
         self.rec.cfg.reload()
         self._broadcast_soon({"type": "reload"})
@@ -480,17 +502,19 @@ class App:
         targets = {"data": cfg.root, "app": cfg.root, "exports": cfg.export_dir, "charts": cfg.charts_dir,
                    "overlays": cfg.overlays_dir, "survey": cfg.data_dir, "datafolder": cfg.data_dir,
                    "nmealogs": cfg.data_dir / "nmea_logs", "logs": diag.log_dir(cfg.root),
-                   "reports": reports.user_dir(cfg)}
+                   "reports": reports.user_dir(cfg),
+                   "backups": Path(cfg.settings.get("group_config_backup_dir") or cfg.root / "config_backups")}
         if what in targets:
             p = targets[what]
+            if what == "backups":
+                p.mkdir(parents=True, exist_ok=True)
             if what == "reports":
                 reports.prepare_user_dir(cfg)
             if what in ("nmealogs", "logs"):
                 p.mkdir(parents=True, exist_ok=True)
         elif what.startswith("config:"):
             name = what.split(":", 1)[1]
-            if name not in ("species", "event_types", "observers", "behaviors", "shortcuts",
-                            "display", "tile_sources"):
+            if name not in ("species", "event_types", "observers", "behaviors", "shortcuts", "display"):
                 raise ValueErrorMsg("Unknown config file")
             p = cfg.root / f"{name}.csv"
         elif what.startswith("export:"):
@@ -637,6 +661,65 @@ class App:
             os.replace(tmp, dest)
         return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}")
 
+    # ---- group config packs (Survey → Settings → Group config; configpack.py)
+    async def groupconfig_check(self, request):
+        b = await request.json() if request.can_read_body else {}
+        url = str(b.get("url", "")).strip()
+        cfg = self.rec.cfg
+        cfg.save_settings({"group_config_url": url})
+
+        def work():
+            files, source = configpack.fetch(url)
+            pack = configpack.read_pack(files)
+            return source, pack, configpack.compare(cfg, pack)
+        try:
+            source, pack, plan = await asyncio.get_running_loop().run_in_executor(None, work)
+        except configpack.PackError as e:
+            raise ValueErrorMsg(str(e))
+        return json_ok(token=configpack.remember(url, pack), source=source, files=plan,
+                       manifest=pack["manifest"][:8], ignored=pack["ignored"], problems=pack["problems"],
+                       survey_active=self.rec.survey_active())
+
+    async def groupconfig_pull(self, request):
+        b = await request.json() if request.can_read_body else {}
+        got = configpack.recall(b.get("token", ""))
+        if not got:
+            raise ValueErrorMsg("That check is too old. Press Check for new config again.")
+        url, pack = got
+        cfg = self.rec.cfg
+        backup = bool(b.get("backup"))
+        bdir = str(b.get("backup_dir", "") or "").strip()
+        cfg.save_settings({"group_config_backup": backup, "group_config_backup_dir": bdir})
+
+        def work():
+            saved = configpack.save_backup(cfg, bdir) if backup else None
+            return saved, configpack.apply(cfg, pack)
+        try:
+            saved, changed = await asyncio.get_running_loop().run_in_executor(None, work)
+        except configpack.PackError as e:
+            raise ValueErrorMsg(str(e))
+        cfg.save_settings({"group_config_last": {
+            "url": url, "pulled": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "latest": pack["manifest"][0] if pack["manifest"] else None, "changed": changed}})
+        log.info("group config pulled from %s: %s", url, ", ".join(changed) or "no changes")
+        self._broadcast_soon({"type": "reload"})
+        return json_ok(changed=changed, backup=str(saved) if saved else None)
+
+    async def groupconfig_backup(self, request):
+        b = await request.json() if request.can_read_body else {}
+        try:
+            p = await asyncio.get_running_loop().run_in_executor(
+                None, configpack.save_backup, self.rec.cfg, str(b.get("dir", "") or "").strip())
+        except configpack.PackError as e:
+            raise ValueErrorMsg(str(e))
+        return json_ok(path=str(p), folder=str(p.parent))
+
+    async def groupconfig_pack(self, request):
+        data = configpack.make_zip(self.rec.cfg, f"Pack made from this computer's config files (Spyhop {__version__})")
+        name = f"spyhop-config-pack-{datetime.now().strftime('%Y%m%d')}.zip"
+        return web.Response(body=data, content_type="application/zip",
+                            headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
     # ---- updates (Survey → About; updater.py)
     async def update_check(self, request):
         try:
@@ -738,6 +821,12 @@ class App:
         r.add_post("/api/settings", self.settings)
         r.add_post("/api/display", self.display)
         r.add_post("/api/config/reload", self.reload_config)
+        r.add_post("/api/config/list", self.save_list)
+        r.add_post("/api/config/shortcuts", self.save_shortcuts)
+        r.add_post("/api/groupconfig/check", self.groupconfig_check)
+        r.add_post("/api/groupconfig/pull", self.groupconfig_pull)
+        r.add_post("/api/groupconfig/backup", self.groupconfig_backup)
+        r.add_get("/api/groupconfig/pack", self.groupconfig_pack)
         r.add_post("/api/open", self.open)
         r.add_get("/api/nmea", self.nmea)
         r.add_post("/api/nmea/sources", self.nmea_sources)

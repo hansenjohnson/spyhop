@@ -160,7 +160,7 @@ export function modal({ title, body, buttons = [{ label: 'OK', value: true, prim
 }
 
 export async function confirmBox(title, text, okLabel = 'OK', danger = false) {
-  const r = await modal({ title, body: el('p', {}, text), buttons: [
+  const r = await modal({ title, body: el('p', { style: { whiteSpace: 'pre-line' } }, text), buttons: [
     { label: 'Cancel', value: false }, { label: okLabel, value: true, primary: true, danger }] });
   return !!r;
 }

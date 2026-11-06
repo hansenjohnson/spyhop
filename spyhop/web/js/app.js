@@ -129,7 +129,7 @@ class App {
   // data tabs shown in the top row (Waypoints, the 'marks' table, lives inside Survey)
   topTabs() { return ['sightings', 'effort', 'events']; }
   surveyTabs() {
-    return [['survey', 'File'], ['settings', 'Settings'], ['shortcuts', 'Shortcuts'], ['marks', 'Waypoints'], ['route', 'Route'],
+    return [['survey', 'File'], ['settings', 'Settings'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'], ['marks', 'Waypoints'], ['route', 'Route'],
       ['nmea', 'NMEA'], ['qc', 'Quality Control'], ['reports', 'Reports'], ['about', 'About']];
   }
   // tabs that were renamed or merged: Planning → Route and Summary → Reports (0.7.0)
@@ -348,7 +348,7 @@ class App {
 
   // draw one of the Survey tab's panes
   renderPane(tab) {
-    const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, nmea: this.renderNmea,
+    const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, dropdowns: this.renderDropdowns, nmea: this.renderNmea,
       qc: this.renderQc, reports: this.renderReports, about: this.renderAbout,
       route: () => this.planner.render() }[tab];
     if (f) f.call(this);
@@ -796,7 +796,8 @@ class App {
     const pathBox = el('input', { type: 'text', value: this.dataDirDraft ?? dd, style: { flex: '1', minWidth: '18em' },
       oninput: (e) => { this.dataDirDraft = e.target.value; },
       onkeydown: (e) => { if (e.key === 'Enter') this.chooseDataFolder(e.target.value); } });
-    const folder = sec('Data folder',
+    const folder = sec('Folders',
+      el('h4', {}, 'Survey data folder'),
       el('p', {}, 'Survey files, waypoints and exports are saved in ', el('span', { class: 'mono' }, dd),
         isDefault ? el('span', { class: 'hint' }, ' (the default, inside Spyhop’s own folder)') : null, '. ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('datafolder'); } }, 'Open folder')),
@@ -804,7 +805,11 @@ class App {
         isDefault ? null : el('button', { onclick: () => this.chooseDataFolder('') }, 'Use the default')),
       el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Or type a path:', pathBox),
         el('button', { onclick: () => this.chooseDataFolder(pathBox.value) }, 'Use this folder')),
-      el('p', { class: 'hint' }, 'Pick a backed-up or synced folder if you like. Spyhop remembers it between sessions. Your lists (species, observers…) and settings stay in Spyhop’s own folder.'));
+      el('p', { class: 'hint' }, 'Pick a backed-up folder if you like. Spyhop remembers it between sessions. Your lists (species, observers…) and settings stay in Spyhop’s own folder.'),
+      el('h4', {}, 'Spyhop folder'),
+      el('p', {}, 'Spyhop’s own files are in ', el('span', { class: 'mono' }, S.config.root), '. ',
+        el('a', { href: '#', id: 'open-app-folder', onclick: (e) => { e.preventDefault(); this.open('app'); } }, 'Open folder')),
+      el('p', { class: 'hint' }, 'It holds the config files (lists, shortcuts, map display and sources; see Settings → Config files), report templates, settings, offline charts, map overlays and the tile cache, logs, and config backups. Spyhop always uses this folder.'));
     pane.replaceChildren(...[current, list, folder].filter(Boolean));
   }
 
@@ -1105,6 +1110,7 @@ class App {
   }
 
   onShortcut(e) {
+    if (this.comboCapture && this.comboCapture(e) !== false) return;     // Survey → Shortcuts is recording new keys
     if (isModalOpen()) return;
     if (e.key === 'Escape' && this.map?.measure?.active) { this.map.endMeasure(); return; }
     for (const s of this.S.config.shortcuts) {
@@ -1317,6 +1323,128 @@ class App {
       buttons: [{ label: 'Open it', value: () => this.open(`export:${r.name}`) }, { label: 'Done', primary: true, value: true }] });
   }
 
+  // ---------------------------------------------------------------- group config (configpack.py)
+  groupConfigSection() {
+    const S = this.S, st = S.config.settings, gc = (this.gc ||= {});
+    const sec = (title, ...kids) => el('section', { class: 'settings-sec', id: 'group-config' }, el('h3', {}, title), ...kids);
+    const when = (iso) => { const p = iso && timeParts(iso, this.clock()); return p ? `${p.date} ${p.time.slice(0, 5)} ${p.abbr}` : ''; };
+    const urlBox = el('input', { type: 'text', id: 'gc-url', placeholder: 'https://github.com/your-team/spyhop-config', value: gc.url ?? st.group_config_url ?? '',
+      style: { flex: '1', minWidth: '22em' }, oninput: (e) => { gc.url = e.target.value; },
+      onkeydown: (e) => { if (e.key === 'Enter') this.checkGroupConfig(); } });
+    const last = st.group_config_last || {};
+    const lastP = last.pulled ? el('p', { id: 'gc-last' }, `Last pulled ${when(last.pulled)}`,
+      last.latest ? ` — the pack’s latest change: ${[last.latest.date, last.latest.by, last.latest.notes].filter(Boolean).join(' · ')}` : '',
+      last.url && last.url !== (gc.url ?? st.group_config_url) ? el('span', { class: 'hint' }, ` (from ${last.url})`) : null)
+      : el('p', { id: 'gc-last', class: 'hint' }, 'No group config has been pulled on this computer yet.');
+    const kids = [
+      el('p', {}, 'A team can keep its config files in one place on the web — the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates — and each computer pulls them from there when it has an internet connection. Nothing is downloaded until you press Check.'),
+      el('p', { class: 'warnbox' }, el('b', {}, 'Pulling overwrites this computer’s config files. '),
+        'Every file in the pack replaces the one here; nothing is merged, so changes made on this computer to those files are lost (save a backup first to keep them). If the pack has report templates, they replace all of this computer’s templates. Survey data, waypoints and your own settings (data folder, GPS inputs, clock and the rest of this tab) are never changed.'),
+      el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Web address of the pack:', urlBox),
+        el('button', { id: 'btn-gc-check', onclick: () => this.checkGroupConfig() }, gc.busy === 'check' ? 'Checking…' : 'Check for new config')),
+      lastP,
+    ];
+    if (gc.done) {
+      kids.push(el('p', { class: 'okbox', id: 'gc-done' }, gc.done.changed.length
+        ? `Pulled: ${gc.done.changed.join(', ')}.` : 'Pulled; nothing needed changing.',
+        gc.done.backup ? el('span', {}, ' Backup saved as ', el('span', { class: 'mono' }, gc.done.backup), '. ') : ' ',
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); gc.done = null; this.renderSettings(); } }, 'OK')));
+    }
+    const r = gc.result;
+    if (r) {
+      const label = { new: 'New — will be added', changed: 'Changed — replaces this computer’s copy', same: 'Same as here', removed: 'Not in the pack — will be removed' };
+      const todo = r.files.filter((f) => f.status !== 'same');
+      const box = [el('h4', {}, 'What the pack would change'), el('p', { class: 'hint' }, `From ${r.source}`)];
+      if (r.problems.length) {
+        box.push(el('div', { class: 'errbox' }, el('b', {}, 'The pack has problems, so it can’t be pulled. Ask whoever looks after it to fix:'),
+          el('ul', {}, r.problems.map((p) => el('li', {}, p)))));
+      }
+      box.push(el('table', { class: 'summary gc-files' },
+        el('thead', {}, el('tr', {}, ['File', 'What happens', 'Here', 'In the pack'].map((h) => el('th', {}, h)))),
+        el('tbody', {}, r.files.map((f) => el('tr', { class: `gc-${f.status}` },
+          el('td', { class: 'mono' }, f.file), el('td', {}, label[f.status]),
+          el('td', {}, f.unit === 'rows' && f.here != null ? `${f.here} rows` : ''),
+          el('td', {}, f.unit === 'rows' && f.pack != null ? `${f.pack} rows` : ''))))));
+      if (r.manifest.length) {
+        box.push(el('h4', {}, 'Recent changes in the pack (spyhop-config.csv)'), el('table', { class: 'summary' },
+          el('thead', {}, el('tr', {}, ['Date', 'Changed by', 'Files', 'Notes'].map((h) => el('th', {}, h)))),
+          el('tbody', {}, r.manifest.map((m) => el('tr', {}, el('td', {}, m.date), el('td', {}, m.by), el('td', {}, m.files), el('td', {}, m.notes))))));
+      } else box.push(el('p', { class: 'hint' }, 'The pack has no spyhop-config.csv, so there’s no record of its changes.'));
+      if (r.ignored.length) box.push(el('p', { class: 'hint' }, `Not config files, so left alone: ${r.ignored.join(', ')}`));
+      if (!r.problems.length) {
+        if (!todo.length) box.push(el('p', { id: 'gc-uptodate' }, el('b', {}, 'This computer already has this config.')));
+        else {
+          const dirBox = el('input', { type: 'text', id: 'gc-backup-dir', value: gc.backupDir ?? st.group_config_backup_dir ?? '',
+            placeholder: `${S.config.root}${S.config.root.includes('\\') ? '\\' : '/'}config_backups`, style: { flex: '1', minWidth: '18em' },
+            oninput: (e) => { gc.backupDir = e.target.value; } });
+          const backup = el('input', { type: 'checkbox', id: 'gc-backup', checked: gc.backup ?? st.group_config_backup !== false,
+            onchange: (e) => { gc.backup = e.target.checked; } });
+          box.push(
+            el('label', { class: 'check' }, backup, el('span', {}, 'Save a backup of this computer’s config files first (a zip you can pull again to undo)')),
+            el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Backup folder:', dirBox),
+              el('button', { onclick: async () => { const p = await this.pickFolder(); if (p) { gc.backupDir = p; dirBox.value = p; } } }, 'Choose…')),
+            el('div', { class: 'btnrow' }, el('button', { id: 'btn-gc-pull', class: 'primary', onclick: () => this.pullGroupConfig() },
+              gc.busy === 'pull' ? 'Pulling…' : `Pull and overwrite ${todo.length} file${todo.length > 1 ? 's' : ''}`),
+              el('button', { onclick: () => { gc.result = null; this.renderSettings(); } }, 'Cancel')));
+        }
+      }
+      kids.push(el('div', { id: 'gc-result', class: 'gc-result' }, ...box));
+    }
+    kids.push(
+      el('div', { class: 'btnrow' },
+        el('button', { id: 'btn-gc-backup', onclick: () => this.backupGroupConfig() }, 'Save a backup now'),
+        el('button', { onclick: () => this.open('backups') }, 'Open the backups folder'),
+        el('a', { class: 'button', href: '/api/groupconfig/pack', download: '', id: 'gc-make' }, 'Make a pack from this computer')),
+      el('details', { class: 'hint' }, el('summary', {}, 'How to set up a pack'),
+        el('p', {}, '“Make a pack from this computer” downloads a zip of this computer’s config files and a spyhop-config.csv. Unzip it, delete any files the team shouldn’t share (e.g. display.csv, so each person keeps their own marker and text sizes), and put it on the web. When you change a file, add a row to spyhop-config.csv saying the date, who, which files and what changed.'),
+        el('p', {}, 'Any address that downloads without signing in works: a public GitHub repository (its address, or a folder in it), a Dropbox shared link, a Google Drive link to the zip (shared with “Anyone with the link”), or a zip on a website. SharePoint and OneDrive links usually need a sign-in, so they don’t work. You can also type the path of a zip or folder on this computer, such as a backup or a pack on a USB stick. See docs/CONFIG_PACKS.md.')));
+    return sec('Group config', ...kids);
+  }
+
+  async pickFolder() {
+    try { return (await api('/api/pick-folder', {})).path || null; } catch { return null; }
+  }
+
+  async checkGroupConfig() {
+    const gc = (this.gc ||= {});
+    const url = ($('#gc-url')?.value ?? gc.url ?? '').trim();
+    gc.url = url; gc.result = null; gc.done = null; gc.busy = 'check';
+    this.renderSettings();
+    try { gc.result = await api('/api/groupconfig/check', { url }); } catch { /* the error is shown as a toast */ }
+    gc.busy = null;
+    this.renderSettings();
+    $('#gc-result')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  async pullGroupConfig() {
+    const gc = this.gc, r = gc?.result;
+    if (!r) return;
+    const todo = r.files.filter((f) => f.status !== 'same');
+    const backup = $('#gc-backup')?.checked ?? true;
+    const backupDir = ($('#gc-backup-dir')?.value ?? '').trim();
+    let text = `${todo.length} config file${todo.length > 1 ? 's' : ''} on this computer will be overwritten or removed: ${todo.map((f) => f.file).join(', ')}.`;
+    text += backup ? ' A backup is saved first.' : ' No backup will be saved, so changes made here to these files will be lost.';
+    if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and Quality Control will flag values that are no longer in a list. Pulling during a survey is unusual: are you sure?';
+    if (!await confirmBox('Overwrite config files?', text, 'Pull and overwrite', true)) return;
+    gc.busy = 'pull'; this.renderSettings();
+    try {
+      const res = await api('/api/groupconfig/pull', { token: r.token, backup, backup_dir: backupDir });
+      gc.done = { changed: res.changed, backup: res.backup }; gc.result = null;
+      toast('Group config pulled');
+    } catch { /* toast shown */ }
+    gc.busy = null;
+    this.renderSettings();
+  }
+
+  async backupGroupConfig() {
+    const gc = (this.gc ||= {});
+    const dir = ($('#gc-backup-dir')?.value ?? gc.backupDir ?? this.S.config.settings.group_config_backup_dir ?? '').trim();
+    try {
+      const r = await api('/api/groupconfig/backup', { dir });
+      toast(`Backup saved: ${r.path}`);
+    } catch { /* toast shown */ }
+  }
+
   // ---------------------------------------------------------------- settings
   awakeText() {
     const a = this.S.awake || {}, st = this.S.config.settings;
@@ -1412,15 +1540,19 @@ class App {
         el('div', { class: 'grid2 checks' }, dchk('fade_enabled', 'Fade the trackline, sightings and events older than this (waypoints never fade)'))),
       this.mapSection(),
       sec('Config files',
-        el('p', {}, 'Edit these in a spreadsheet or text editor, save, then press Reload. ',
+        el('p', {}, 'Edit the drop-down lists in Survey → ',
+          el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('dropdowns'); } }, 'Dropdowns'), ', the keyboard shortcuts in Survey → ',
+          el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('shortcuts'); } }, 'Shortcuts'),
+          ', and the map display in this tab. For many changes at once you can also edit the files in a spreadsheet or text editor, save, then press Reload. ',
           el('span', { class: 'hint' }, `Folder: ${S.config.root}`)),
         el('div', { class: 'links' }, link('species.csv', 'config:species'), link('event_types.csv', 'config:event_types'),
           link('observers.csv', 'config:observers'), link('behaviors.csv', 'config:behaviors'),
-          link('shortcuts.csv', 'config:shortcuts'), link('display.csv', 'config:display'),
-          link('tile_sources.csv', 'config:tile_sources'), link('Spyhop folder', 'app'), link('Survey data folder', 'datafolder')),
-        el('button', { onclick: async () => { await api('/api/config/reload', {}); toast('Config reloaded'); } }, 'Reload config files')),
-      sec('Keyboard shortcuts', el('p', {}, 'See Survey → ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('shortcuts'); } }, 'Shortcuts'), '.')));
+          link('shortcuts.csv', 'config:shortcuts'), link('display.csv', 'config:display'), link('Report templates', 'reports')),
+        el('button', { onclick: async () => { await api('/api/config/reload', {}); toast('Config reloaded'); } }, 'Reload config files'),
+        el('p', { class: 'hint' }, 'Spyhop’s folders are listed in Survey → ',
+          el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('survey'); } }, 'File'), '.')),
+      this.groupConfigSection(),
+      );
     for (const row of pane.querySelectorAll('label.row')) {
       const first = row.firstChild;
       if (first && first.nodeType === 3) row.replaceChild(el('span', { class: 'lbl' }, first.textContent), first);
@@ -1428,36 +1560,215 @@ class App {
   }
 
   // ---------------------------------------------------------------- shortcuts tab
+  // Survey → Shortcuts: an editable table of keyboard shortcuts (shortcuts.csv)
+  shortcutActions() {
+    const tabName = Object.fromEntries([...this.dataTabs().map((t) => [t, this.S.schema.tabs[t].title]),
+      ...this.surveyTabs().map(([k, l]) => [k, `Survey → ${l}`])]);
+    return [
+      ['add:sightings', 'Add a sighting'], ['add:effort', 'Add a conditions (effort) row'], ['add:events', 'Add an event'],
+      ['add:marks', 'Add a waypoint'], ['add-current', 'Add a row to the table you’re in'],
+      ['toggle-effort', 'Add an effort row that switches effort ON↔OFF'],
+      ['undo', 'Undo in the current table'], ['redo', 'Redo in the current table'],
+      ['next-tab', 'Next tab'], ['prev-tab', 'Previous tab'],
+      ...this.allTabs().map((k) => [`tab:${k}`, `Show ${tabName[k] || k}`]),
+      ['center-vessel', 'Centre the map on the vessel'], ['measure', 'Start or stop measuring on the map'],
+      ['toggle-log', 'Minimize / restore the data tables'], ['max-log', 'Maximize / restore the data tables'],
+    ];
+  }
+
+  // a key press → a combo in shortcuts.csv's form (Mod+Shift+R), or null for a lone modifier
+  comboFromEvent(e) {
+    if (['Shift', 'Control', 'Meta', 'Alt', 'CapsLock', 'OS'].includes(e.key)) return null;
+    let key = e.key;
+    if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
+    else if (/^Digit[0-9]$/.test(e.code)) key = e.code.slice(5);
+    else if (key.length === 1) key = key.toUpperCase();
+    const mods = [(IS_MAC ? e.metaKey : e.ctrlKey) && 'Mod', e.shiftKey && 'Shift', e.altKey && 'Alt'].filter(Boolean);
+    return [...mods, key].join('+');
+  }
+
   renderShortcuts() {
     const pane = $('#pane-shortcuts');
     if (!pane) return;
-    const tabName = Object.fromEntries([...this.dataTabs().map((t) => [t, this.S.schema.tabs[t].title]),
-      ...this.surveyTabs().map(([k, l]) => [k, `Survey → ${l}`])]);
-    const WHAT = {
-      'add-current': 'Add a row to the table you’re in', 'toggle-effort': 'Add an effort row that switches effort ON↔OFF',
-      undo: 'Undo in the current table', redo: 'Redo in the current table', 'next-tab': 'Next tab', 'prev-tab': 'Previous tab',
-      'center-vessel': 'Centre the map on the vessel', 'toggle-log': 'Minimize / restore the data tables',
+    const saved = this.S.config.shortcuts.map((s) => ({ combo: s.combo || '', action: s.action || '', prefill: s.prefill || '' }));
+    const rows = this.scDraft || saved;
+    const dirty = !!this.scDraft && JSON.stringify(this.scDraft) !== JSON.stringify(saved);
+    const actions = this.shortcutActions();
+    const label = Object.fromEntries(actions);
+    const edit = () => { if (!this.scDraft) this.scDraft = rows.map((r) => ({ ...r })); return this.scDraft; };
+    const markDirty = () => { const b = $('#btn-sc-save'); if (b) { b.classList.add('dirty'); b.textContent = 'Save — unsaved changes'; } };
+    const norm = (c) => (c || '').toLowerCase().split('+').sort().join('+');
+    const count = {};
+    rows.forEach((r) => { if (r.combo) count[norm(r.combo)] = (count[norm(r.combo)] || 0) + 1; });
+    const RESERVED = IS_MAC ? ['Mod+W', 'Mod+Q', 'Mod+T', 'Mod+N', 'Mod+H', 'Mod+M', 'Mod+Tab', 'Mod+Shift+T']
+      : ['Mod+W', 'Mod+T', 'Mod+N', 'Mod+Tab', 'Mod+Shift+T', 'Mod+Shift+N', 'Alt+F4'];
+    const shown = (c) => (c || '').replace(/^Mod(?=\+)|(?<=\+)Mod(?=\+)/g, MOD);
+    const keyCell = (r, i) => {
+      const b = el('button', { class: 'combo mono', title: 'Click, then press the keys' }, r.combo ? shown(r.combo) : 'Set keys…');
+      b.onclick = () => {
+        b.textContent = 'Press the keys… (Esc cancels)'; b.classList.add('capturing');
+        const handler = (e) => {
+          if (!b.isConnected) { this.comboCapture = null; return false; }   // the table was redrawn or left
+          if (e.type !== 'keydown') return;
+          e.preventDefault(); e.stopPropagation();
+          if (e.key === 'Escape') { this.comboCapture = null; this.renderShortcuts(); return; }
+          const c = this.comboFromEvent(e);
+          if (!c) return;
+          if (!/(^|\+)(Mod|Alt)\+/.test(c) && !/^(Shift\+)?F([1-9]|1[0-9]|2[0-4])$/.test(c)) {
+            toast('A shortcut needs Mod or Alt (or use F1–F12), so it doesn’t get in the way of typing.', 'warn');
+            return;
+          }
+          if (c.endsWith('+ ') || c === ' ') { toast('The space bar can’t be a shortcut key.', 'warn'); return; }
+          this.comboCapture = null;
+          edit()[i].combo = c;
+          this.renderShortcuts();
+        };
+        this.comboCapture = handler;
+        b.onblur = () => { if (this.comboCapture === handler) { this.comboCapture = null; this.renderShortcuts(); } };
+      };
+      return b;
     };
-    const describe = (s) => {
-      const [act, arg] = s.action.split(':');
-      let d = WHAT[s.action] || WHAT[act];
-      if (act === 'add') d = `Add ${({ sightings: 'a sighting', effort: 'a conditions (effort) row', events: 'an event', marks: 'a waypoint' })[arg] || `a ${arg} row`}`;
-      if (act === 'tab') d = `Show ${tabName[arg] || arg}`;
-      if (s.prefill) d = `${d || s.action}, pre-filled with ${s.prefill.split(';').join(', ')}`;
-      return d || s.action;
-    };
+    const body = rows.map((r, i) => {
+      const verb = r.action.split(':')[0];
+      const canPrefill = verb === 'add' || r.action === 'add-current';
+      const dup = r.combo && count[norm(r.combo)] > 1;
+      const warn = RESERVED.includes(r.combo);
+      const sel = el('select', { onchange: (e) => { edit()[i].action = e.target.value; if (!/^add/.test(e.target.value)) edit()[i].prefill = ''; this.renderShortcuts(); } },
+        (label[r.action] ? [] : [el('option', { value: r.action, selected: true }, r.action ? `${r.action} (unknown)` : 'Choose…')]),
+        actions.map(([v, l]) => el('option', { value: v, selected: v === r.action }, l)));
+      const pre = el('input', { type: 'text', value: r.prefill, disabled: !canPrefill, placeholder: canPrefill ? 'e.g. Species=Fin whale;Obs=OBS1' : '',
+        oninput: (e) => { edit()[i].prefill = e.target.value; markDirty(); } });
+      return el('tr', { class: dup ? 'bad' : null },
+        el('td', {}, keyCell(r, i), dup ? el('div', { class: 'cell-err' }, 'Used twice') : null,
+          warn ? el('div', { class: 'cell-warn', title: 'The browser or the computer may use these keys itself' }, '⚠ may be taken by the browser') : null),
+        el('td', {}, sel), el('td', {}, pre),
+        el('td', { class: 'rowbtns' },
+          el('button', { title: 'Move up', disabled: i === 0, onclick: () => { const d = edit(); [d[i - 1], d[i]] = [d[i], d[i - 1]]; this.renderShortcuts(); } }, '↑'),
+          el('button', { title: 'Move down', disabled: i === rows.length - 1, onclick: () => { const d = edit(); [d[i + 1], d[i]] = [d[i], d[i + 1]]; this.renderShortcuts(); } }, '↓'),
+          el('button', { title: 'Delete', class: 'danger-outline', onclick: () => { edit().splice(i, 1); this.renderShortcuts(); } }, '✕')));
+    });
     pane.replaceChildren(el('section', { class: 'settings-sec' }, el('h3', {}, 'Keyboard shortcuts'),
-      el('table', { class: 'summary shortcut-list' },
-        el('thead', {}, el('tr', {}, ['Keys', 'What it does', 'Action in shortcuts.csv'].map((h) => el('th', {}, h)))),
-        el('tbody', {}, this.S.config.shortcuts.map((s) => el('tr', {},
-          el('td', { class: 'mono' }, s.combo.replace('Mod', MOD)), el('td', {}, describe(s)),
-          el('td', { class: 'hint mono' }, s.action + (s.prefill ? `, ${s.prefill}` : '')))))),
-      el('p', { class: 'hint' }, `“Mod” is ${MOD} on this computer. Some ${MOD}+key combinations are taken by web browsers; the app window (default launch) avoids most of them.`),
-      el('p', {}, 'To change a shortcut or add one, edit shortcuts.csv, save it, then press Reload. A shortcut can pre-fill fields, e.g. ',
-        el('span', { class: 'mono' }, 'Mod+Shift+B,add:sightings,Species=Fin whale;Observer=OBS1'), '.'),
+      el('p', {}, `Click a shortcut’s keys to change them, choose what it does, and press Save. “Mod” is ${MOD} on this computer. Shortcuts that add a row can pre-fill columns, e.g. `,
+        el('span', { class: 'mono' }, 'Species=Fin whale;Obs=OBS1'), ' (the column names are listed below the table).'),
+      el('table', { class: 'summary edit-table shortcut-edit' },
+        el('thead', {}, el('tr', {}, ['Keys', 'What it does', 'Pre-fill', ''].map((h) => el('th', {}, h)))),
+        el('tbody', {}, body)),
       el('div', { class: 'btnrow' },
-        el('button', { onclick: () => this.open('config:shortcuts') }, 'Open shortcuts.csv'),
-        el('button', { onclick: async () => { await api('/api/config/reload', {}); toast('Shortcuts reloaded'); } }, 'Reload'))));
+        el('button', { onclick: () => { edit().push({ combo: '', action: 'add:sightings', prefill: '' }); this.renderShortcuts(); } }, 'Add shortcut'),
+        el('button', { onclick: () => { this.scDraft = this.S.config.default_shortcuts.map((s) => ({ combo: s.combo, action: s.action, prefill: s.prefill || '' })); this.renderShortcuts(); } }, 'Restore the default shortcuts')),
+      el('details', { class: 'hint', id: 'sc-columns' }, el('summary', {}, 'Column names for pre-fills'),
+        ...this.dataTabs().map((tb) => el('p', {}, el('b', {}, `${this.S.schema.tabs[tb].title}: `),
+          el('span', { class: 'mono' }, this.S.schema.tabs[tb].columns.filter((c) => !['RowID', 'Map'].includes(c.key)).map((c) => c.key).join(', '))))),
+      el('div', { id: 'sc-errors' }),
+      el('div', { class: 'btnrow' },
+        el('button', { id: 'btn-sc-save', class: `primary${dirty ? ' dirty' : ''}`, onclick: () => this.saveShortcuts() }, dirty ? 'Save — unsaved changes' : 'Save'),
+        el('button', { onclick: () => { this.scDraft = null; this.renderShortcuts(); } }, 'Revert')),
+      el('p', { class: 'hint' }, `Some ${MOD}+key combinations are taken by web browsers; the app window (the default launch) avoids most of them. For many changes at once you can also `,
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('config:shortcuts'); } }, 'open shortcuts.csv'), ' in a spreadsheet, save it, and ',
+        el('a', { href: '#', onclick: async (e) => { e.preventDefault(); this.scDraft = null; await api('/api/config/reload', {}); toast('Shortcuts reloaded'); } }, 'reload'), '.')));
+  }
+
+  async saveShortcuts() {
+    const rows = this.scDraft;
+    if (!rows) { toast('No changes to save.', 'info', 2000); return; }
+    const box = $('#sc-errors');
+    try {
+      await api('/api/config/shortcuts', { rows });
+    } catch (e) {
+      if (box) box.replaceChildren(el('div', { class: 'errbox' }, el('b', {}, 'Not saved:'), el('ul', {}, String(e.message || '').split('\n').map((l) => el('li', {}, l)))));
+      return;
+    }
+    this.scDraft = null;
+    toast('Shortcuts saved');
+  }
+
+  // ---------------------------------------------------------------- Survey → Dropdowns: the drop-down lists
+  dropdownLists() { return [['species', 'Species'], ['event_types', 'Events'], ['behaviors', 'Behaviors'], ['observers', 'Observers']]; }
+
+  renderDropdowns() {
+    const pane = $('#pane-dropdowns');
+    if (!pane) return;
+    const S = this.S, lists = this.dropdownLists();
+    let cur = this.ddTab;
+    if (!cur) { try { cur = localStorage.getItem('wsr.ddtab'); } catch {} }
+    if (!lists.some(([k]) => k === cur)) cur = 'species';
+    this.ddTab = cur;
+    this.ddDrafts ||= {};
+    const locked = !!S.survey?.active;
+    const labels = S.config.list_labels[cur] || {};
+    const fileCols = S.config.list_columns[cur] || ['name'];
+    const cols = [...Object.keys(labels).filter((c) => fileCols.includes(c)), ...fileCols.filter((c) => !(c in labels))];
+    const saved = (S.config.lists[cur] || []).map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? ''])));
+    const rows = this.ddDrafts[cur] || saved;
+    const dirty = !!this.ddDrafts[cur] && JSON.stringify(this.ddDrafts[cur]) !== JSON.stringify(saved);
+    const edit = () => { if (!this.ddDrafts[cur]) this.ddDrafts[cur] = rows.map((r) => ({ ...r })); return this.ddDrafts[cur]; };
+    const markDirty = () => { const b = $('#btn-dd-save'); if (b) { b.classList.add('dirty'); b.textContent = 'Save — unsaved changes'; } };
+    const uniq = cols.filter((c) => c === 'name' || /_code$/.test(c));
+    const counts = Object.fromEntries(uniq.map((c) => [c, {}]));
+    rows.forEach((r) => uniq.forEach((c) => { const v = (r[c] || '').trim().toLowerCase(); if (v) counts[c][v] = (counts[c][v] || 0) + 1; }));
+    const okColor = (v) => !v || (typeof CSS !== 'undefined' && CSS.supports ? CSS.supports('color', v) : true);
+    const toHex = (v) => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = '#000'; c.fillStyle = v || '#000'; return c.fillStyle.startsWith('#') ? c.fillStyle : '#000000'; };
+    const cell = (r, i, c) => {
+      if (c === 'color') {
+        const sw = el('span', { class: 'swatch', style: { background: okColor(r.color) ? r.color || 'transparent' : 'transparent' } });
+        const txt = el('input', { type: 'text', value: r.color, disabled: locked, class: okColor(r.color) ? null : 'invalid', size: 12,
+          oninput: (e) => { edit()[i].color = e.target.value.trim(); const ok = okColor(e.target.value.trim()); e.target.classList.toggle('invalid', !ok); sw.style.background = ok ? e.target.value : 'transparent'; markDirty(); } });
+        const pick = el('input', { type: 'color', value: toHex(r.color), disabled: locked, title: 'Pick a colour',
+          oninput: (e) => { edit()[i].color = e.target.value; txt.value = e.target.value; txt.classList.remove('invalid'); sw.style.background = e.target.value; markDirty(); } });
+        return el('td', { class: 'color-cell' }, sw, txt, pick);
+      }
+      const v = r[c] ?? '';
+      const dup = uniq.includes(c) && v.trim() && counts[c][v.trim().toLowerCase()] > 1;
+      return el('td', {}, el('input', { type: 'text', value: v, disabled: locked, class: dup || (c === 'name' && !v.trim() && Object.values(r).some((x) => x)) ? 'invalid' : null,
+        size: c === 'name' || c === 'full_name' ? 26 : 10, 'data-col': c,
+        title: dup ? 'Used more than once' : '',
+        oninput: (e) => { edit()[i][c] = e.target.value; markDirty(); } }));
+    };
+    const body = rows.map((r, i) => el('tr', {}, ...cols.map((c) => cell(r, i, c)),
+      el('td', { class: 'rowbtns' },
+        el('button', { title: 'Move up', disabled: locked || i === 0, onclick: () => { const d = edit(); [d[i - 1], d[i]] = [d[i], d[i - 1]]; this.renderDropdowns(); } }, '↑'),
+        el('button', { title: 'Move down', disabled: locked || i === rows.length - 1, onclick: () => { const d = edit(); [d[i + 1], d[i]] = [d[i], d[i + 1]]; this.renderDropdowns(); } }, '↓'),
+        el('button', { title: 'Delete', class: 'danger-outline', disabled: locked, onclick: () => { edit().splice(i, 1); this.renderDropdowns(); } }, '✕'))));
+    const pills = el('div', { class: 'report-tabs', id: 'dd-tabs' }, lists.map(([k, l]) => el('button', {
+      class: `report-tab${k === cur ? ' active' : ''}${this.ddDrafts[k] ? ' has-draft' : ''}`, 'data-list': k,
+      onclick: () => { this.ddTab = k; try { localStorage.setItem('wsr.ddtab', k); } catch {} this.renderDropdowns(); } },
+    l, el('span', { class: 'count' }, String((this.ddDrafts[k] || S.config.lists[k] || []).length)))));
+    const what = { species: 'The Species drop-down in Sightings. The code labels sightings on the map and is used by reports; the colour is the marker colour when “colour by species” is on.',
+      event_types: 'The Event drop-down in Events. The code labels events on the map and is used by reports.',
+      behaviors: 'The Behaviors drop-down in Sightings (several can be chosen).',
+      observers: 'The observer drop-downs (Obs in Sightings; Port, Recorder and Stbd in Effort). The initials are what’s recorded; NA means nobody in that position.' }[cur];
+    pane.replaceChildren(pills, el('section', { class: `settings-sec dd-sec${locked ? ' dd-locked' : ''}` },
+      locked ? el('p', { class: 'warnbox', id: 'dd-locked' }, el('b', {}, 'A survey is under way, so the drop-down lists can’t be changed. '),
+        'End the survey (Survey → File) to edit them.') : null,
+      el('p', {}, what),
+      el('table', { class: 'summary edit-table dd-edit', 'data-list': cur },
+        el('thead', {}, el('tr', {}, ...cols.map((c) => el('th', {}, labels[c] || c)), el('th', {}, ''))),
+        el('tbody', {}, body)),
+      el('div', { class: 'btnrow' },
+        el('button', { disabled: locked, onclick: () => { edit().push(Object.fromEntries(cols.map((c) => [c, '']))); this.renderDropdowns();
+          const ins = $$('#pane-dropdowns tbody tr:last-child input[type=text]'); ins[0]?.focus(); } }, 'Add entry'),
+        el('button', { disabled: locked, onclick: () => { edit().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })); this.renderDropdowns(); } }, 'Sort A–Z')),
+      el('div', { id: 'dd-errors' }),
+      el('div', { class: 'btnrow' },
+        el('button', { id: 'btn-dd-save', class: `primary${dirty ? ' dirty' : ''}`, disabled: locked, onclick: () => this.saveDropdown(cur) }, dirty ? 'Save — unsaved changes' : 'Save'),
+        el('button', { disabled: locked || !this.ddDrafts[cur], onclick: () => { delete this.ddDrafts[cur]; this.renderDropdowns(); } }, 'Revert')),
+      el('p', { class: 'hint' }, 'The order here is the order in the drop-down. Renaming or removing an entry doesn’t change rows already recorded; Quality Control flags values that are no longer in the list. For many changes at once you can also ',
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open(`config:${cur}`); } }, `open ${cur}.csv`), ' in a spreadsheet, save it, and ',
+        el('a', { href: '#', onclick: async (e) => { e.preventDefault(); delete this.ddDrafts[cur]; await api('/api/config/reload', {}); toast('Lists reloaded'); } }, 'reload'), '.')));
+  }
+
+  async saveDropdown(list) {
+    const rows = this.ddDrafts?.[list];
+    if (!rows) { toast('No changes to save.', 'info', 2000); return; }
+    const box = $('#dd-errors');
+    try {
+      await api('/api/config/list', { list, rows });
+    } catch (e) {
+      if (box) box.replaceChildren(el('div', { class: 'errbox' }, el('b', {}, 'Not saved:'), el('ul', {}, String(e.message || '').split('\n').map((l) => el('li', {}, l)))));
+      return;
+    }
+    delete this.ddDrafts[list];
+    toast(`${Object.fromEntries(this.dropdownLists())[list]} list saved`);
   }
 
   // Settings → Clock choices: the computer's zone, the platform's position, UTC, and every UTC offset

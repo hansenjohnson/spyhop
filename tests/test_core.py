@@ -278,9 +278,12 @@ def test_clear_survey(rec):
 
 
 def test_config_files_created(tmp_path):
-    Recorder(tmp_path)
-    for n in ("species", "event_types", "observers", "behaviors", "shortcuts", "display", "tile_sources"):
+    rec = Recorder(tmp_path)
+    for n in ("species", "event_types", "observers", "behaviors", "shortcuts", "display"):
         assert (tmp_path / f"{n}.csv").exists()
+    # the online map layers come from the code, not a file (0.12.0)
+    assert not (tmp_path / "tile_sources.csv").exists()
+    assert [s["name"] for s in rec.cfg.tile_sources][:2] == ["OpenStreetMap", "Esri Ocean"]
 
 
 def test_source_priority():
@@ -1254,3 +1257,206 @@ def test_summary_pdf_uses_printed_page(tmp_path, monkeypatch):
     printed.clear()
     rec.export(["html"], html, ["pdf"])          # an older window that sends no printed page
     assert printed == [(html, 6000)]
+
+
+def _pack_zip(files: dict, top: str = "") -> bytes:
+    import io as _io, zipfile as _zf
+    buf = _io.BytesIO()
+    with _zf.ZipFile(buf, "w") as z:
+        for n, text in files.items():
+            z.writestr(top + n, text)
+    return buf.getvalue()
+
+
+def _serve(routes: dict):
+    """A local web server: {path: (status, content-type, bytes)}. Returns (base url, stop)."""
+    import http.server, threading as _th
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            st, ct, body = routes.get(self.path.split("?")[0], (404, "text/plain", b"nope"))
+            self.send_response(st)
+            self.send_header("Content-Type", ct)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    _th.Thread(target=srv.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{srv.server_port}", srv.shutdown
+
+
+def test_config_pack_resolve():
+    from spyhop.configpack import resolve, PackError
+    assert resolve("https://github.com/team/spyhop-config") == ("url", "https://api.github.com/repos/team/spyhop-config/zipball")
+    assert resolve("https://github.com/team/cfg/tree/main/aerial/pack") == \
+        ("url", "https://api.github.com/repos/team/cfg/zipball/main#aerial/pack")
+    k, u = resolve("https://www.dropbox.com/scl/fo/abc/xyz?rlkey=k&dl=0")
+    assert "dl=1" in u and "rlkey=k" in u
+    assert resolve("https://drive.google.com/file/d/FILEID/view?usp=sharing") == \
+        ("url", "https://drive.google.com/uc?export=download&id=FILEID")
+    with pytest.raises(PackError):
+        resolve("https://drive.google.com/drive/folders/abc")
+    with pytest.raises(PackError):
+        resolve("")
+    with pytest.raises(PackError):
+        resolve("not a link")
+
+
+def test_config_pack_check_pull_backup(tmp_path):
+    import json as _json, zipfile as _zf
+    from spyhop import configpack
+    from spyhop.config import Config
+    cfg = Config(tmp_path / "app")
+    (cfg.root / "reports").mkdir(exist_ok=True)
+    (cfg.root / "reports" / "mine.json").write_text(_json.dumps(
+        {"id": "mine", "title": "Mine", "table": "events", "columns": [{"label": "Time", "value": "time"}]}))
+    species = "name,color,species_code\r\nNorth Atlantic right whale,red,RIWH\r\nHumpback whale,orange,HUWH\r\nSpyhop test whale,pink,SPTW\r\n"
+    observers = "name,full_name\r\nHJ,Hansen Johnson\r\n"
+    gear = _json.dumps({"id": "gear", "title": "Gear (team)", "table": "events",
+                        "where": [{"event_code": ["GRPT"]}], "columns": [{"label": "Time", "value": "time"}]})
+    manifest = "Date,Changed by,Files,Notes\r\n2026-10-01,HJ,all,First version\r\n2026-11-06,HJ,species.csv,Added test whale\r\n"
+    good = _pack_zip({"spyhop-config.csv": manifest, "species.csv": species, "observers.csv": observers,
+                      "reports/gear.json": gear, "notes.txt": "hello"}, top="team-cfg-abc123/")
+    bad = _pack_zip({"species.csv": "colour\r\nred\r\n", "reports/x.json": "{nope"})
+    base, stop = _serve({"/good.zip": (200, "application/zip", good), "/bad.zip": (200, "application/zip", bad),
+                         "/page": (200, "text/html", b"<!DOCTYPE html><html>sign in</html>"),
+                         "/private": (403, "text/plain", b"no")})
+    try:
+        files, src = configpack.fetch(base + "/good.zip")
+        pack = configpack.read_pack(files)
+        assert not pack["problems"] and pack["ignored"] == ["notes.txt"]
+        assert [m["notes"] for m in pack["manifest"]] == ["Added test whale", "First version"]   # newest first
+        plan = {r["file"]: r for r in configpack.compare(cfg, pack)}
+        assert plan["species.csv"]["status"] == "changed" and plan["species.csv"]["pack"] == 3
+        assert plan["observers.csv"]["status"] == "changed"
+        assert plan["reports/gear.json"]["status"] == "new" and plan["reports/mine.json"]["status"] == "removed"
+
+        backup = configpack.save_backup(cfg, tmp_path / "bk")
+        with _zf.ZipFile(backup) as z:
+            names = set(z.namelist())
+            old_species = z.read("species.csv").decode()
+            assert "Backup" in z.read("spyhop-config.csv").decode("utf-8-sig")
+        assert {"species.csv", "shortcuts.csv", "reports/mine.json", "spyhop-config.csv"} <= names
+
+        changed = configpack.apply(cfg, pack)
+        assert "species.csv" in changed and "reports/mine.json" in changed
+        assert [s["name"] for s in cfg.lists["species"]] == ["North Atlantic right whale", "Humpback whale", "Spyhop test whale"]
+        assert not (cfg.root / "reports" / "mine.json").exists() and (cfg.root / "reports" / "gear.json").exists()
+        assert (cfg.root / "spyhop-config.csv").read_bytes().decode() == manifest
+        assert cfg.shortcuts                                    # files not in the pack are untouched
+        assert all(r["status"] == "same" for r in configpack.compare(cfg, configpack.read_pack(files)))
+
+        # a backup made with no templates removes templates added since
+        cfg2 = Config(tmp_path / "app2")
+        assert configpack.read_pack(configpack._unzip(configpack.make_zip(cfg2, "pack"), ""))["reports"] is None
+        empty = configpack.read_pack(configpack._unzip(configpack.make_zip(cfg2, "none", backup=True), ""))
+        assert empty["reports"] == {}
+        configpack.apply(cfg2, pack)
+        assert (cfg2.root / "reports" / "gear.json").exists()
+        configpack.apply(cfg2, empty)
+        assert not (cfg2.root / "reports" / "gear.json").exists()
+
+        # the backup is itself a pack: pulling it puts things back
+        restore = configpack.read_pack(configpack.fetch(str(backup))[0])
+        configpack.apply(cfg, restore)
+        assert (cfg.root / "species.csv").read_text(encoding="utf-8-sig").replace("\r\n", "\n") == old_species.replace("\r\n", "\n").lstrip("﻿")
+        assert (cfg.root / "reports" / "mine.json").exists() and not (cfg.root / "reports" / "gear.json").exists()
+
+        badpack = configpack.read_pack(configpack.fetch(base + "/bad.zip")[0])
+        assert any("species.csv needs the column name" in p for p in badpack["problems"])
+        assert any("x.json isn't valid JSON" in p for p in badpack["problems"])
+        before = (cfg.root / "species.csv").read_text()
+        with pytest.raises(configpack.PackError):
+            configpack.apply(cfg, badpack)
+        assert (cfg.root / "species.csv").read_text() == before          # nothing changed
+
+        for path, words in (("/page", "web page"), ("/private", "refused"), ("/missing.zip", "404")):
+            with pytest.raises(configpack.PackError, match=words):
+                configpack.fetch(base + path)
+        with pytest.raises(configpack.PackError, match="doesn't look like"):
+            configpack.read_pack({"readme.txt": b"hi"})
+
+        # a pack made on this computer, as a folder on disk (e.g. a USB stick), with an Excel-saved CSV
+        d = tmp_path / "usb"
+        (d / "reports").mkdir(parents=True)
+        (d / "observers.csv").write_bytes("name,full_name\r\nJM,José Martínez\r\n".encode("cp1252"))
+        p2 = configpack.read_pack(configpack.fetch(str(d))[0])
+        assert not p2["problems"] and "José" in p2["csv"]["observers.csv"] and p2["reports"] is None   # an empty reports folder leaves templates alone
+        assert configpack.compare(cfg, p2)[0]["file"] == "observers.csv"
+        z = configpack.make_zip(cfg, "made here")
+        assert "made here" in configpack.read_pack(configpack._unzip(z, ""))["manifest"][0]["notes"]
+    finally:
+        stop()
+
+
+def test_tile_sources_from_code_keep_extras(tmp_path):
+    from spyhop.config import Config
+    (tmp_path / "tile_sources.csv").write_text(
+        "name,url,attribution,overlay,max_zoom\nEsri Ocean,https://old.example/{z}/{x}/{y},,0,10\n"
+        "Team charts,https://charts.example/{z}/{x}/{y}.png,Team,0,14\n")
+    cfg = Config(tmp_path)
+    names = [s["name"] for s in cfg.tile_sources]
+    assert names.count("Esri Ocean") == 1 and names[-1] == "Team charts"
+    assert "old.example" not in next(s for s in cfg.tile_sources if s["name"] == "Esri Ocean")["url"]
+
+
+def test_save_lists_and_shortcuts(tmp_path):
+    from spyhop.config import Config, clean_combo
+    cfg = Config(tmp_path)
+    rows = [{"name": "Fin whale", "color": "royalblue", "species_code": "FIWH"},
+            {"name": "", "color": "", "species_code": ""},                       # blank: dropped
+            {"name": "Sei whale", "color": "#00aa88", "species_code": "SEWH", "extra": "x"}]
+    cfg.save_list("species", rows)
+    assert [s["name"] for s in cfg.lists["species"]] == ["Fin whale", "Sei whale"]
+    for bad, words in (([{"name": "A", "species_code": "X"}, {"name": "a", "species_code": "Y"}], "already used"),
+                       ([{"name": "A", "species_code": "X"}, {"name": "B", "species_code": "x"}], "Code “x” is already used"),
+                       ([{"name": "A", "color": "not a colour!"}], "isn't a colour"),
+                       ([{"name": "", "species_code": "X"}], "Name is empty"),
+                       ([], "can't be empty")):
+        with pytest.raises(ValueError, match=words):
+            cfg.save_list("species", bad)
+    assert [s["name"] for s in cfg.lists["species"]] == ["Fin whale", "Sei whale"]   # unchanged
+    cfg.save_list("observers", [{"name": "HJ", "full_name": "Hansen Johnson"}, {"name": "NA", "full_name": "None"}])
+    assert cfg.lists["observers"][0]["full_name"] == "Hansen Johnson"
+    with pytest.raises(ValueError):
+        cfg.save_list("nonsense", [{"name": "A"}])
+
+    assert clean_combo("shift+mod+r") == "Mod+Shift+R" and clean_combo("alt+ArrowLeft") == "Alt+ArrowLeft"
+    assert clean_combo("f2") == "F2" and clean_combo("Ctrl+Shift++") == "Mod+Shift++"
+    for bad in ("R", "Shift+R", "Hyper+R", ""):
+        with pytest.raises(ValueError):
+            clean_combo(bad)
+    tabs = {"sightings": {"Species", "Obs"}, "effort": set(), "events": {"EventType"}, "marks": set()}
+    cfg.save_shortcuts([{"combo": "shift+mod+b", "action": "add:sightings", "prefill": "Species=Fin whale;Obs=HJ"},
+                        {"combo": "Mod+1", "action": "tab:sightings"}, {"combo": "", "action": "", "prefill": ""}], tabs)
+    assert cfg.shortcuts == [{"combo": "Mod+Shift+B", "action": "add:sightings", "prefill": "Species=Fin whale;Obs=HJ"},
+                             {"combo": "Mod+1", "action": "tab:sightings", "prefill": ""}]
+    for bad, words in (([{"combo": "Mod+1", "action": "undo"}, {"combo": "mod+1", "action": "redo"}], "already used"),
+                       ([{"combo": "Mod+1", "action": "fly"}], "isn't an action"),
+                       ([{"combo": "Mod+1", "action": "add:surfacings"}], "no surfacings table"),
+                       ([{"combo": "Mod+1", "action": "add:sightings", "prefill": "Colour=red"}], "no column “Colour”"),
+                       ([{"combo": "Mod+1", "action": "undo", "prefill": "Species=X"}], "only shortcuts that add"),
+                       ([{"combo": "Q", "action": "undo"}], "needs Mod or Alt")):
+        with pytest.raises(ValueError, match=words):
+            cfg.save_shortcuts(bad, tabs)
+    assert len(cfg.shortcuts) == 2
+
+
+def test_lists_locked_during_survey(tmp_path):
+    import asyncio
+    from spyhop.server import App
+    app = App(tmp_path)
+    app.rec.start_survey("Locked")
+
+    class Req:
+        def __init__(self, body): self.body = body
+        async def json(self): return self.body
+    with pytest.raises(ValueErrorMsg, match="survey is under way"):
+        asyncio.run(app.save_list(Req({"list": "species", "rows": [{"name": "X"}]})))
+    asyncio.run(app.save_shortcuts(Req({"rows": [{"combo": "Mod+1", "action": "undo"}]})))   # shortcuts aren't locked
+    assert app.rec.cfg.shortcuts[0]["action"] == "undo"
+    app.rec.end_survey()
+    asyncio.run(app.save_list(Req({"list": "species", "rows": [{"name": "X"}]})))
+    assert [s["name"] for s in app.rec.cfg.lists["species"]] == ["X"]

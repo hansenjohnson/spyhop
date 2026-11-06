@@ -176,7 +176,7 @@ The tables work like a spreadsheet:
   - Start and End count as off effort in the summary and on the track.
 - Every edit is saved to disk immediately. Undo/redo is unlimited per tab.
 
-### Keyboard shortcuts (listed in Survey → Shortcuts; edit them in `shortcuts.csv`)
+### Keyboard shortcuts (Survey → Shortcuts)
 
 | Keys (Cmd on Mac) | Action |
 |---|---|
@@ -190,7 +190,22 @@ The tables work like a spreadsheet:
 | Ctrl+Shift+C | Centre on the vessel |
 | Ctrl+Shift+M | Minimize / restore the data tables |
 
-A shortcut can pre-fill fields: `Mod+Shift+B,add:sightings,Species=Fin whale;Observer=OBS1`.
+**Changing them:** in **Survey → Shortcuts**, click a shortcut's keys and press the new ones, choose what it does from the list, and press **Save**.
+- Shortcuts that add a row can pre-fill columns, e.g. `Species=Fin whale;Obs=OBS1`.
+- Keys need Mod (Ctrl, or ⌘ on a Mac) or Alt, so they don't get in the way of typing; F1–F12 work alone.
+- Keys used twice are flagged, and combinations that the browser or the computer may take (e.g. Ctrl+W) are marked.
+- **Restore the default shortcuts** puts the original set back (press Save to keep it), and **Revert** discards unsaved changes.
+- For many changes at once you can still edit `shortcuts.csv` in a spreadsheet and reload it.
+
+### Drop-down lists (Survey → Dropdowns)
+
+The **Species**, **Events**, **Behaviors** and **Observers** tabs edit the drop-down lists.
+- Each entry has a name (initials, for observers), a code, and for species and events a colour, typed as a name like `red` or picked.
+- **↑ ↓** set the order of the drop-down, **✕** removes an entry, **Add entry** and **Sort A–Z** do what they say, and **Save** keeps the changes.
+- Names and codes must be unique. Spyhop shows what's wrong and saves nothing until it's fixed.
+- Renaming or removing an entry doesn't change rows already recorded; Quality Control flags values that are no longer in the list.
+- **While a survey is under way the lists are greyed out and can't be changed**, so they stay the same for the whole survey. End the survey to edit them. (Pulling a group config pack during a survey is still possible, after a warning.)
+- For many changes at once, the files (`species.csv` and so on) can still be edited in a spreadsheet and reloaded.
 
 ## Reports (Survey → Reports)
 
@@ -214,7 +229,7 @@ A shortcut can pre-fill fields: `Mod+Shift+B,add:sightings,Species=Fin whale;Obs
 - **Bundled coastline:** a world coastline from Natural Earth (1:10 m scale) always draws under the map, so you have a coastline even with no internet. Only the part in view is drawn, simplified to the zoom, so it stays quick. It is coarse, so don't navigate by it.
 - **Tile cache:** online layers (Esri Ocean, NOAA charts, OpenSeaMap seamarks, etc.) are saved to disk as you view them. In port, use **Settings → Map → Download visible area** to fetch a survey area ahead of time. OpenStreetMap's tile policy forbids bulk downloading, so that layer can't be pre-fetched.
 - **MBTiles:** put `.mbtiles` files in the `charts` folder and restart. Free, weekly-updated **NOAA nautical charts** for US waters are available at <https://distribution.charts.noaa.gov/ncds/>: click a region and download the MBTiles file.
-- Map layers are listed in `tile_sources.csv`. Add any XYZ tile server, or an ArcGIS `export` URL using `{bbox}`.
+- The online map layers are built into Spyhop, so fixes arrive with updates. To add one of your own (any XYZ tile server, or an ArcGIS `export` URL using `{bbox}`), create `tile_sources.csv` in the Spyhop folder with the columns `name,url,attribution,overlay,max_zoom`: its layers are added after the built-in ones.
 
 The online layers could not be tested from the machine this was built on, which had no internet. Check them once on a connected laptop before you sail.
 
@@ -253,15 +268,21 @@ Spyhop's own folder holds your lists and settings:
 
 If you used Spyhop under its earlier name (Whale Survey Recorder), the old `WhaleSurveyRecorder` folder is moved to `Spyhop` the first time Spyhop starts, so your surveys and config files carry over.
 
-The **survey data folder** holds the survey files, waypoints and exports. It's `data/` inside Spyhop's folder unless you choose another one under **Survey → File → Data folder** (**Choose folder…** opens your computer's folder chooser, or type/paste a path). It's remembered between sessions. If it isn't found at start-up (e.g. an unplugged drive), Spyhop uses the default for that session and tells you. Switching folders closes the open survey first.
+Both folders are shown in **Survey → File → Folders**, each with an **Open folder** link.
+
+**Group config:** a team can share its config files and report templates as a **config pack** on the web. Each computer then pulls the pack from **Survey → Settings → Group config**: paste the address, press **Check for new config** to see what would change, then **Pull and overwrite**. Pulling replaces this computer's copies of the files in the pack, with no merging, and can save a backup zip first; a backup can be pulled again to undo. Pulling during a survey is allowed after a warning. See [CONFIG_PACKS.md](CONFIG_PACKS.md) for making and hosting a pack.
+
+The **survey data folder** holds the survey files, waypoints and exports. It's `data/` inside Spyhop's folder unless you choose another one under **Survey → File → Folders** (**Choose folder…** opens your computer's folder chooser, or type/paste a path). It's remembered between sessions. If it isn't found at start-up (e.g. an unplugged drive), Spyhop uses the default for that session and tells you. Switching folders closes the open survey first.
 
 ```
 Spyhop/                                   (Spyhop's own folder)
   species.csv  event_types.csv  observers.csv  behaviors.csv   <- your lists (name, colour, code)
-  shortcuts.csv  display.csv  tile_sources.csv
+  shortcuts.csv  display.csv
   settings/  settings.json  current_survey.txt
   charts/    *.mbtiles      overlays/  imported GeoJSON/GPX/KML
   reports/   your own report definitions (*.json), with a README and examples/
+  spyhop-config.csv   the record of changes of the last group config pack pulled
+  config_backups/     backups saved before pulling a group config pack (the default place)
   logs/      diagnostic logs (spyhop.log, crash.log, diagnostics zips)
   data/                                   (default survey data folder — or the one you chose)
     <survey name>_sightings.csv   _effort.csv   _events.csv   _track.csv   _metadata.csv   _instruments.csv
