@@ -7,7 +7,7 @@ A pack is a zip (or a folder) holding any of the files in PACK_CSV, report templ
     2026-11-06,Hansen Johnson,species.csv,Added Dead bird
 
 A team puts the pack on the web (a GitHub repository, a Dropbox or Google Drive link, any
-website). Each computer checks the address in Settings → Group config, sees what would
+website). Each computer checks the address in Survey → File → Group config, sees what would
 change, and pulls it. Pulling replaces this computer's copy of each file the pack has; it
 never merges. Report templates are replaced as a set when the pack has any. A backup zip of
 the current files (itself a valid pack) can be saved first.
@@ -18,6 +18,7 @@ like any other, and files Spyhop doesn't know are listed and left alone.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import os
@@ -79,6 +80,9 @@ def resolve(address: str) -> tuple[str, str]:
         owner, repo = parts[0], parts[1].removesuffix(".git")
         if len(parts) == 2:
             return "url", f"https://api.github.com/repos/{owner}/{repo}/zipball"
+        if len(parts) >= 5 and parts[2] in ("blob", "raw") and parts[-1].lower().endswith(".zip"):
+            # a zip committed to the repository: its raw download, not a zip of the repository
+            return "url", f"https://raw.githubusercontent.com/{owner}/{repo}/{'/'.join(parts[3:])}"
         if len(parts) >= 4 and parts[2] in ("tree", "blob"):
             sub = "/".join(parts[4:])
             return "url", f"https://api.github.com/repos/{owner}/{repo}/zipball/{parts[3]}" + (f"#{sub}" if sub else "")
@@ -312,7 +316,53 @@ def config_files(cfg) -> dict[str, Path]:
     return out
 
 
-def make_zip(cfg, note: str, backup: bool = False) -> bytes:
+def safe_pack_name(name) -> str:
+    """A file name for a pack zip, or "" for none."""
+    n = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(name or "").strip()).strip(" .")
+    if not n:
+        return ""
+    return n if n.lower().endswith(".zip") else n + ".zip"
+
+
+def fingerprints(cfg) -> dict[str, str]:
+    """A hash of each config file a pack can hold (not the change log), to tell later which changed."""
+    out = {}
+    for name, p in config_files(cfg).items():
+        if name == MANIFEST:
+            continue
+        text = _local_text(p)
+        if text is None:
+            continue
+        body = json.dumps(_norm(text)) if name.endswith(".csv") else text.strip()
+        out[name] = hashlib.sha1(body.encode("utf-8")).hexdigest()
+    return out
+
+
+def changed_since(cfg, before: dict | None) -> list[str] | None:
+    """The config files added, changed or removed since `before` (fingerprints), or None if unknown."""
+    if not before:
+        return None
+    now = fingerprints(cfg)
+    names = sorted(set(now) | set(before))
+    return [n for n in names if now.get(n) != before.get(n)]
+
+
+def log_change(cfg, by: str, files: str, notes: str) -> list[str]:
+    """Add a row to this computer's spyhop-config.csv (created if needed). Returns the row."""
+    p = cfg.root / MANIFEST
+    text = _local_text(p) if p.is_file() else None
+    rows = _csv_rows(text) if text else []
+    if not rows:
+        rows = [MANIFEST_HEADER]
+    row = [date.today().isoformat(), by.strip(), files.strip(), notes.strip()]
+    rows.append(row)
+    out = io.StringIO()
+    csv.writer(out, lineterminator="\r\n").writerows(rows)
+    _write(p, "\ufeff" + out.getvalue())
+    return row
+
+
+def make_zip(cfg, note: str = "", backup: bool = False) -> bytes:
     """A zip of this computer's config files: a backup, and a pack another computer can pull.
     A backup also records "no report templates" when there were none, so pulling it undoes exactly."""
     buf = io.BytesIO()
@@ -322,7 +372,8 @@ def make_zip(cfg, note: str, backup: bool = False) -> bytes:
     rows = _csv_rows(text) if text else []
     if not rows:
         rows = [MANIFEST_HEADER]
-    rows.append([date.today().isoformat(), "", "", note])
+    if note:                                   # a backup notes itself in its own copy of the log
+        rows.append([date.today().isoformat(), "", "", note])
     out = io.StringIO()
     csv.writer(out, lineterminator="\r\n").writerows(rows)
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:

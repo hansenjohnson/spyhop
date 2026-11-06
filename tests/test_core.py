@@ -1292,6 +1292,15 @@ def test_config_pack_resolve():
     assert resolve("https://github.com/team/spyhop-config") == ("url", "https://api.github.com/repos/team/spyhop-config/zipball")
     assert resolve("https://github.com/team/cfg/tree/main/aerial/pack") == \
         ("url", "https://api.github.com/repos/team/cfg/zipball/main#aerial/pack")
+    # a zip committed to a repository, by its page or raw link, or a release download: the zip itself
+    assert resolve("https://github.com/team/spyhop/blob/main/configs/neaq-aerial.zip") == \
+        ("url", "https://raw.githubusercontent.com/team/spyhop/main/configs/neaq-aerial.zip")
+    assert resolve("https://github.com/team/spyhop/raw/v0.12.0/configs/neaq.zip")[1] == \
+        "https://raw.githubusercontent.com/team/spyhop/v0.12.0/configs/neaq.zip"
+    raw = "https://raw.githubusercontent.com/team/spyhop/main/configs/neaq.zip"
+    assert resolve(raw) == ("url", raw)
+    rel = "https://github.com/team/spyhop/releases/download/v0.12.0/neaq-config.zip"
+    assert resolve(rel) == ("url", rel)
     k, u = resolve("https://www.dropbox.com/scl/fo/abc/xyz?rlkey=k&dl=0")
     assert "dl=1" in u and "rlkey=k" in u
     assert resolve("https://drive.google.com/file/d/FILEID/view?usp=sharing") == \
@@ -1460,3 +1469,40 @@ def test_lists_locked_during_survey(tmp_path):
     app.rec.end_survey()
     asyncio.run(app.save_list(Req({"list": "species", "rows": [{"name": "X"}]})))
     assert [s["name"] for s in app.rec.cfg.lists["species"]] == ["X"]
+
+
+def test_make_pack_logs_the_change(tmp_path):
+    import asyncio, zipfile as _zf
+    from spyhop import configpack
+    from spyhop.server import App
+    app = App(tmp_path)
+    cfg = app.rec.cfg
+
+    class Req:
+        def __init__(self, body): self.body = body
+        can_read_body = True
+        async def json(self): return self.body
+        match_info = {}
+    run = lambda coro: json.loads(asyncio.run(coro).text)          # noqa: E731
+    assert run(app.groupconfig_changes(Req({})))["files"] is None    # nothing to compare with yet
+    with pytest.raises(ValueErrorMsg, match="your name"):
+        asyncio.run(app.groupconfig_pack(Req({"by": "", "notes": "x"})))
+    r = run(app.groupconfig_pack(Req({"by": "H. Johnson", "notes": "First version", "name": "2026-NEA-CCB-spyhop_config"})))
+    assert r["name"] == "2026-NEA-CCB-spyhop_config.zip"
+    with _zf.ZipFile(cfg.export_dir / r["name"]) as z:
+        log = configpack.read_manifest(z.read("spyhop-config.csv").decode("utf-8-sig"))
+    assert log[0]["by"] == "H. Johnson" and log[0]["notes"] == "First version" and log[0]["files"] == "all"
+    # the local record of changes has the row too, and the next pack lists only what changed
+    assert configpack.read_manifest((cfg.root / "spyhop-config.csv").read_text(encoding="utf-8-sig"))[0]["notes"] == "First version"
+    ch = run(app.groupconfig_changes(Req({})))
+    assert ch["files"] == [] and ch["since"] == "pack" and ch["by"] == "H. Johnson"
+    assert ch["name"] == "2026-NEA-CCB-spyhop_config.zip"
+    cfg.save_list("observers", [{"name": "JM", "full_name": "J. M."}])
+    assert run(app.groupconfig_changes(Req({})))["files"] == ["observers.csv"]
+    run(app.groupconfig_pack(Req({"by": "H. Johnson", "notes": "New observer JM", "files": "observers.csv",
+                                  "name": "2026-NEA-CCB-spyhop_config.zip"})))
+    with _zf.ZipFile(cfg.export_dir / "2026-NEA-CCB-spyhop_config.zip") as z:
+        log = configpack.read_manifest(z.read("spyhop-config.csv").decode("utf-8-sig"))
+        assert "JM" in z.read("observers.csv").decode()
+    assert [x["notes"] for x in log] == ["New observer JM", "First version"] and log[0]["files"] == "observers.csv"
+    assert configpack.safe_pack_name('a/b:c') == "a_b_c.zip" and configpack.safe_pack_name("  ") == ""

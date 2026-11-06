@@ -30,7 +30,7 @@ From a terminal you can also run `python -m spyhop --sim`, which adds the simula
 
 Edit the drop-down lists in **Survey → Dropdowns** (Species, Events, Behaviors, Observers) and the keyboard shortcuts in **Survey → Shortcuts**, then press **Save**. The lists can't be changed while a survey is under way.
 
-Behind the scenes they are plain CSV files, which you can also edit in Excel, Numbers or a text editor for big changes. Open them from **Survey → Settings → Config files**:
+Behind the scenes they are plain CSV files, which you can also edit in Excel, Numbers or a text editor for big changes. Each editor has an **Open** button for its file and a **Reload from the file** button:
 
 - **species.csv:** species names, map colours and codes (e.g. `RIWH`). The code labels sightings on the map, and the reports use it.
 - **observers.csv:** observer codes and full names. `NA` (None) is a placeholder for an empty watch position, and can fill several positions at once.
@@ -43,7 +43,7 @@ Behind the scenes they are plain CSV files, which you can also edit in Excel, Nu
 
 After editing a file, save it and press **Reload config files**. Keep the header row as it is. Spyhop adds new columns and entries itself when it is updated.
 
-If your team shares its config files, use **Survey → Settings → Group config** instead: paste the address of the team's pack, press **Check for new config** to see what would change, then **Pull**. This overwrites this computer's copies of the pack's files, so keep the backup option ticked. See docs/CONFIG_PACKS.md.
+If your team shares its config files, use **Survey → File → Group config** instead: paste the address of the team's pack, press **Check for new config** to see what would change, then **Pull**. This overwrites this computer's copies of the pack's files, so keep the backup option ticked. See docs/CONFIG_PACKS.md.
 
 ## Plan a route
 

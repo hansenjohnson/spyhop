@@ -100,7 +100,7 @@ Download and unzip the [latest release](https://github.com/hansenjohnson/spyhop/
    - **SIMULATOR** to practise
    
    Press **Apply**. The status bar shows the position once there's a fix.
-2. **Check your lists** (once): **Survey → Settings → Config files** opens species, observers, event types, behaviours and shortcuts in your spreadsheet program. Save, then press **Reload config files**.
+2. **Check your lists** (once): edit species, event types, behaviours and observers in **Survey → Dropdowns**, and the keyboard shortcuts in **Survey → Shortcuts**. If your team shares a config pack, pull it from **Survey → File → Group config** instead.
 3. **Plan the route** (optional): **Survey → Route**, then **Activate route**.
 4. **Start:** in **Survey → File**, press **Start New Survey…**. Enter a name (in your team's own naming convention) and the survey details. Spyhop adds the *Start* row to Effort and starts the trackline.
 5. **Go on effort:** Ctrl+Shift+F (⌘⇧F on a Mac) adds an Effort row that switches effort ON or OFF. Fill in the conditions and the observers.

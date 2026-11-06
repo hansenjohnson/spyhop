@@ -1,6 +1,6 @@
 # Group config packs
 
-A **config pack** lets a team share one set of Spyhop config files: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates. Someone in the team keeps the pack on the web. Each computer pulls the latest pack from **Survey → Settings → Group config** whenever it has an internet connection.
+A **config pack** lets a team share one set of Spyhop config files: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates. Someone in the team keeps the pack on the web. Each computer pulls the latest pack from **Survey → File → Group config** whenever it has an internet connection.
 
 Nothing is downloaded until someone presses **Check for new config**. A pack is small (usually well under 100 KB), so checking at sea costs very little.
 
@@ -40,12 +40,12 @@ A plain CSV that you can edit in Excel, with one row per change:
 
 ## Making a pack
 
-1. On a computer whose config files are set up the way the team wants, open **Survey → Settings → Group config** and press **Make a pack from this computer**. This downloads a zip with all the config files and a starter `spyhop-config.csv`.
-2. Unzip it. Delete any files the team shouldn't share, such as `display.csv`.
-3. Edit the `Notes` in `spyhop-config.csv`, and add your name under `Changed by`.
-4. Zip the folder again, or put the files in a GitHub repository, and publish it as described below.
+1. On a computer whose config files are set up the way the team wants, open **Survey → File → Group config** and press **Make a pack from this computer…**.
+2. Spyhop asks for **your name**, **what changed**, and the pack's **file name**. It fills in **Files changed** itself: the files changed on this computer since the last pull or pack ("all" the first time). It adds these as a row to `spyhop-config.csv` and saves the zip (also in the exports folder). It remembers your name and the file name for next time.
+3. To leave a file out (such as `display.csv`), unzip the pack, delete the file, and zip it again.
+4. Publish it as described below.
 
-To change the pack later, edit the files, add a row to `spyhop-config.csv`, and publish the new version at the same address.
+To change the pack later: pull the current pack, make your changes in Survey → Dropdowns and Shortcuts, then press **Make a pack from this computer…** again and upload the new zip in place of the old one at the same address. In Google Drive, right-click the file → **File information → Manage versions → Upload new version**, so the link stays the same.
 
 Before publishing a change, it's worth checking that it pulls cleanly. Type the path of the zip or folder on your own computer into **Web address of the pack** and press **Check for new config**: Spyhop lists any problems without changing anything.
 
@@ -56,6 +56,7 @@ Use an address that downloads the pack **without signing in**, because Spyhop do
 - **GitHub** (recommended): a public repository holding the files. It keeps a history of every change, and anyone in the team can propose changes.
   - Paste the repository's address (`https://github.com/your-team/spyhop-config`), or a folder in it (`https://github.com/your-team/configs/tree/main/aerial`).
   - Spyhop downloads the latest version of the default branch, or of the branch named in the address.
+- **A zip on GitHub:** commit the pack's zip to a repository (for example `configs/neaq-aerial.zip`) and paste the address of its page on GitHub. Spyhop downloads just that file. You can also attach the zip to a GitHub release and paste its download link. Zip the pack again each time you change it.
 - **Dropbox:** share the zip file (or the pack folder) with "Anyone with the link", and paste that link. Spyhop turns it into a direct download.
 - **Google Drive:** upload the **zip** (Drive can't download a folder from a link), share it with "Anyone with the link", and paste that link.
 - **A website:** any `https://…/something.zip`.
@@ -66,7 +67,7 @@ You can also type the **path of a zip or folder on this computer**, such as a pa
 
 ## Pulling on each computer
 
-1. Open **Survey → Settings → Group config**, paste the address once (Spyhop remembers it), and press **Check for new config**.
+1. Open **Survey → File → Group config**, paste the address once (Spyhop remembers it), and press **Check for new config**.
 2. Spyhop lists every file in the pack and what would happen to it (new, changed, same, or removed), with row counts. It also shows the pack's recent changes and any problems.
 3. Leave **Save a backup of this computer's config files first** ticked. You can choose where the backup goes; by default it's the `config_backups` folder inside the Spyhop folder.
 4. Press **Pull and overwrite**. The new lists, shortcuts and templates are used straight away, with no need to restart.

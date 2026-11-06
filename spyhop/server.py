@@ -661,7 +661,7 @@ class App:
             os.replace(tmp, dest)
         return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}")
 
-    # ---- group config packs (Survey → Settings → Group config; configpack.py)
+    # ---- group config packs (Survey → File → Group config; configpack.py)
     async def groupconfig_check(self, request):
         b = await request.json() if request.can_read_body else {}
         url = str(b.get("url", "")).strip()
@@ -698,9 +698,10 @@ class App:
             saved, changed = await asyncio.get_running_loop().run_in_executor(None, work)
         except configpack.PackError as e:
             raise ValueErrorMsg(str(e))
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         cfg.save_settings({"group_config_last": {
-            "url": url, "pulled": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "latest": pack["manifest"][0] if pack["manifest"] else None, "changed": changed}})
+            "url": url, "pulled": now, "latest": pack["manifest"][0] if pack["manifest"] else None, "changed": changed},
+            "group_config_fingerprints": {"from": "pull", "when": now, "files": configpack.fingerprints(cfg)}})
         log.info("group config pulled from %s: %s", url, ", ".join(changed) or "no changes")
         self._broadcast_soon({"type": "reload"})
         return json_ok(changed=changed, backup=str(saved) if saved else None)
@@ -714,11 +715,31 @@ class App:
             raise ValueErrorMsg(str(e))
         return json_ok(path=str(p), folder=str(p.parent))
 
+    async def groupconfig_changes(self, request):
+        """What "Make a pack" would put in the log's Files column: the files changed since the last pull or pack."""
+        cfg = self.rec.cfg
+        base = cfg.settings.get("group_config_fingerprints") or {}
+        changed = configpack.changed_since(cfg, base.get("files"))
+        return json_ok(files=changed, since=base.get("from"), when=base.get("when"),
+                       by=cfg.settings.get("group_config_author", ""), name=cfg.settings.get("group_config_pack_name", ""))
+
     async def groupconfig_pack(self, request):
-        data = configpack.make_zip(self.rec.cfg, f"Pack made from this computer's config files (Spyhop {__version__})")
-        name = f"spyhop-config-pack-{datetime.now().strftime('%Y%m%d')}.zip"
-        return web.Response(body=data, content_type="application/zip",
-                            headers={"Content-Disposition": f'attachment; filename="{name}"'})
+        b = await request.json() if request.can_read_body else {}
+        by, notes, files = (str(b.get(k, "") or "").strip() for k in ("by", "notes", "files"))
+        if not by or not notes:
+            raise ValueErrorMsg("Give your name and what changed, for the pack's record of changes.")
+        cfg = self.rec.cfg
+        configpack.log_change(cfg, by, files or "all", notes)
+        data = configpack.make_zip(cfg)
+        name = configpack.safe_pack_name(b.get("name")) or f"spyhop-config-pack-{datetime.now().strftime('%Y%m%d')}.zip"
+        cfg.export_dir.mkdir(parents=True, exist_ok=True)
+        p = cfg.export_dir / name
+        p.write_bytes(data)
+        cfg.save_settings({"group_config_author": by, "group_config_pack_name": p.name, "group_config_fingerprints": {
+            "from": "pack", "when": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "files": configpack.fingerprints(cfg)}})
+        log.info("config pack made by %s: %s (%s)", by, notes, files or "all")
+        return json_ok(name=p.name, path=str(p), url=f"/api/download/{quote(p.name)}")
 
     # ---- updates (Survey → About; updater.py)
     async def update_check(self, request):
@@ -826,7 +847,8 @@ class App:
         r.add_post("/api/groupconfig/check", self.groupconfig_check)
         r.add_post("/api/groupconfig/pull", self.groupconfig_pull)
         r.add_post("/api/groupconfig/backup", self.groupconfig_backup)
-        r.add_get("/api/groupconfig/pack", self.groupconfig_pack)
+        r.add_post("/api/groupconfig/pack", self.groupconfig_pack)
+        r.add_get("/api/groupconfig/changes", self.groupconfig_changes)
         r.add_post("/api/open", self.open)
         r.add_get("/api/nmea", self.nmea)
         r.add_post("/api/nmea/sources", self.nmea_sources)

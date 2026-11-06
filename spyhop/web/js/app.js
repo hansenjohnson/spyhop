@@ -450,7 +450,7 @@ class App {
         if (this.S.survey) this.S.survey.tracking = !!m.settings.tracking_enabled;
         this.refreshFormats();
         this.updateStatus();
-        if (this.tab === 'survey') this.renderSurvey();
+        if (this.tab === 'survey' && !document.activeElement?.closest('#pane-survey input[type=text], #pane-survey textarea')) this.renderSurvey();
         if (this.tab === 'settings' && !document.activeElement?.closest('#pane-settings')) this.renderSettings();
         if (this.tab === 'nmea' && !document.activeElement?.closest('#pane-nmea input[type=text], #pane-nmea input[type=number], #pane-nmea select')) this.renderNmea();
         if (this.tab === 'shortcuts') this.renderShortcuts();
@@ -809,8 +809,8 @@ class App {
       el('h4', {}, 'Spyhop folder'),
       el('p', {}, 'Spyhop’s own files are in ', el('span', { class: 'mono' }, S.config.root), '. ',
         el('a', { href: '#', id: 'open-app-folder', onclick: (e) => { e.preventDefault(); this.open('app'); } }, 'Open folder')),
-      el('p', { class: 'hint' }, 'It holds the config files (lists, shortcuts, map display and sources; see Settings → Config files), report templates, settings, offline charts, map overlays and the tile cache, logs, and config backups. Spyhop always uses this folder.'));
-    pane.replaceChildren(...[current, list, folder].filter(Boolean));
+      el('p', { class: 'hint' }, 'It holds the config files (lists and shortcuts, edited in Survey → Dropdowns and Shortcuts; map display), report templates, settings, offline charts, map overlays and the tile cache, logs, and config backups. Spyhop always uses this folder.'));
+    pane.replaceChildren(...[current, list, folder, this.groupConfigSection()].filter(Boolean));
   }
 
   async exportData() {
@@ -1339,7 +1339,7 @@ class App {
     const kids = [
       el('p', {}, 'A team can keep its config files in one place on the web — the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates — and each computer pulls them from there when it has an internet connection. Nothing is downloaded until you press Check.'),
       el('p', { class: 'warnbox' }, el('b', {}, 'Pulling overwrites this computer’s config files. '),
-        'Every file in the pack replaces the one here; nothing is merged, so changes made on this computer to those files are lost (save a backup first to keep them). If the pack has report templates, they replace all of this computer’s templates. Survey data, waypoints and your own settings (data folder, GPS inputs, clock and the rest of this tab) are never changed.'),
+        'Every file in the pack replaces the one here; nothing is merged, so changes made on this computer to those files are lost (save a backup first to keep them). If the pack has report templates, they replace all of this computer’s templates. Survey data, waypoints and your own settings (data folder, GPS inputs, clock and the rest of Survey → Settings) are never changed.'),
       el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Web address of the pack:', urlBox),
         el('button', { id: 'btn-gc-check', onclick: () => this.checkGroupConfig() }, gc.busy === 'check' ? 'Checking…' : 'Check for new config')),
       lastP,
@@ -1348,7 +1348,7 @@ class App {
       kids.push(el('p', { class: 'okbox', id: 'gc-done' }, gc.done.changed.length
         ? `Pulled: ${gc.done.changed.join(', ')}.` : 'Pulled; nothing needed changing.',
         gc.done.backup ? el('span', {}, ' Backup saved as ', el('span', { class: 'mono' }, gc.done.backup), '. ') : ' ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); gc.done = null; this.renderSettings(); } }, 'OK')));
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); gc.done = null; this.renderSurvey(); } }, 'OK')));
     }
     const r = gc.result;
     if (r) {
@@ -1385,7 +1385,7 @@ class App {
               el('button', { onclick: async () => { const p = await this.pickFolder(); if (p) { gc.backupDir = p; dirBox.value = p; } } }, 'Choose…')),
             el('div', { class: 'btnrow' }, el('button', { id: 'btn-gc-pull', class: 'primary', onclick: () => this.pullGroupConfig() },
               gc.busy === 'pull' ? 'Pulling…' : `Pull and overwrite ${todo.length} file${todo.length > 1 ? 's' : ''}`),
-              el('button', { onclick: () => { gc.result = null; this.renderSettings(); } }, 'Cancel')));
+              el('button', { onclick: () => { gc.result = null; this.renderSurvey(); } }, 'Cancel')));
         }
       }
       kids.push(el('div', { id: 'gc-result', class: 'gc-result' }, ...box));
@@ -1394,11 +1394,44 @@ class App {
       el('div', { class: 'btnrow' },
         el('button', { id: 'btn-gc-backup', onclick: () => this.backupGroupConfig() }, 'Save a backup now'),
         el('button', { onclick: () => this.open('backups') }, 'Open the backups folder'),
-        el('a', { class: 'button', href: '/api/groupconfig/pack', download: '', id: 'gc-make' }, 'Make a pack from this computer')),
+        el('button', { id: 'gc-make', onclick: () => this.makeGroupPack() }, 'Make a pack from this computer…')),
       el('details', { class: 'hint' }, el('summary', {}, 'How to set up a pack'),
-        el('p', {}, '“Make a pack from this computer” downloads a zip of this computer’s config files and a spyhop-config.csv. Unzip it, delete any files the team shouldn’t share (e.g. display.csv, so each person keeps their own marker and text sizes), and put it on the web. When you change a file, add a row to spyhop-config.csv saying the date, who, which files and what changed.'),
+        el('p', {}, '“Make a pack from this computer…” asks for your name and what you changed, adds that to the record of changes (spyhop-config.csv), and downloads a zip of this computer’s config files. Upload it in place of the old one, keeping the same link (in Google Drive: Manage versions → Upload new version). To leave a file out of the pack (e.g. display.csv, so each person keeps their own marker and text sizes), unzip it, delete the file and zip it again.'),
         el('p', {}, 'Any address that downloads without signing in works: a public GitHub repository (its address, or a folder in it), a Dropbox shared link, a Google Drive link to the zip (shared with “Anyone with the link”), or a zip on a website. SharePoint and OneDrive links usually need a sign-in, so they don’t work. You can also type the path of a zip or folder on this computer, such as a backup or a pack on a USB stick. See docs/CONFIG_PACKS.md.')));
     return sec('Group config', ...kids);
+  }
+
+  async makeGroupPack() {
+    let info;
+    try { info = await api('/api/groupconfig/changes'); } catch { return; }
+    const since = info.since === 'pull' ? 'the last pull' : info.since === 'pack' ? 'the last pack made here' : null;
+    const filesText = info.files == null ? 'all' : info.files.join('; ');
+    const name = el('input', { type: 'text', id: 'mp-by', value: info.by || '', style: { width: '100%' }, placeholder: 'e.g. H. Johnson' });
+    const notes = el('textarea', { id: 'mp-notes', rows: 3, style: { width: '100%' }, placeholder: 'e.g. Added Dead bird; new observer JM' });
+    const files = el('input', { type: 'text', id: 'mp-files', value: filesText, style: { width: '100%' } });
+    const fname = el('input', { type: 'text', id: 'mp-name', value: info.name || '', style: { width: '100%' },
+      placeholder: `spyhop-config-pack-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.zip` });
+    const body = el('div', { class: 'stack-form' },
+      el('p', {}, 'This adds a row to the pack’s record of changes (spyhop-config.csv), then saves a zip of this computer’s config files for you to upload.'),
+      el('label', { class: 'stack' }, 'Your name', name),
+      el('label', { class: 'stack' }, 'What changed', notes),
+      el('label', { class: 'stack' }, 'Files changed', files,
+        el('span', { class: 'hint' }, since ? (info.files?.length ? `Changed on this computer since ${since}.` : `Nothing has changed on this computer since ${since}.`)
+          : 'Spyhop doesn’t know what changed (no pull or pack yet), so it says all.')),
+      el('label', { class: 'stack' }, 'File name', fname,
+        el('span', { class: 'hint' }, 'Use the same name as the pack you are replacing.')));
+    for (;;) {
+      const ok = await modal({ title: 'Make a config pack', body, buttons: [{ label: 'Cancel', value: false }, { label: 'Make the pack', value: true, primary: true }],
+        onOpen: () => { setTimeout(() => (name.value ? notes : name).focus(), 0); return true; } });
+      if (!ok) return;
+      if (name.value.trim() && notes.value.trim()) break;
+      toast('Please give your name and what changed.', 'warn');
+    }
+    let r;
+    try { r = await api('/api/groupconfig/pack', { by: name.value, notes: notes.value, files: files.value, name: fname.value }); } catch { return; }
+    const a = el('a', { href: r.url, download: r.name });
+    document.body.append(a); a.click(); a.remove();
+    toast(`Pack saved: ${r.name} (also in the exports folder). Upload it in place of the old one.`, 'info', 8000);
   }
 
   async pickFolder() {
@@ -1409,10 +1442,10 @@ class App {
     const gc = (this.gc ||= {});
     const url = ($('#gc-url')?.value ?? gc.url ?? '').trim();
     gc.url = url; gc.result = null; gc.done = null; gc.busy = 'check';
-    this.renderSettings();
+    this.renderSurvey();
     try { gc.result = await api('/api/groupconfig/check', { url }); } catch { /* the error is shown as a toast */ }
     gc.busy = null;
-    this.renderSettings();
+    this.renderSurvey();
     $('#gc-result')?.scrollIntoView({ block: 'nearest' });
   }
 
@@ -1426,14 +1459,14 @@ class App {
     text += backup ? ' A backup is saved first.' : ' No backup will be saved, so changes made here to these files will be lost.';
     if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and Quality Control will flag values that are no longer in a list. Pulling during a survey is unusual: are you sure?';
     if (!await confirmBox('Overwrite config files?', text, 'Pull and overwrite', true)) return;
-    gc.busy = 'pull'; this.renderSettings();
+    gc.busy = 'pull'; this.renderSurvey();
     try {
       const res = await api('/api/groupconfig/pull', { token: r.token, backup, backup_dir: backupDir });
       gc.done = { changed: res.changed, backup: res.backup }; gc.result = null;
       toast('Group config pulled');
     } catch { /* toast shown */ }
     gc.busy = null;
-    this.renderSettings();
+    this.renderSurvey();
   }
 
   async backupGroupConfig() {
@@ -1470,7 +1503,6 @@ class App {
       onchange: (e) => { const v = +e.target.value; if (v >= min && v <= max) this.saveDisplay({ [key]: e.target.value }); else { toast(`Must be ${min}–${max}`, 'warn'); e.target.value = d[key]; } } }));
     const dchk = (key, label) => el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: d[key] !== '0',
       onchange: (e) => this.saveDisplay({ [key]: e.target.checked ? '1' : '0' }) }), el('span', {}, label));
-    const link = (label, what) => el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open(what); } }, label);
     const sec = (title, ...kids) => el('section', { class: 'settings-sec' }, el('h3', {}, title), ...kids);
 
     const variation = el('input', { type: 'text', value: st.mag_variation, size: 8,
@@ -1539,19 +1571,6 @@ class App {
         el('div', { class: 'grid2' }, dnum('fade_hours', 'Fade after (hours)', 0.25, 72, 0.25)),
         el('div', { class: 'grid2 checks' }, dchk('fade_enabled', 'Fade the trackline, sightings and events older than this (waypoints never fade)'))),
       this.mapSection(),
-      sec('Config files',
-        el('p', {}, 'Edit the drop-down lists in Survey → ',
-          el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('dropdowns'); } }, 'Dropdowns'), ', the keyboard shortcuts in Survey → ',
-          el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('shortcuts'); } }, 'Shortcuts'),
-          ', and the map display in this tab. For many changes at once you can also edit the files in a spreadsheet or text editor, save, then press Reload. ',
-          el('span', { class: 'hint' }, `Folder: ${S.config.root}`)),
-        el('div', { class: 'links' }, link('species.csv', 'config:species'), link('event_types.csv', 'config:event_types'),
-          link('observers.csv', 'config:observers'), link('behaviors.csv', 'config:behaviors'),
-          link('shortcuts.csv', 'config:shortcuts'), link('display.csv', 'config:display'), link('Report templates', 'reports')),
-        el('button', { onclick: async () => { await api('/api/config/reload', {}); toast('Config reloaded'); } }, 'Reload config files'),
-        el('p', { class: 'hint' }, 'Spyhop’s folders are listed in Survey → ',
-          el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('survey'); } }, 'File'), '.')),
-      this.groupConfigSection(),
       );
     for (const row of pane.querySelectorAll('label.row')) {
       const first = row.firstChild;
@@ -1663,9 +1682,23 @@ class App {
       el('div', { class: 'btnrow' },
         el('button', { id: 'btn-sc-save', class: `primary${dirty ? ' dirty' : ''}`, onclick: () => this.saveShortcuts() }, dirty ? 'Save — unsaved changes' : 'Save'),
         el('button', { onclick: () => { this.scDraft = null; this.renderShortcuts(); } }, 'Revert')),
-      el('p', { class: 'hint' }, `Some ${MOD}+key combinations are taken by web browsers; the app window (the default launch) avoids most of them. For many changes at once you can also `,
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('config:shortcuts'); } }, 'open shortcuts.csv'), ' in a spreadsheet, save it, and ',
-        el('a', { href: '#', onclick: async (e) => { e.preventDefault(); this.scDraft = null; await api('/api/config/reload', {}); toast('Shortcuts reloaded'); } }, 'reload'), '.')));
+      el('p', { class: 'hint' }, `Some ${MOD}+key combinations are taken by web browsers; the app window (the default launch) avoids most of them.`),
+      this.fileBox('shortcuts.csv', 'config:shortcuts', () => { this.scDraft = null; })));
+  }
+
+  // the "edit the file in a spreadsheet" box under the Shortcuts and Dropdowns editors
+  fileBox(file, what, dropDraft, locked = false) {
+    return el('div', { class: 'filebox' },
+      el('div', {}, el('b', {}, 'Many changes at once? '), 'Edit ', el('span', { class: 'mono' }, file),
+        ' in a spreadsheet or text editor, save it, then press Reload. Keep the first (header) row as it is.',
+        el('div', { class: 'hint mono' }, `${this.S.config.root}${this.S.config.root.includes('\\') ? '\\' : '/'}${file}`)),
+      el('div', { class: 'btnrow' },
+        el('button', { onclick: () => this.open(what) }, `Open ${file}`),
+        el('button', { disabled: locked, onclick: async () => {
+          dropDraft();
+          try { await api('/api/config/reload', {}); } catch { return; }
+          toast(`${file} reloaded`);
+        } }, 'Reload from the file')));
   }
 
   async saveShortcuts() {
@@ -1752,9 +1785,8 @@ class App {
       el('div', { class: 'btnrow' },
         el('button', { id: 'btn-dd-save', class: `primary${dirty ? ' dirty' : ''}`, disabled: locked, onclick: () => this.saveDropdown(cur) }, dirty ? 'Save — unsaved changes' : 'Save'),
         el('button', { disabled: locked || !this.ddDrafts[cur], onclick: () => { delete this.ddDrafts[cur]; this.renderDropdowns(); } }, 'Revert')),
-      el('p', { class: 'hint' }, 'The order here is the order in the drop-down. Renaming or removing an entry doesn’t change rows already recorded; Quality Control flags values that are no longer in the list. For many changes at once you can also ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open(`config:${cur}`); } }, `open ${cur}.csv`), ' in a spreadsheet, save it, and ',
-        el('a', { href: '#', onclick: async (e) => { e.preventDefault(); delete this.ddDrafts[cur]; await api('/api/config/reload', {}); toast('Lists reloaded'); } }, 'reload'), '.')));
+      el('p', { class: 'hint' }, 'The order here is the order in the drop-down. Renaming or removing an entry doesn’t change rows already recorded; Quality Control flags values that are no longer in the list.'),
+      this.fileBox(`${cur}.csv`, `config:${cur}`, () => { delete this.ddDrafts[cur]; }, locked)));
   }
 
   async saveDropdown(list) {

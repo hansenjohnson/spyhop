@@ -241,6 +241,9 @@ DEFAULT_SETTINGS = {
     "group_config_backup": True,    # save a backup zip of the config files before each pull
     "group_config_backup_dir": "",  # where (empty: <Spyhop folder>/config_backups)
     "group_config_last": {},        # the last pull: {url, pulled, latest: {date, by, files, notes}, changed}
+    "group_config_author": "",      # the name last given when making a pack
+    "group_config_pack_name": "",   # and the pack's file name
+    "group_config_fingerprints": {},  # {from: pull|pack, when, files: {name: sha1}}: to list what changed since
     "bearing_reference": "M",
     "distance_unit": "nm",
     "mag_variation": "auto",

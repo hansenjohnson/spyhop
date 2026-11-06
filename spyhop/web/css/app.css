@@ -391,3 +391,7 @@ td.color-cell input[type=color] { width: 2em; height: 1.7em; padding: 0; border:
 .dd-locked input, .dd-locked button { cursor: not-allowed; }
 button.dirty { background: #b9770e; border-color: #b9770e; color: #fff; }
 table.dd-edit input[data-col=name], table.dd-edit input[data-col=full_name] { min-width: 16em; }
+.stack-form label.stack { margin: 0.6em 0; }
+.stack-form textarea { font: inherit; }
+.filebox { margin-top: 1.2em; padding: 0.7em 0.9em; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.filebox .btnrow { margin-top: 0.5em; }

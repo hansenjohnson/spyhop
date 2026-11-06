@@ -17,6 +17,9 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
   - Names and codes must be unique.
   - **While a survey is under way the lists are greyed out and can't be changed.**
 - The CSV files can still be edited in a spreadsheet for big changes.
+- Group config: a GitHub link to a `.zip` file in a repository now downloads that file alone, not a zip of the whole repository.
+- **Group config moved to Survey → File.** **Make a pack from this computer…** now asks for your name, what changed and the file name. It fills in which files changed since the last pull or pack, and adds the row to `spyhop-config.csv` itself.
+- The **Config files** section is gone from Settings. Survey → Shortcuts and each Dropdowns list have an **Open** button for their file and **Reload from the file**.
 - The online map layers are now built into Spyhop, and `tile_sources.csv` is no longer created or shared in group config packs. Extra layers in an existing `tile_sources.csv` are still added.
 
 ## 0.11.0 — 2026-11-06
