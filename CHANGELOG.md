@@ -6,6 +6,14 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.10.0 — 2026-11-06
+
+- **Survey → Settings → Sleep:** Spyhop can stop the computer going to sleep, which would stop the trackline and NMEA recording.
+  - **Keep the computer awake:** *During a survey* (the default: from Start until End, or until the survey is closed), *Always* (whenever Spyhop is open) or *Never*.
+  - **Keep the screen on too** also stops the screen turning off.
+  - The setting shows whether it's holding the computer awake now. Closing a laptop's lid still puts most laptops to sleep. When Spyhop quits or crashes, the computer's own sleep settings apply again.
+  - Uses `caffeinate` on macOS, a power request on Windows and `systemd-inhibit` on Linux.
+
 ## 0.9.2 — 2026-11-06
 
 - **Survey → About → Updates:** **Check for updates** looks for a newer Spyhop at github.com/hansenjohnson/spyhop (the latest release, or the main branch until there is one) and shows what's new.

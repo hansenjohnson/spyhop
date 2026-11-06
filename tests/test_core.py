@@ -1178,3 +1178,59 @@ def test_update_check_without_releases_uses_main(monkeypatch):
     monkeypatch.setattr(updater, "API", "http://127.0.0.1:9")            # nothing listening
     with pytest.raises(updater.UpdateError):
         updater.check()
+
+
+def test_keep_awake(tmp_path, monkeypatch):
+    """The keep-awake request follows the setting and the survey, and a failure doesn't retry every tick."""
+    from spyhop import awake
+    from spyhop.server import App
+
+    calls = []
+    monkeypatch.setattr(awake.KeepAwake, "_start", lambda self, mode: calls.append(("start", mode)))
+    monkeypatch.setattr(awake.KeepAwake, "_stop", lambda self: calls.append(("stop",)))
+    monkeypatch.setattr(awake.KeepAwake, "method", lambda self: "test")
+
+    app = App(tmp_path)
+    rec, s = app.rec, app.rec.cfg.settings
+    assert s["keep_awake"] == "survey" and s["keep_screen_on"] is False
+    app.sync_awake()
+    assert app.awake.mode is None and not any(c[0] == "start" for c in calls)   # no survey yet
+
+    rec.start_survey("Awake test")
+    app.sync_awake()
+    assert app.awake.mode == "system" and ("start", "system") in calls
+    n = len(calls)
+    app.sync_awake()
+    assert len(calls) == n                                  # nothing changes: nothing is redone
+
+    rec.cfg.save_settings({"keep_screen_on": True})
+    app.sync_awake()
+    assert app.awake.mode == "display"
+
+    rec.end_survey()
+    app.sync_awake()
+    assert app.awake.mode is None                           # ended: normal sleep again
+
+    rec.cfg.save_settings({"keep_awake": "always"})
+    app.sync_awake()
+    assert app.awake.mode == "display"
+    rec.cfg.save_settings({"keep_awake": "nonsense"})
+    assert s["keep_awake"] == "survey"                      # unknown values fall back to the default
+    rec.cfg.save_settings({"keep_awake": "off"})
+    app.sync_awake()
+    assert app.awake.mode is None
+    app.awake.release()
+
+    # a helper that fails: reported once, then not retried until RETRY_S has passed
+    def boom(self, mode):
+        calls.append(("try", mode))
+        raise RuntimeError("no power manager here")
+    monkeypatch.setattr(awake.KeepAwake, "_start", boom)
+    k = awake.KeepAwake()
+    k.set("system")
+    assert k.mode is None and "no power manager" in k.status()["error"]
+    tries = sum(c[0] == "try" for c in calls)
+    k.set("system")
+    assert sum(c[0] == "try" for c in calls) == tries
+    k.set(None)
+    assert k.status()["error"] == ""

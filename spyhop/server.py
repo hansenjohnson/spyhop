@@ -15,7 +15,7 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 
 from .recorder import Recorder, ValueErrorMsg
-from . import __version__, diag, reports, updater
+from . import awake, __version__, diag, reports, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports
 from .store import safe_name
@@ -147,6 +147,7 @@ class App:
         self.rec.listeners.append(self._broadcast_soon)
         self._loop_task = None
         self.perf = diag.PerfMonitor()
+        self.awake = awake.KeepAwake()
         self._nmea_lines0 = 0
 
     # -- websocket --------------------------------------------------------------
@@ -184,6 +185,8 @@ class App:
                 self._broadcast_soon(msg)
                 if n % self.rec.INST_SAMPLE_S == 0:
                     self.rec.sample_instruments()
+                if n % 2 == 0:
+                    self.sync_awake()
                 if n % diag.PerfMonitor.PERIOD_S == 0:
                     self.log_perf()
             except Exception:  # noqa: BLE001
@@ -198,6 +201,21 @@ class App:
                  "track points": len(self.rec.track.points) if self.rec.track else 0,
                  "tracking": "on" if self.rec.tracking_on() else "off"}
         logging.getLogger("spyhop.perf").info(self.perf.snapshot(extra))
+
+    def wanted_awake(self) -> str | None:
+        s = self.rec.cfg.settings
+        when = s.get("keep_awake", "survey")
+        if when == "always" or (when == "survey" and self.rec.survey_active()):
+            return "display" if s.get("keep_screen_on") else "system"
+        return None
+
+    def sync_awake(self):
+        """Hold or release the keep-awake request to match the setting and the survey."""
+        before = self.awake.status()
+        self.awake.set(self.wanted_awake())
+        now = self.awake.status()
+        if now != before:
+            self._broadcast_soon({"type": "awake", "awake": now})
 
     def nmea_status(self, raw=True) -> dict:
         d = self.rec.decoder
@@ -223,6 +241,7 @@ class App:
         loop.set_exception_handler(on_loop_error)
         if self.rec.cfg.settings.get("check_updates_on_start"):
             asyncio.create_task(self._startup_update_check())
+        self.sync_awake()
 
     async def _startup_update_check(self):
         await asyncio.sleep(8)
@@ -302,6 +321,7 @@ class App:
             self._loop_task.cancel()
         if getattr(self, "_watch_task", None):
             self._watch_task.cancel()
+        self.awake.release()
         await self.sources.stop()
         await self.tiles.close()
         if self.rec.rawlog:
@@ -315,6 +335,7 @@ class App:
         data = self.rec.bootstrap()
         data["mbtiles"] = self.tiles.mbtiles_info()
         data["nmea"] = self.nmea_status()
+        data["awake"] = self.awake.status()
         cfg = self.rec.cfg
         data["about"] = diag.system_info(cfg.root, cfg.data_dir) | {"log_folder": str(diag.log_dir(cfg.root))}
         last = cfg.settings.get("last_version")
@@ -433,6 +454,8 @@ class App:
         updates = body.get("updates", {})
         restart = "nmea_sources" in updates
         self.rec.cfg.save_settings(updates)
+        if "keep_awake" in updates or "keep_screen_on" in updates:
+            self.sync_awake()
         if restart:
             await self.sources.start(list(self.rec.cfg.settings.get("nmea_sources") or [])
                                      + self.extra_sources)
@@ -638,6 +661,7 @@ class App:
         async def later():
             await asyncio.sleep(0.6)
             await self.sources.stop()
+            self.awake.release()
             if self.rec.rawlog:
                 self.rec.rawlog.close()
             updater.restart()

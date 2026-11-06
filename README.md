@@ -26,6 +26,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
   - raw NMEA logging, and a built-in **simulator** for practice
 - **Survey management:**
   - Start, End and Close; crash recovery that asks to continue the survey
+  - keeps the computer from going to sleep during a survey (optional)
   - survey details (platform, organization, chief scientist)
   - a clock in local time, UTC, any offset, or the zone at the vessel's position
 - **Quality control:**

@@ -196,8 +196,10 @@ DEFAULT_SETTINGS = {
     "effort_reminder_min": 30,
     "latlon_format": "DDM",
     "timezone": "local",            # local | UTC | auto (from the position) | UTC±hh:mm
-    "clock_zone_last": "",
-    "check_updates_on_start": False,  # look on GitHub for a newer Spyhop when it starts (needs internet)          # the zone last found from the position (used until there's a fix)
+    "clock_zone_last": "",          # the zone last found from the position (used until there's a fix)
+    "check_updates_on_start": False,  # look on GitHub for a newer Spyhop when it starts (needs internet)
+    "keep_awake": "survey",         # stop the computer sleeping: off | survey (while one is active) | always
+    "keep_screen_on": False,        # … and keep the screen on too
     "bearing_reference": "M",
     "distance_unit": "nm",
     "mag_variation": "auto",
@@ -452,6 +454,8 @@ class Config:
     def save_settings(self, updates: dict | None = None):
         if updates and "timezone" in updates:
             updates = {**updates, "timezone": clean_timezone(updates["timezone"])}
+        if updates and "keep_awake" in updates and updates["keep_awake"] not in ("off", "survey", "always"):
+            updates = {**updates, "keep_awake": "survey"}
         if updates:
             for k, v in updates.items():
                 if k in DEFAULT_SETTINGS:

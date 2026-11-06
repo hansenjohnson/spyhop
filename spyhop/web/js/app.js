@@ -463,6 +463,10 @@ class App {
         this.map.updateVessel(this.S.vessel);
         break;
       case 'notice': toast(m.text, m.level || 'info', m.level === 'error' ? 12000 : 5000); break;
+      case 'awake':
+        this.S.awake = m.awake;
+        { const p = document.getElementById('awake-status'); if (p) p.textContent = this.awakeText(); }
+        break;
       case 'update':
         this.updateInfo = m.info;
         toast(`Spyhop ${m.info.latest} is available: see Survey → About → Updates.`, 'info', 10000);
@@ -1311,6 +1315,16 @@ class App {
   }
 
   // ---------------------------------------------------------------- settings
+  awakeText() {
+    const a = this.S.awake || {}, st = this.S.config.settings;
+    if (a.error) return `Couldn’t keep the computer awake: ${a.error}`;
+    if (a.supported === false) return 'Keeping the computer awake isn’t available on this system.';
+    if (a.mode === 'display') return 'Now: keeping the computer awake, with the screen on.';
+    if (a.mode === 'system') return 'Now: keeping the computer awake (the screen may still turn off).';
+    if (st.keep_awake === 'survey') return 'Now: normal sleep (no survey is active).';
+    return 'Now: normal sleep.';
+  }
+
   renderSettings() {
     const pane = $('#pane-settings');
     if (!pane) return;
@@ -1339,6 +1353,12 @@ class App {
           el('label', { class: 'row' }, 'Break the trackline above (kn)', num('track_break_kn', 0, 2000)),
           el('label', { class: 'row' }, '… or after no GPS for (s)', num('track_break_gap_s', 0, 86400))),
         el('p', { class: 'hint' }, 'The trackline on the map, and the distances in the summary, are broken where the platform would have moved faster than this between two points (a GPS jump; 30 kn suits a vessel, use about 200 for aerial surveys), or where no position came in for that long. 0 turns either off. Quality Control lists each jump or gap, and its Fix button marks it in the Effort table with an ERROR row.')),
+      sec('Sleep',
+        el('div', { class: 'grid2' },
+          el('label', { class: 'row' }, 'Keep the computer awake', sel('keep_awake', [['survey', 'During a survey'], ['always', 'Always'], ['off', 'Never']]))),
+        el('div', { class: 'grid2 checks' }, chk('keep_screen_on', 'Keep the screen on too')),
+        el('p', { class: 'hint', id: 'awake-status' }, this.awakeText()),
+        el('p', { class: 'hint' }, '“During a survey” means from Start until End (or until the survey is closed); “Always” means whenever Spyhop is open. A computer that sleeps stops recording the trackline and NMEA data. This stops it sleeping when it is left alone; closing a laptop’s lid still puts most laptops to sleep, and a laptop on battery runs down faster. When Spyhop quits, the computer’s own sleep settings apply again.')),
       sec('Bearings, distances and time',
         el('div', { class: 'grid2' },
           el('label', { class: 'row' }, 'Default bearing reference', sel('bearing_reference', [['M', 'Magnetic (compass)'], ['T', 'True'], ['R', 'Relative to bow']])),
