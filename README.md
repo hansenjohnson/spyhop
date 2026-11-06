@@ -1,8 +1,6 @@
 # Spyhop
 
-*Spyhopping is when a whale lifts its head out of the water to look around.*
-
-Spyhop is a data recorder for vessel-based whale surveys. It reads GPS and instruments over NMEA 0183, shows a live chart, and logs **sightings, effort and conditions, events, waypoints, the trackline and instrument readings** to plain CSV files as you type. It runs on a laptop, needs no internet once installed, and replaces the OpenCPN *spotter* plugin without needing OpenCPN.
+Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS and instruments over NMEA 0183, shows a live chart, and logs **sightings, effort and environmental conditions, events, the trackline and instrument readings and more** to plain CSV files as you type. It also has some handy features for survey planning, error checking, and reporting. Best of all, it's totally free, open source, runs on any laptop (Mac, Windows or Linux) and needs no internet once installed.
 
 ![Spyhop](docs/screenshot.png)
 
@@ -113,3 +111,7 @@ The **tutorial** in **Survey → About** (also [docs/TUTORIAL.md](docs/TUTORIAL.
 ## Feedback
 
 Please report problems and suggestions as GitHub issues. For a bug, **Survey → About → Save diagnostics…** makes a zip of Spyhop's logs and settings (no survey data and no team names) that you can attach.
+
+## License
+
+Spyhop is free software, released under the [GNU General Public License v3.0 or later](LICENSE). You can use, share and change it; if you distribute a modified version, it must also be under the GPL, with its source code available.

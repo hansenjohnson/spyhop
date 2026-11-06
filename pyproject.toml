@@ -5,7 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "spyhop"
 dynamic = ["version"]
-description = "Sightings, effort and event logger with a live chart for vessel-based whale surveys"
+description = "Data recorder with a live chart for marine mammal surveys"
+license = {text = "GPL-3.0-or-later"}
+classifiers = ["License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)"]
 requires-python = ">=3.10"
 dependencies = [
   "aiohttp>=3.9",
