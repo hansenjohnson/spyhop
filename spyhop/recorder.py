@@ -181,6 +181,27 @@ class Recorder:
 
 
     # -- raw NMEA log --------------------------------------------------------
+    def pack_waypoints(self, rows: list[dict], remove_ids: list[str] = ()) -> list[str]:
+        """Waypoints from a config pack: add these rows (no undo entry, as they didn't come from typing), and
+        remove the ones with these RowIDs (restoring a backup). Returns the new rows' RowIDs."""
+        t = self.tables["marks"]
+        if not rows and not remove_ids:
+            return []
+        gone = set(remove_ids or ())
+        if gone:
+            t.rows = [r for r in t.rows if r["RowID"] not in gone]
+        ids = []
+        for r in rows:
+            row = {k: str(r.get(k, "") or "") for k in t.header}
+            row["RowID"] = uuid.uuid4().hex[:12]
+            t.rows.append(row)
+            ids.append(row["RowID"])
+        t.undo_stack.clear()
+        t.redo_stack.clear()
+        t.save()
+        self.emit_tab("marks")
+        return ids
+
     def set_raw_logging(self, enabled: bool | None = None, timestamps: bool | None = None):
         upd = {}
         if enabled is not None:

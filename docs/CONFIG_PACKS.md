@@ -1,6 +1,10 @@
 # Config packs
 
-A **config pack** holds one set of Spyhop config files: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and saved reports. It lets a team use the same lists on every computer, and lets one computer switch between setups (for example a vessel crew and an aerial crew).
+A **config pack** holds a team's whole Spyhop setup in one small file, so every computer can be set up to record the same way: the species, event types, observers and behaviours lists, keyboard shortcuts, map display, saved reports, the shared settings (clock, units, tracking, keep awake, raw NMEA log and the network GPS / NMEA inputs), the online overlays and map feeds, and, if you choose, waypoints, routes and overlays. It also lets one computer switch between setups (for example a vessel crew and an aerial crew).
+
+Offline charts are not in packs (they are far too big); copy them between computers separately (see the USER_GUIDE, *Offline charts*). Survey data, serial GPS ports and the data folder are never in a pack either.
+
+Packs are updated by hand: Spyhop never looks for a newer pack, or changes anything, until someone presses **Check** or **Use this pack…**.
 
 Packs are managed in **Settings → Templates**. They are kept in the **`config_packs` folder in the survey data folder**, and Spyhop lists every pack there. For each one it shows the latest change, whether it matches this computer's config, and which pack is in use. From the list you can:
 
@@ -24,6 +28,12 @@ A pack is a zip file (or, on GitHub, a repository or a folder in one) containing
 | `shortcuts.csv` | Keyboard shortcuts. |
 | `display.csv` | Map display: marker shapes and colours, track styles, text sizes. Leave it out if each person should keep their own. |
 | `reports/*.json` | Saved reports (Tools → Reports), one file each. |
+| `spyhop-pack.json` | The pack's format, the **minimum Spyhop version** that can use it, the version that made it, and which optional parts it has. |
+| `spyhop-settings.json` | The shared settings (see below), the network GPS / NMEA inputs (UDP, TCP, gpsd), the map feeds, and which online overlays to switch on. |
+| `feeds/*.geojson` | The saved copy of each map feed, so it shows before the first download. |
+| `waypoints.csv` | Waypoints (optional). |
+| `routes/*.gpx` | Saved routes (optional). |
+| `overlays/*` | Imported overlays: GeoJSON, GPX or KML (optional; past surveys shown as overlays are not included). |
 
 **Only the files in the pack are changed.** For example, a pack with only `species.csv` and `observers.csv` changes only those two lists on each computer.
 
@@ -31,7 +41,13 @@ A pack is a zip file (or, on GitHub, a repository or a folder in one) containing
 
 Older packs still work: 0.18 packs kept saved reports (then called saved filters) in a `filters` folder, which is read the same way. Report templates of the format used before 0.19 are listed as ignored and change nothing.
 
-Survey data, waypoints and personal settings (data folder, GPS inputs, clock, sleep and the rest of Settings → General) are never in a pack and never changed by one.
+**Settings are replaced.** The shared settings are: lat/lon format, clock (time zone), bearing reference, distance unit, magnetic variation, track point interval, track break speed and gap, effort reminder, keep the computer awake and the screen on, and the raw NMEA log (on/off and time stamps). The pack's network GPS / NMEA inputs (UDP, TCP, gpsd) replace this computer's network inputs; **serial ports, file replays and the simulator stay as they are**, since port names differ between computers. Everything else in Settings (the data folder, the view and split, follow vessel, the browsing cache…) belongs to the computer and is never in a pack.
+
+**Map feeds, waypoints, routes and overlays are only added.** Each computer gets the ones it doesn't have yet. One it already has is kept as it is: a map feed with the same address, a waypoint with the same name (or, unnamed, the same position), a route or overlay file with the same name. Nothing is ever removed, so waypoints marked at sea and a route someone is working on are safe. To replace one with the pack's, delete it on that computer first, then use the pack again.
+
+**Online overlays:** a pack can say which online overlays (AIS, the radar layers, map feeds) are switched on, and the radar opacity and hide-stopped setting. These are set once, when the pack is used; after that each computer can switch them as it likes.
+
+**Minimum Spyhop version:** a pack names the oldest Spyhop that can use it (0.22.0 at the lowest). A computer with an older Spyhop shows the pack with a problem and won't use it until Spyhop is updated (Settings → About → Updates, again by hand). Spyhop before 0.22.0 doesn't know about the minimum or the new parts: it uses the lists, shortcuts, display and reports from a new pack and ignores the rest.
 
 Other files in the pack, such as a README, are listed and left alone.
 
@@ -51,9 +67,11 @@ A plain CSV that you can edit in Excel, with one row per change:
 
 ## Making and changing a pack
 
-1. Set up the lists and shortcuts the way the team wants (**Settings → Dropdowns** and **Settings → Shortcuts**).
+1. Set up one computer the way the team wants: lists and shortcuts (**Settings → Dropdowns** and **Settings → Shortcuts**), Settings → General, the network inputs and online overlays (**Settings → Inputs**), and the waypoints, routes and overlays to hand out.
 2. In **Settings → Templates**, press **Save this computer's config as a new pack…**, or **Overwrite…** on the pack you are updating.
 3. Spyhop asks for **your name** and **what changed** (and, for a new pack, its name). It fills in **Files changed** itself: for a new pack, the files changed since this computer last used or saved a pack ("all" if it doesn't know); for an overwrite, the files that differ from that pack. It adds this as a row to the pack's `spyhop-config.csv` and saves the pack in the config packs folder.
+   - **Also include:** tick **Waypoints**, **Routes** and **Overlays** to put them in the pack (all of this computer's, with how many). Overwriting a pack starts with that pack's choice; a new pack with the last choice made here. Keep **Which online overlays are switched on** ticked to hand out the overlays showing now.
+   - **Needs Spyhop version … or newer:** the minimum version (0.22.0 at the lowest, this computer's version at the highest). Raise it when the team should all have updated before using this pack.
 4. To leave a file out (such as `display.csv`), unzip the pack, delete the file, and zip it again.
 5. To share it, press **Download** (or **Open the config packs folder**) and publish the file as described below. Upload a new version in place of the old one at the same address. In Google Drive, right-click the file → **File information → Manage versions → Upload new version**, so the link stays the same.
 
@@ -78,11 +96,11 @@ You can also type the **path of a zip or folder on this computer**, such as a pa
 ## Using a pack
 
 1. Press **Use this pack…** on a pack in the list. For the team's pack on the web, paste its address once under **Get a pack from the web** (Spyhop remembers it) and press **Check**.
-2. Spyhop lists every file in the pack and what would happen to it (new, changed, same, or removed), with row counts. It also shows the pack's recent changes and any problems.
+2. Spyhop lists what would happen to each part of the pack: new, changed, same, removed, or *already here — this computer's is kept*, with row counts and the settings that would change (e.g. *Clock: local → UTC*). It also shows the minimum Spyhop version, which online overlays it switches on, the pack's recent changes and any problems.
 3. Leave **Save a backup of this computer's config files first** ticked. By default backups go in `config_packs/backups` in the survey data folder; you can choose another folder.
-4. Press **Use it and overwrite** (or **Pull and overwrite** for a web pack). The new lists, shortcuts and templates are used straight away, with no need to restart. A web pack is also saved in the config packs folder, replacing an older copy with the same name.
+4. Press **Use it** (or **Pull it** for a web pack). The new lists, shortcuts, settings and inputs are used straight away, with no need to restart. A web pack is also saved in the config packs folder, replacing an older copy with the same name.
 
-**Nothing is merged.** Each file from the pack replaces this computer's copy, so changes made on this computer to those files are lost, apart from the backup. If a file should differ on one computer, leave it out of the pack.
+**The lists, shortcuts, display, saved reports and settings are not merged.** Each of them from the pack replaces this computer's copy, so changes made on this computer to them are lost, apart from the backup. If a file should differ on one computer, leave it out of the pack. (Map feeds, waypoints, routes and overlays are only added; see above.)
 
 **A pack with any problem isn't pulled at all.** Problems are files Spyhop can't read: a list missing its `name` column, or a saved report with a mistake. Spyhop names the problem files, and nothing on the computer changes.
 
@@ -92,6 +110,6 @@ You can also type the **path of a zip or folder on this computer**, such as a pa
 
 Each backup is itself a pack. The latest backups are listed under **Backups**; press **Restore…** on one, then **Restore and overwrite**. **Open the backups folder** shows them all.
 
-A backup made when the computer had no saved reports of its own includes a small marker file, so restoring it also removes the ones the pack added.
+A backup made when the computer had no saved reports of its own includes a small marker file, so restoring it also removes the ones the pack added. Backups always hold the computer's waypoints, routes, overlays and settings. Restoring the backup made just before a pack was used also **removes the map feeds, waypoints, routes and overlays that pack added** (the list shows them as *Will be removed*), and puts the settings back.
 
 Backups saved before Spyhop 0.14.0 are in the `config_backups` folder in Spyhop's own folder. To restore one, copy it into the backups folder, or type its path under **Get a pack from the web**.

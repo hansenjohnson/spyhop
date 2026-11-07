@@ -1945,3 +1945,100 @@ def test_online_feeds_fetch_and_cache(tmp_path):
     feeds.drop_cache(cfg, f["id"])
     assert feeds.load_cache(cfg, f["id"]) is None
     assert all(p["url"].startswith("https://services2.arcgis.com/") for p in feeds.PRESETS)
+
+
+def test_pack_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
+    """0.22.0: shared settings are replaced; feeds, waypoints, routes and overlays are only added;
+    serial inputs and the data folder stay; a minimum Spyhop version is checked; restoring the
+    backup takes away what the pack added."""
+    import asyncio, zipfile as _zf
+    from spyhop import configpack, feeds, packparts, __version__
+    from spyhop.server import App
+
+    class Req:
+        def __init__(self, body=None, query=None, match=None):
+            self.body, self.query, self.match_info = body or {}, query or {}, match or {}
+        can_read_body = True
+        async def json(self): return self.body
+    run = lambda coro: json.loads(asyncio.run(coro).text)          # noqa: E731
+
+    a, b = App(tmp_path / "a"), App(tmp_path / "b")
+    ca, cb = a.rec.cfg, b.rec.cfg
+    # computer A: the team's setup
+    ca.save_settings({"timezone": "UTC", "effort_reminder_min": 20,
+                      "nmea_sources": [{"type": "serial", "port": "COM4", "baud": 4800}, {"type": "udp", "port": 2000}],
+                      "online_feeds": [{"id": "abc12345", "name": "SMAs", "url": "https://example.org/FeatureServer/3",
+                                        "color": "#ff0000", "refresh_min": 60}]})
+    feeds.save_cache(ca, "abc12345", [{"type": "Feature", "properties": {}, "geometry": None}])
+    for n, lat in (("Buoy A", "41.5"), ("Harbor", "41.9")):
+        a.rec.tables["marks"].add({"Name": n, "Lat": lat, "Lon": "-70.1", "Shape": "Circle", "Color": "red"})
+    (ca.routes_dir / "Line 1.gpx").write_text('<?xml version="1.0"?><gpx><rte><rtept lat="41" lon="-70"/></rte></gpx>')
+    (ca.overlays_dir / "zones.geojson").write_text('{"type":"FeatureCollection","features":[]}')
+    (ca.overlays_dir / "Survey - old.geojson").write_text('{"type":"FeatureCollection","features":[]}')
+
+    info = run(a.groupconfig_changes(Req()))
+    assert (info["waypoints"], info["routes"], info["overlays"]) == (2, 1, 1) and info["min_default"] == "0.22.0"
+    with pytest.raises(ValueErrorMsg, match="can't be newer"):
+        asyncio.run(a.configpacks_save(Req({"by": "H", "notes": "x", "name": "t", "min_spyhop": "99.0.0"})))
+    r = run(a.configpacks_save(Req({"by": "H", "notes": "Team setup", "name": "team", "include": ["waypoints", "routes", "overlays"],
+                                    "online_display": {"ais": True, "radar_us": False, "feeds": ["https://example.org/FeatureServer/3"]}})))
+    pf = ca.data_dir / "config_packs" / r["name"]
+    with _zf.ZipFile(pf) as z:
+        names = set(z.namelist())
+        doc = json.loads(z.read("spyhop-settings.json"))
+        pinfo = json.loads(z.read("spyhop-pack.json"))
+    assert {"waypoints.csv", "routes/Line 1.gpx", "overlays/zones.geojson", "feeds/abc12345.geojson"} <= names
+    assert "overlays/Survey - old.geojson" not in names
+    assert pinfo["min_spyhop"] == "0.22.0" and pinfo["includes"] == ["waypoints", "routes", "overlays"]
+    assert doc["nmea_sources"] == [{"type": "udp", "port": 2000}] and "data_dir" not in doc["settings"]
+    assert doc["settings"]["timezone"] == "UTC" and doc["online_display"]["ais"] is True
+    assert run(a.groupconfig_changes(Req(query={"name": r["name"]})))["includes"] == ["waypoints", "routes", "overlays"]
+    # a pack without the optional parts
+    run(a.configpacks_save(Req({"by": "H", "notes": "lists only", "name": "lists"})))
+    with _zf.ZipFile(ca.data_dir / "config_packs" / "lists.spyhop.zip") as z:
+        assert "waypoints.csv" not in z.namelist() and not any(n.startswith("routes/") for n in z.namelist())
+
+    # computer B: its own serial port, a waypoint called Harbor somewhere else, its own route of the same name
+    cb.save_settings({"nmea_sources": [{"type": "serial", "port": "/dev/ttyUSB0"}, {"type": "udp", "port": 10110}]})
+    b.rec.tables["marks"].add({"Name": "Harbor", "Lat": "42.0", "Lon": "-70.5"})
+    (cb.routes_dir / "Line 1.gpx").write_text('<?xml version="1.0"?><gpx><rte/></gpx>')
+    chk = run(b.groupconfig_check(Req({"url": str(pf)})))
+    st = {f["file"]: f for f in chk["files"]}
+    assert st["waypoints.csv"]["status"] == "new" and st["waypoints.csv"]["add"] == 1 and "kept" in st["waypoints.csv"]["detail"]
+    assert st["routes/Line 1.gpx"]["status"] == "kept" and st["overlays/zones.geojson"]["status"] == "new"
+    assert st["Map feed: SMAs"]["status"] == "new" and "UTC" in st["Settings (clock, units, tracking, keep awake, NMEA log)"]["detail"]
+    assert chk["info"]["min_spyhop"] == "0.22.0" and chk["display"]["ais"] is True
+    res = run(b.groupconfig_pull(Req({"token": chk["token"], "backup": True})))
+    assert res["added"] == {"waypoints": 1, "routes": 0, "overlays": 1, "feeds": 1}
+    assert cb.settings["timezone"] == "UTC" and cb.settings["effort_reminder_min"] == 20
+    assert cb.settings["nmea_sources"] == [{"type": "serial", "port": "/dev/ttyUSB0"}, {"type": "udp", "port": 2000}]
+    assert cb.settings["online_feeds"][0]["name"] == "SMAs" and feeds.cache_path(cb, "abc12345").is_file()
+    assert cb.settings["online_display"]["stamp"] and cb.settings["online_display"]["ais"] is True
+    marks = {(m["Name"], m["Lat"]) for m in b.rec.tables["marks"].rows}
+    assert marks == {("Harbor", "42.0"), ("Buoy A", "41.5")}
+    assert "<rte/>" in (cb.routes_dir / "Line 1.gpx").read_text() and (cb.overlays_dir / "zones.geojson").is_file()
+    assert cb.data_dir == tmp_path / "b" / "data" or cb.settings.get("data_dir") == ""
+    # using it again changes nothing and adds nothing twice
+    chk2 = run(b.groupconfig_check(Req({"pack": r["name"]})))
+    assert all(f["status"] in ("same", "kept") for f in chk2["files"])
+    # restoring the backup takes away what the pack added, and the settings go back
+    bk = Path(res["backup"]).name
+    chk3 = run(b.groupconfig_check(Req({"backup": bk})))
+    removed = {f["file"] for f in chk3["files"] if f["status"] == "removed"}
+    assert {"waypoints.csv", "overlays/zones.geojson", "Map feed: SMAs"} <= removed
+    run(b.groupconfig_pull(Req({"token": chk3["token"], "backup": False})))
+    assert cb.settings["timezone"] == "local" and cb.settings["online_feeds"] == []
+    assert {m["Name"] for m in b.rec.tables["marks"].rows} == {"Harbor"} and not (cb.overlays_dir / "zones.geojson").exists()
+    assert cb.settings["nmea_sources"] == [{"type": "serial", "port": "/dev/ttyUSB0"}, {"type": "udp", "port": 10110}]
+
+    # a pack that needs a newer Spyhop can't be used
+    with _zf.ZipFile(pf) as z:
+        files = {n: z.read(n) for n in z.namelist()}
+    files["spyhop-pack.json"] = json.dumps({"format": 2, "min_spyhop": "9.0.0"}).encode()
+    p = configpack.read_pack(files)
+    assert any("needs Spyhop 9.0.0" in x and __version__ in x for x in p["problems"])
+    with pytest.raises(configpack.PackError):
+        configpack.apply(cb, p)
+    assert packparts.clean_min_version("") == "0.22.0"
+    with pytest.raises(packparts.PartError):
+        packparts.clean_min_version("0.21.0")

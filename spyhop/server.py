@@ -16,7 +16,7 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 
 from .recorder import Recorder, ValueErrorMsg
-from . import awake, configpack, __version__, diag, feeds, reports, routes, schema, updater
+from . import awake, configpack, __version__, diag, feeds, packparts, reports, routes, schema, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports
 from .store import safe_name
@@ -1061,6 +1061,8 @@ class App:
         def work():
             files, source, name = configpack.fetch_named(url)
             pack = configpack.read_pack(files)
+            if kind == "backup":       # restoring it also takes away what the pack used after it added
+                pack["_undo"] = (cfg.settings.get("group_config_added") or {}).get(Path(url).name)
             return source, name, pack, configpack.compare(cfg, pack)
         try:
             source, name, pack, plan = await asyncio.get_running_loop().run_in_executor(None, work)
@@ -1071,6 +1073,7 @@ class App:
         pack["_kind"], pack["_name"] = kind, name
         return json_ok(token=configpack.remember(url, pack), source=source, files=plan, kind=kind, name=name,
                        manifest=pack["manifest"][:8], ignored=pack["ignored"], problems=pack["problems"],
+                       info=pack.get("info"), display=packparts.display_summary(pack),
                        survey_active=self.rec.survey_active())
 
     async def groupconfig_pull(self, request):
@@ -1088,29 +1091,48 @@ class App:
 
         def work():
             saved = configpack.save_backup(cfg, bdir) if backup else None
-            changed = configpack.apply(cfg, pack)
+            changed, done = configpack.apply_all(cfg, pack)
             copy = None
             if kind in ("web", "file"):          # keep a copy in the config packs folder, for reuse offline
                 try:
                     copy = configpack.keep_copy(cfg, pack, pack.get("_name") or "")
                 except OSError as e:
                     log.warning("couldn't keep a copy of the pack: %s", e)
-            return saved, changed, copy
+            return saved, changed, done, copy
         try:
-            saved, changed, copy = await asyncio.get_running_loop().run_in_executor(None, work)
+            saved, changed, done, copy = await asyncio.get_running_loop().run_in_executor(None, work)
         except configpack.PackError as e:
             raise ValueErrorMsg(str(e))
+        added_ids = self.rec.pack_waypoints(done["waypoints"], done["remove_waypoints"])
+        if done["inputs"]:
+            await self.sources.start(list(cfg.settings.get("nmea_sources") or []) + self.extra_sources)
+        if done["settings"]:
+            self.rec.set_raw_logging()
+            self.sync_awake()
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         current = copy.name if copy else (Path(url).name if kind == "folder" else None)
         upd = {"group_config_fingerprints": {"from": "pull", "when": now, "files": configpack.fingerprints(cfg)},
                "group_config_current": {"name": current, "how": "backup" if kind == "backup" else "loaded", "when": now}}
+        record = {k: v for k, v in (("waypoints", added_ids), ("routes", done["routes"]),
+                                    ("overlays", done["overlays"]), ("feeds", done["feeds"])) if v}
+        added = dict(cfg.settings.get("group_config_added") or {})
+        if kind == "backup":
+            added.pop(Path(url).name, None)
+        if saved and record:
+            added[saved.name] = {**record, "when": now}
+        upd["group_config_added"] = dict(sorted(added.items(), key=lambda kv: kv[1].get("when", ""))[-20:])
         if kind in ("web", "file"):
             upd["group_config_last"] = {"url": url, "pulled": now, "latest": pack["manifest"][0] if pack["manifest"] else None,
                                         "changed": changed}
         cfg.save_settings(upd)
         log.info("group config loaded from %s: %s", url, ", ".join(changed) or "no changes")
+        for t in ("feeds", "routes", "overlays"):
+            self._broadcast_soon({"type": t})
         self._broadcast_soon({"type": "reload"})
-        return json_ok(changed=changed, backup=str(saved) if saved else None, copy=copy.name if copy else None)
+        return json_ok(changed=changed, backup=str(saved) if saved else None, copy=copy.name if copy else None,
+                       added={"waypoints": len(added_ids), "routes": len(done["routes"]),
+                              "overlays": len(done["overlays"]), "feeds": len(done["feeds"])},
+                       removed_waypoints=len(done["remove_waypoints"]))
 
     async def groupconfig_backup(self, request):
         b = await request.json() if request.can_read_body else {}
@@ -1137,15 +1159,23 @@ class App:
         last load, pull or save; for overwriting a pack ({name}), the files that differ from it."""
         cfg = self.rec.cfg
         name = request.query.get("name", "")
-        info = {"by": cfg.settings.get("group_config_author", "")}
+        info = {"by": cfg.settings.get("group_config_author", ""), **self.pack_counts()}
         if name:
             try:
-                return json_ok(files=configpack.changed_from_pack(cfg, name), since="pack_file", **info)
+                p = configpack.read_pack_file(cfg, name)
+                pi = p.get("info") or {}
+                return json_ok(files=configpack.changed_from_pack(cfg, name), since="pack_file",
+                               includes=pi.get("includes"), min_spyhop=pi.get("min_spyhop"), **info)
             except configpack.PackError as e:
                 raise ValueErrorMsg(str(e))
         base = cfg.settings.get("group_config_fingerprints") or {}
         return json_ok(files=configpack.changed_since(cfg, base.get("files")), since=base.get("from"),
                        when=base.get("when"), **info)
+
+    def pack_counts(self) -> dict:
+        cfg = self.rec.cfg
+        return {"waypoints": len(self.rec.tables["marks"].rows), "routes": len(packparts.local_routes(cfg)),
+                "overlays": len(packparts.local_overlays(cfg)), "version": __version__, "min_default": packparts.FORMAT_MIN}
 
     async def configpacks_save(self, request):
         b = await request.json() if request.can_read_body else {}
@@ -1154,9 +1184,11 @@ class App:
         if not by or not notes:
             raise ValueErrorMsg("Give your name and what changed, for the pack's record of changes.")
         cfg = self.rec.cfg
+        include = [k for k in packparts.OPTIONAL if k in (b.get("include") or [])]
+        min_v, display = b.get("min_spyhop"), b.get("online_display")
         try:
             p = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: configpack.save_pack(cfg, name, by, files, notes, overwrite))
+                None, lambda: configpack.save_pack(cfg, name, by, files, notes, overwrite, include, min_v, display))
         except configpack.PackError as e:
             raise ValueErrorMsg(str(e))
         except OSError as e:

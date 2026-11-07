@@ -229,6 +229,10 @@ DEFAULT_DISPLAY = {
 
 DEFAULT_SETTINGS = {
     "online_feeds": [],             # map feeds (Settings → Inputs → Online overlays; feeds.py)
+    "online_display": {},           # online overlays to show, set by a config pack: {ais, radar_us, radar_world,
+                                    # feeds: [urls], radar_opacity, hide_stopped, stamp}; applied once per stamp
+    "group_config_added": {},       # what each pack used added, by the backup made before it: {backup: {waypoints:
+                                    # [RowIDs], routes, overlays, feeds}}, so restoring that backup removes them
     "tracking_enabled": False,
     "tracking_interval": 10,
     "track_break_kn": 30,           # break the trackline where it moves faster than this (0 = never)

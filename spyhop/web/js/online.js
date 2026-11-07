@@ -77,6 +77,43 @@ export class OnlineOverlays {
     setInterval(() => { if (map.hasLayer(this.radarUS)) this.radarUS.setUrl(IEM + '?_={stamp}', false); }, 60000);
   }
 
+  // what's switched on here, as a config pack records it (packparts.DISPLAY_KEYS)
+  displayState() {
+    const map = this.app.map.map;
+    return { ais: this.isOn('ais'), radar_us: this.isOn('us'), radar_world: this.isOn('world'),
+      feeds: Object.values(this.feedLayers).filter((fl) => map.hasLayer(fl.layer)).map((fl) => fl.feed.url),
+      radar_opacity: this.prefs.radarOpacity, hide_stopped: !!this.prefs.hideStopped };
+  }
+
+  // A config pack used on this computer says which online overlays to switch on (settings
+  // online_display, with a new stamp each time a pack is used). Applied once per stamp; after that
+  // the person's own choices on this computer stand.
+  applyPackDisplay() {
+    const d = this.app.S.config.settings.online_display;
+    if (!d || !d.stamp) return;
+    let done = null;
+    try { done = localStorage.getItem('wsr.onlineDisplayStamp'); } catch {}
+    if (done === d.stamp) return;
+    const map = this.app.map.map;
+    if (typeof d.radar_opacity === 'number') this.setOpacity(d.radar_opacity);
+    if (typeof d.hide_stopped === 'boolean') { this.prefs.hideStopped = d.hide_stopped; this.savePrefs(); }
+    // feeds: by address; ones not loaded yet come on from the saved list when they are
+    const want = new Set(d.feeds || []);
+    const names = (this.app.S.config.settings.online_feeds || []).filter((f) => want.has(f.url)).map((f) => `${f.name} (feed)`);
+    let on = [];
+    try { on = JSON.parse(localStorage.getItem('wsr.overlays') || '[]') || []; } catch {}
+    on = [...on.filter((n) => !/ \(feed\)$/.test(n)), ...names];
+    try { localStorage.setItem('wsr.overlays', JSON.stringify(on)); } catch {}
+    for (const fl of Object.values(this.feedLayers)) {
+      const yes = want.has(fl.feed.url);
+      if (yes && !map.hasLayer(fl.layer)) fl.layer.addTo(map);
+      else if (!yes && map.hasLayer(fl.layer)) map.removeLayer(fl.layer);
+    }
+    this.setOn('ais', !!d.ais); this.setOn('us', !!d.radar_us); this.setOn('world', !!d.radar_world);
+    try { localStorage.setItem('wsr.onlineDisplayStamp', d.stamp); } catch {}
+    this.app.onlineChanged?.();
+  }
+
   // the same value for every tile within a period (minutes), so tiles refresh once per period
   stamp(min) { return () => Math.floor(Date.now() / (min * 60000)); }
 
@@ -269,6 +306,7 @@ export class OnlineOverlays {
         if (recolor) fl.layer.setStyle((ft) => this.feedStyle(f.id, ft));
       }
     }
+    this.applyPackDisplay();
     this.app.onlineChanged?.();
   }
 

@@ -6,6 +6,16 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.22.0 — 2026-11-07
+
+- **Config packs hold a team's whole setup** (Settings → Templates), so every computer can be set up the same way from one small file:
+  - **Shared settings:** lat/lon format, clock, bearing reference, distance unit, magnetic variation, tracking interval and breaks, effort reminder, keep awake / screen on, raw NMEA log. The pack's **network GPS / NMEA inputs** (UDP, TCP, gpsd) replace this computer's; serial ports, file replays and the simulator are never in a pack, and nor is the data folder.
+  - **Map feeds** (with their saved copies) and **which online overlays are switched on** (set once when the pack is used).
+  - **Waypoints, routes and overlays**, if you tick them when saving the pack. These are **only added**: any the computer already has (same name, or for feeds the same address) are kept, and nothing is removed.
+  - A **minimum Spyhop version** (0.22.0 or newer): a computer with an older Spyhop won't use the pack until it's updated.
+  - The check before using a pack lists what's added, replaced and kept, and the settings that change. Restoring the backup made before using a pack also removes what that pack added.
+  - Offline charts stay out of packs. Packs and Spyhop are still only updated by hand.
+
 ## 0.21.0 — 2026-11-07
 
 - **Online overlays**, in a new section of **Settings → Inputs** and in the map's layers menu:

@@ -116,6 +116,7 @@ class App {
     this.renderAll();
     this.map.drawTrack();
     this.map.loadOverlays(this.S.overlays);
+    this.online?.applyPackDisplay();
     this.showTab(this.allTabs().includes(this.tabAlias(tab)) ? tab : 'sightings');
     if (this.pendingFit) { this.pendingFit = false; this.map.fitSurvey(); }
   }
@@ -1385,7 +1386,7 @@ class App {
 
     // ---- this computer's config and the packs in the folder
     const kids = [
-      el('p', {}, 'A template (config pack) holds the team’s config files in one file: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and saved reports. Packs are kept in the config packs folder in the survey data folder; share one by uploading it (or copying it to a USB stick) and use it on another computer.'),
+      el('p', {}, 'A template (config pack) holds a team’s setup in one small file, so every computer records the same way: the species, event types, observers and behaviours lists, keyboard shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log, network GPS / NMEA inputs) and the online overlays and map feeds, and if you choose, waypoints, routes and overlays. Packs are kept in the config packs folder in the survey data folder; share one by uploading it (or copying it to a USB stick) and use it on another computer. Offline charts, survey data, serial GPS ports and the data folder are never in a pack.'),
     ];
     if (!L) kids.push(el('p', { class: 'hint' }, gc.loading ? 'Reading the config packs folder…' : ''));
     else {
@@ -1429,8 +1430,12 @@ class App {
 
     // ---- what a pack would change (from the list, the web or a backup)
     if (gc.done) {
-      kids.push(el('p', { class: 'okbox', id: 'gc-done' }, gc.done.changed.length
-        ? `Done: ${gc.done.changed.join(', ')} ${gc.done.changed.length > 1 ? 'were' : 'was'} replaced.` : 'Done; nothing needed changing.',
+      const ad = gc.done.added || {}, n = (k, w) => ad[k] ? `${ad[k]} ${w}${ad[k] > 1 ? 's' : ''}` : '';
+      const addText = [n('waypoints', 'waypoint'), n('routes', 'route'), n('overlays', 'overlay'), n('feeds', 'map feed')].filter(Boolean).join(', ');
+      const repl = gc.done.changed.filter((f) => !/^(Map feed: |routes\/|overlays\/|waypoints\.csv$)/.test(f));
+      kids.push(el('p', { class: 'okbox', id: 'gc-done' }, repl.length || addText || gc.done.removed
+        ? ['Done.', repl.length ? ` Updated: ${repl.join(', ')}.` : '', addText ? ` Added ${addText}.` : '',
+          gc.done.removed ? ` Removed ${gc.done.removed} waypoint${gc.done.removed > 1 ? 's' : ''} the pack had added.` : ''].join('') : 'Done; nothing needed changing.',
         gc.done.copy ? el('span', {}, ' A copy was kept in the config packs folder as ', el('span', { class: 'mono' }, gc.done.copy), '.') : '',
         gc.done.backup ? el('span', {}, ' Backup saved as ', el('span', { class: 'mono' }, gc.done.backup), '. ') : ' ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); gc.done = null; this.renderTemplates(); } }, 'OK')));
@@ -1470,22 +1475,36 @@ class App {
 
   configPackResult(r) {
     const S = this.S, st = S.config.settings, gc = this.gc;
-    const label = { new: 'New — will be added', changed: 'Changed — replaces this computer’s copy', same: 'Same as here', removed: 'Not in the pack — will be removed' };
-    const todo = r.files.filter((f) => f.status !== 'same');
+    const label = { new: 'New — will be added', changed: 'Changed — replaces this computer’s copy', same: 'Same as here',
+      removed: r.kind === 'backup' ? 'Will be removed' : 'Not in the pack — will be removed', kept: 'Already here — this computer’s is kept' };
+    const todo = r.files.filter((f) => f.status !== 'same' && f.status !== 'kept');
     const title = r.kind === 'backup' ? `Restoring the backup ${r.name}` : r.kind === 'folder' ? `Using the pack ${r.name}` : 'The pack from the web';
     const box = [el('h4', {}, `${title}: what would change`), el('p', { class: 'hint' }, `From ${r.source}`)];
-    box.push(el('p', { class: 'warnbox' }, el('b', {}, 'This overwrites this computer’s config files. '),
-      'Every file in the pack replaces the one here; nothing is merged. If the pack has saved reports, they replace all of this computer’s saved reports. Survey data, waypoints and your own settings (data folder, GPS inputs, clock and the rest of Settings → General) are never changed.'));
+    box.push(el('p', { class: 'warnbox' }, el('b', {}, 'This overwrites this computer’s config files and shared settings. '),
+      'The pack’s lists, shortcuts and map display replace the ones here (nothing is merged); its saved reports replace all of this computer’s saved reports; its settings and network GPS / NMEA inputs replace this computer’s. Map feeds, waypoints, routes and overlays are only added: any already here are kept as they are, and none are removed',
+      r.kind === 'backup' ? ', except those the pack used after this backup added, which are taken away.' : '.',
+      ' Survey data, offline charts, serial GPS ports and the data folder are never changed.'));
+    const inf = r.info || {};
+    if (inf.min_spyhop || inf.made_with) box.push(el('p', { class: 'hint', id: 'gc-version' },
+      [inf.min_spyhop ? `Needs Spyhop ${inf.min_spyhop} or newer` : '', inf.made_with ? `made with Spyhop ${inf.made_with}` : ''].filter(Boolean).join('; '),
+      ` (this computer has ${S.about?.spyhop || ''}).`));
+    if (r.display) {
+      const d = r.display, names = [d.ais && 'AIS vessels', d.radar_us && 'US radar', d.radar_world && 'worldwide radar',
+        ...(d.feed_names || [])].filter(Boolean);
+      box.push(el('p', { class: 'hint', id: 'gc-display' }, `Online overlays it switches on: ${names.length ? names.join(', ') : 'none'} (the others are switched off; each computer can change them afterwards).`));
+    }
     if (r.problems.length) {
       box.push(el('div', { class: 'errbox' }, el('b', {}, 'The pack has problems, so it can’t be used. Ask whoever looks after it to fix:'),
         el('ul', {}, r.problems.map((p) => el('li', {}, p)))));
     }
     box.push(el('table', { class: 'summary gc-files' },
-      el('thead', {}, el('tr', {}, ['File', 'What happens', 'Here', 'In the pack'].map((h) => el('th', {}, h)))),
+      el('thead', {}, el('tr', {}, ['What', 'What happens', 'Here', 'In the pack'].map((h) => el('th', {}, h)))),
       el('tbody', {}, r.files.map((f) => el('tr', { class: `gc-${f.status}` },
-        el('td', { class: 'mono' }, f.file), el('td', {}, label[f.status]),
-        el('td', {}, f.unit === 'rows' && f.here != null ? `${f.here} rows` : ''),
-        el('td', {}, f.unit === 'rows' && f.pack != null ? `${f.pack} rows` : ''))))));
+        el('td', { class: f.unit === 'rows' || f.unit === 'report' || f.unit === 'route' || f.unit === 'overlay' ? 'mono' : '' }, f.file),
+        el('td', {}, f.unit === 'waypoints' && f.status === 'new' ? `${f.add} new — will be added` : label[f.status],
+          f.detail ? el('div', { class: 'gc-note' }, f.detail) : null),
+        el('td', {}, (f.unit === 'rows' || f.unit === 'waypoints') && f.here != null ? `${f.here} ${f.unit === 'rows' ? 'rows' : f.here === 1 ? 'waypoint' : 'waypoints'}` : ''),
+        el('td', {}, (f.unit === 'rows' || f.unit === 'waypoints') && f.pack != null ? `${f.pack} ${f.unit === 'rows' ? 'rows' : f.pack === 1 ? 'waypoint' : 'waypoints'}` : ''))))));
     if (r.manifest.length) {
       box.push(el('h4', {}, 'Recent changes in the pack (spyhop-config.csv)'), el('table', { class: 'summary' },
         el('thead', {}, el('tr', {}, ['Date', 'Changed by', 'Files', 'Notes'].map((h) => el('th', {}, h)))),
@@ -1504,13 +1523,13 @@ class App {
           oninput: (e) => { gc.backupDir = e.target.value; } });
         const backup = el('input', { type: 'checkbox', id: 'gc-backup', checked: gc.backup ?? st.group_config_backup !== false,
           onchange: (e) => { gc.backup = e.target.checked; } });
-        const verb = r.kind === 'backup' ? 'Restore and overwrite' : r.kind === 'folder' ? 'Use it and overwrite' : 'Pull and overwrite';
+        const verb = r.kind === 'backup' ? 'Restore' : r.kind === 'folder' ? 'Use it' : 'Pull it';
         box.push(
           el('label', { class: 'check' }, backup, el('span', {}, 'Save a backup of this computer’s config files first (it can be restored to undo)')),
           el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Backup folder:', dirBox),
             el('button', { onclick: async () => { const p = await this.pickFolder(); if (p) { gc.backupDir = p; dirBox.value = p; } } }, 'Choose…')),
           el('div', { class: 'btnrow' }, el('button', { id: 'btn-gc-pull', class: 'primary', onclick: () => this.pullGroupConfig() },
-            gc.busy === 'pull' ? 'Working…' : `${verb} ${todo.length} file${todo.length > 1 ? 's' : ''}`), cancel));
+            gc.busy === 'pull' ? 'Working…' : `${verb}: ${todo.length} change${todo.length > 1 ? 's' : ''}`), cancel));
       }
     } else box.push(el('div', { class: 'btnrow' }, cancel));
     return el('div', { id: 'gc-result', class: 'gc-result' }, ...box);
@@ -1534,6 +1553,17 @@ class App {
     const notes = el('textarea', { id: 'mp-notes', rows: 3, style: { width: '100%' }, placeholder: 'e.g. Added Dead bird; new observer JM' });
     const files = el('input', { type: 'text', id: 'mp-files', value: filesText, style: { width: '100%' } });
     const fname = el('input', { type: 'text', id: 'mp-name', style: { width: '100%' }, placeholder: 'e.g. 2026-NEA-CCB' });
+    // the optional parts: the overwritten pack's choice, else the last one made here
+    let inc = info.includes;
+    if (!Array.isArray(inc)) { try { inc = JSON.parse(localStorage.getItem('wsr.packInclude') || '[]'); } catch { inc = []; } }
+    const part = (key, label, n) => el('label', { class: 'check' },
+      el('input', { type: 'checkbox', class: 'mp-include', value: key, checked: inc.includes(key) }),
+      el('span', {}, `${label} (${n} on this computer)`));
+    const online = this.online.displayState();
+    const onNames = [online.ais && 'AIS vessels', online.radar_us && 'US radar', online.radar_world && 'worldwide radar',
+      ...(this.online.feeds || []).filter((f) => online.feeds.includes(f.url)).map((f) => f.name)].filter(Boolean);
+    const withDisplay = el('input', { type: 'checkbox', id: 'mp-display', checked: true });
+    const minV = el('input', { type: 'text', id: 'mp-min', value: info.min_spyhop || info.min_default || '', style: { width: '8em' } });
     const filesHint = name ? (info.files?.length ? `Different from ${name}.` : `Nothing differs from ${name}.`)
       : since ? (info.files?.length ? `Changed on this computer since ${since}.` : `Nothing has changed on this computer since ${since}.`)
         : 'Spyhop doesn’t know what changed, so it says all.';
@@ -1543,7 +1573,13 @@ class App {
       name ? null : el('label', { class: 'stack' }, 'Pack name', fname, el('span', { class: 'hint' }, 'Saved as <name>.spyhop.zip')),
       el('label', { class: 'stack' }, 'Your name', by),
       el('label', { class: 'stack' }, 'What changed', notes),
-      el('label', { class: 'stack' }, 'Files changed', files, el('span', { class: 'hint' }, filesHint)));
+      el('label', { class: 'stack' }, 'Files changed', files, el('span', { class: 'hint' }, filesHint)),
+      el('div', { class: 'stack mp-parts' }, el('b', {}, 'Also include'),
+        el('span', { class: 'hint' }, 'The lists, shortcuts, map display, saved reports, shared settings and map feeds are always in the pack. Waypoints, routes and overlays are added on the computers that use it; any they already have are kept.'),
+        part('waypoints', 'Waypoints', info.waypoints), part('routes', 'Routes', info.routes), part('overlays', 'Overlays', info.overlays),
+        el('label', { class: 'check' }, withDisplay, el('span', {}, `Which online overlays are switched on, and the radar settings (now: ${onNames.length ? onNames.join(', ') : 'none'})`))),
+      el('div', { class: 'stack mp-min' }, el('label', { class: 'inline' }, 'Needs Spyhop version ', minV, ' or newer'),
+        el('span', { class: 'hint' }, `Computers with an older Spyhop are asked to update before they can use the pack. ${info.min_default} is the lowest; this computer has ${info.version}.`)));
     for (;;) {
       const ok = await modal({ title: name ? 'Overwrite a config pack' : 'Save a new config pack', body,
         buttons: [{ label: 'Cancel', value: false }, { label: name ? 'Overwrite the pack' : 'Save the pack', value: true, primary: true }],
@@ -1554,7 +1590,10 @@ class App {
       toast('Please give your name and what changed.', 'warn');
     }
     try {
-      const r = await api('/api/configpacks/save', { name: name || fname.value, overwrite: !!name, by: by.value, notes: notes.value, files: files.value });
+      const include = [...body.querySelectorAll('.mp-include')].filter((x) => x.checked).map((x) => x.value);
+      try { localStorage.setItem('wsr.packInclude', JSON.stringify(include)); } catch {}
+      const r = await api('/api/configpacks/save', { name: name || fname.value, overwrite: !!name, by: by.value, notes: notes.value, files: files.value,
+        include, min_spyhop: minV.value.trim(), online_display: withDisplay.checked ? online : null });
       toast(`${name ? 'Pack overwritten' : 'Pack saved'}: ${r.name}`, 'info', 6000);
     } catch { return; }
     await this.loadConfigPacks();
@@ -1580,11 +1619,14 @@ class App {
   async pullGroupConfig() {
     const gc = this.gc, r = gc?.result;
     if (!r) return;
-    const todo = r.files.filter((f) => f.status !== 'same');
+    const todo = r.files.filter((f) => f.status !== 'same' && f.status !== 'kept');
     const backup = todo.length ? ($('#gc-backup')?.checked ?? true) : false;
     const backupDir = ($('#gc-backup-dir')?.value ?? '').trim();
     if (todo.length) {
-      let text = `${todo.length} config file${todo.length > 1 ? 's' : ''} on this computer will be overwritten or removed: ${todo.map((f) => f.file).join(', ')}.`;
+      const over = todo.filter((f) => f.status !== 'new' || f.unit === 'rows' || f.unit === 'report');
+      const adds = todo.filter((f) => !over.includes(f));
+      let text = over.length ? `${over.length === 1 ? 'This' : 'These'} will be overwritten or removed on this computer: ${over.map((f) => f.file).join(', ')}.` : '';
+      if (adds.length) text += `${text ? ' ' : ''}Added: ${adds.map((f) => f.unit === 'waypoints' ? `${f.add} waypoint${f.add > 1 ? 's' : ''}` : f.file).join(', ')}.`;
       text += backup ? ' A backup is saved first.' : ' No backup will be saved, so changes made here to these files will be lost.';
       if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and Quality Control will flag values that are no longer in a list. Changing the config during a survey is unusual: are you sure?';
       if (!await confirmBox('Overwrite config files?', text, 'Overwrite', true)) return;
@@ -1592,7 +1634,7 @@ class App {
     gc.busy = 'pull'; this.renderTemplates();
     try {
       const res = await api('/api/groupconfig/pull', { token: r.token, backup, backup_dir: backupDir });
-      gc.done = { changed: res.changed, backup: res.backup, copy: res.copy }; gc.result = null;
+      gc.done = { changed: res.changed, backup: res.backup, copy: res.copy, added: res.added, removed: res.removed_waypoints }; gc.result = null;
       toast(r.kind === 'backup' ? 'Backup restored' : 'Config pack used');
     } catch { /* toast shown */ }
     gc.busy = null;

@@ -1,4 +1,5 @@
-"""Config packs: a set of lists, shortcuts, map settings and saved reports in one file.
+"""Config packs: a team's setup in one file (lists, shortcuts, map display, saved reports; packparts.py has
+the settings, inputs, feeds, waypoints, routes and overlays added in 0.22).
 
 A pack is a zip (or a folder) holding any of the files in PACK_CSV, saved reports (Tools →
 Reports) in `reports/*.json`, and `spyhop-config.csv`, a log of changes in plain CSV:
@@ -37,7 +38,7 @@ import zipfile
 from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 
-from . import __version__, reports
+from . import __version__, packparts, reports
 
 MANIFEST = "spyhop-config.csv"
 MANIFEST_HEADER = ["Date", "Changed by", "Files", "Notes"]
@@ -209,13 +210,15 @@ def _unzip(data: bytes, sub: str) -> dict[str, bytes]:
 # ------------------------------------------------------------------ reading a pack
 def _root(files: dict[str, bytes]) -> str:
     """The folder inside the zip that holds the pack (zips often have one top folder)."""
-    known = set(PACK_CSV) | {MANIFEST}
+    known = set(PACK_CSV) | {MANIFEST, packparts.INFO, packparts.SETTINGS, packparts.WAYPOINTS}
     cands = []
     for n in files:
         parts = n.split("/")
         if parts[-1] in known:
             cands.append("/".join(parts[:-1]))
         elif len(parts) >= 2 and parts[-2] in ("reports", "filters") and parts[-1].endswith((".json", ".txt")):
+            cands.append("/".join(parts[:-2]))
+        elif len(parts) >= 2 and parts[-2] in ("routes", "overlays") and not parts[-1].startswith("."):
             cands.append("/".join(parts[:-2]))
     if not cands:
         raise PackError("That doesn't look like a Spyhop config pack: it has none of spyhop-config.csv, "
@@ -258,7 +261,8 @@ def read_pack(files: dict[str, bytes]) -> dict:
     root = _root(files)
     pre = root + "/" if root else ""
     inside = {n[len(pre):]: b for n, b in files.items() if n.startswith(pre)}
-    pack = {"csv": {}, "reports": None, "manifest": [], "manifest_text": "", "ignored": [], "problems": []}
+    pack = {"csv": {}, "reports": None, "manifest": [], "manifest_text": "", "ignored": [], "problems": [], "raw_parts": {}}
+    packparts.empty(pack)
     for name, b in sorted(inside.items()):
         if name == MANIFEST:
             try:
@@ -309,6 +313,12 @@ def read_pack(files: dict[str, bytes]) -> dict:
             pack[key][fn] = text
         elif name.startswith("reports/") and (name.endswith("README.md") or "/examples/" in name):
             continue
+        elif packparts.is_part(name):
+            try:
+                packparts.read_entry(pack, name, b, _text)
+            except PackError as e:
+                pack["problems"].append(str(e))
+            pack["raw_parts"][name] = b
         else:
             pack["ignored"].append(name)
     return pack
@@ -365,7 +375,8 @@ def compare(cfg, pack: dict) -> list[dict]:
             out.append({"file": f"{folder}/{fn}", "status": st, "unit": unit})
         for fn in sorted(set(local) - set(pack[key])):
             out.append({"file": f"{folder}/{fn}", "status": "removed", "unit": unit})
-    order = {"changed": 0, "new": 1, "removed": 2, "same": 3}
+    out.extend(packparts.compare(cfg, pack))
+    order = {"changed": 0, "new": 1, "removed": 2, "kept": 3, "same": 4}
     return sorted(out, key=lambda r: (order[r["status"]], r["file"]))
 
 
@@ -438,7 +449,8 @@ def list_packs(cfg) -> list[dict]:
             pack = read_pack(_unzip(p.read_bytes(), ""))
             plan = compare(cfg, pack)
             item.update(latest=pack["manifest"][0] if pack["manifest"] else None, changes=len(pack["manifest"]),
-                        problems=pack["problems"][:3], differs=[r["file"] for r in plan if r["status"] != "same"])
+                        problems=pack["problems"][:3], differs=[r["file"] for r in plan if r["status"] not in ("same", "kept")],
+                        info=pack.get("info"))
             item["matches"] = not pack["problems"] and not item["differs"]
         except PackError as e:
             item["error"] = str(e)
@@ -464,12 +476,18 @@ def read_pack_file(cfg, name: str) -> dict:
 
 def changed_from_pack(cfg, name: str) -> list[str]:
     """The files that differ between this computer and a pack in the folder."""
-    return [r["file"] for r in compare(cfg, read_pack_file(cfg, name)) if r["status"] != "same"]
+    return [r["file"] for r in compare(cfg, read_pack_file(cfg, name)) if r["status"] not in ("same", "kept")]
 
 
-def save_pack(cfg, name: str, by: str, files: str, notes: str, overwrite: bool = False) -> Path:
+def save_pack(cfg, name: str, by: str, files: str, notes: str, overwrite: bool = False,
+              include=(), min_spyhop: str | None = None, online_display: dict | None = None) -> Path:
     """Save this computer's config as a pack in the config packs folder, adding a row to its record of changes.
-    A new pack continues this computer's record; overwriting continues the record of the pack replaced."""
+    A new pack continues this computer's record; overwriting continues the record of the pack replaced.
+    include: any of packparts.OPTIONAL (waypoints, routes, overlays)."""
+    try:
+        min_spyhop = packparts.clean_min_version(min_spyhop)
+    except packparts.PartError as e:
+        raise PackError(str(e))
     if overwrite:
         p = _pack_file(cfg, name)
         if not p.is_file():
@@ -488,7 +506,7 @@ def save_pack(cfg, name: str, by: str, files: str, notes: str, overwrite: bool =
         if p.exists():
             raise PackError(f"There's already a pack called {fn}. Choose another name, or use Overwrite on that pack.")
     log_change(cfg, by, files or "all", notes)
-    _write_bytes(p, make_zip(cfg))
+    _write_bytes(p, make_zip(cfg, include=include, min_spyhop=min_spyhop, online_display=online_display))
     return p
 
 
@@ -507,6 +525,8 @@ def pack_to_zip(pack: dict) -> bytes:
                 z.writestr(f"{folder}/{fn}", text)
             if not pack[key]:
                 z.writestr(marker, f"This pack has no {what}s: pulling it removes any on the computer.\n")
+        for name, b in pack.get("raw_parts", {}).items():
+            z.writestr(name, b)
     return buf.getvalue()
 
 
@@ -535,6 +555,10 @@ def fingerprints(cfg) -> dict[str, str]:
             continue
         body = json.dumps(_norm(text)) if name.endswith(".csv") else text.strip()
         out[name] = hashlib.sha1(body.encode("utf-8")).hexdigest()
+    for name, b in packparts.entries(cfg, include=packparts.OPTIONAL, info=False).items():
+        if name.endswith(".csv"):
+            b = json.dumps(_norm(b.decode("utf-8-sig"))).encode()
+        out[name] = hashlib.sha1(b).hexdigest()
     return out
 
 
@@ -562,9 +586,11 @@ def log_change(cfg, by: str, files: str, notes: str) -> list[str]:
     return row
 
 
-def make_zip(cfg, note: str = "", backup: bool = False) -> bytes:
+def make_zip(cfg, note: str = "", backup: bool = False, include=(), min_spyhop: str | None = None,
+             online_display: dict | None = None) -> bytes:
     """A zip of this computer's config files: a backup, and a pack another computer can pull.
-    A backup also records "no saved reports" when there were none, so pulling it undoes exactly."""
+    A backup also records "no saved reports" when there were none, so pulling it undoes exactly,
+    and always has the waypoints, routes and overlays."""
     buf = io.BytesIO()
     files = config_files(cfg)
     manifest = files.pop(MANIFEST, None)
@@ -580,6 +606,9 @@ def make_zip(cfg, note: str = "", backup: bool = False) -> bytes:
         z.writestr(MANIFEST, "\ufeff" + out.getvalue())       # the BOM makes Excel read it as UTF-8
         for name, p in files.items():
             z.write(p, name)
+        for name, b in packparts.entries(cfg, include=packparts.OPTIONAL if backup else include,
+                                         min_spyhop=min_spyhop, online_display=online_display).items():
+            z.writestr(name, b)
         for folder, _d, _ok, marker, what in SETS.values():
             if backup and not any(n.startswith(folder + "/") for n in files):
                 z.writestr(marker, f"This computer had no {what}s of its own when this was made.\n"
@@ -616,8 +645,10 @@ def _write_bytes(p: Path, data: bytes):
     os.replace(tmp, p)
 
 
-def apply(cfg, pack: dict) -> list[str]:
-    """Replace this computer's files with the pack's. Returns the files changed."""
+def apply_all(cfg, pack: dict) -> tuple[list[str], dict]:
+    """Use a pack: replace this computer's lists, shortcuts, map display, saved reports and shared
+    settings with the pack's; add its map feeds, routes and overlays that aren't here yet.
+    Returns (what changed, packparts.apply()'s record); its waypoints are for the caller to add."""
     if pack["problems"]:
         raise PackError("The pack has problems, so nothing was changed:\n" + "\n".join(pack["problems"]))
     plan = compare(cfg, pack)
@@ -633,11 +664,19 @@ def apply(cfg, pack: dict) -> list[str]:
         for p in rdir.glob("*.json"):
             if p.name not in pack[key]:
                 p.unlink()
+    done = packparts.apply(cfg, pack, _write_bytes)
     if pack["manifest_text"]:
         _write(cfg.root / MANIFEST, pack["manifest_text"])
     cfg.ensure_defaults()          # adds columns a newer Spyhop needs; never removes anything
     cfg.reload()
-    return [r["file"] for r in plan if r["status"] != "same"]
+    return [r["file"] for r in plan if r["status"] not in ("same", "kept")], done
+
+
+def apply(cfg, pack: dict) -> list[str]:
+    """apply_all() without Spyhop's recorder: waypoints are written to waypoints.csv directly."""
+    changed, done = apply_all(cfg, pack)
+    packparts.add_waypoints_to_file(cfg, done["waypoints"])
+    return changed
 
 
 # ------------------------------------------------------------------ cache between check and pull

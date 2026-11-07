@@ -37,7 +37,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
 - **Summary and reports:**
   - a Summary (totals, conditions, observers, a map), saved as HTML or PDF
   - **Reports:** pick species or event types, conditions and columns from any table, see the result live, and save it as CSV, HTML or PDF; save reports by name, share them in config packs, and run them all at once
-- **Config packs:** save the lists, shortcuts, map settings and saved reports as one `.spyhop.zip` file, switch between packs, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer pulls the latest with one button, keeping a backup.
+- **Config packs:** save a team's setup (lists, shortcuts, map display, saved reports, shared settings and network inputs, map feeds, and optionally waypoints, routes and overlays) as one small `.spyhop.zip` file, switch between packs, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer pulls the latest with one button, keeping a backup.
 - **Export:** separate CSVs, a merged time-ordered CSV (sightings, effort, events and track) with the conditions on every row, GPX, GeoJSON, the summary and saved reports, in one zip.
 
 ## System requirements
