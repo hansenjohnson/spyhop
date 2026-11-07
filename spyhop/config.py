@@ -225,6 +225,7 @@ DEFAULT_DISPLAY = {
     "show_track_off": "1",
     "fade_enabled": "0",            # fade the track, sightings and events older than fade_hours (not waypoints)
     "fade_hours": "2",
+    "overlay_colors": "{}",         # colours chosen in Tools → Overlays: JSON {file: "#rrggbb"}
 }
 
 DEFAULT_SETTINGS = {

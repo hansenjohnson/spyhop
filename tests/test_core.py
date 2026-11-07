@@ -997,6 +997,11 @@ def test_track_break_fix(rec):
     assert effs == ["Start", "ON", "ERROR", "ON"]
     err = rec.tables["effort"].rows[2]
     assert err["VesLat"] == "41.900500" and err["Visibility"] == ">10 nm"
+    # one second after the last good track point (t0 + 20 s), so it sorts after it in the merged export
+    assert datetime.fromisoformat(err["DateTime"]) == t0 + timedelta(seconds=21)
+    merged = [m for m in rec.merged_rows()[1] if m.get("Record") in ("Effort", "Track")]
+    i_err = next(i for i, m in enumerate(merged) if m.get("Effort") == "ERROR" and m.get("Record") == "Effort")
+    assert any(m.get("Record") == "Track" and datetime.fromisoformat(m["DateTime"]) == t0 + timedelta(seconds=20) for m in merged[:i_err])
     with pytest.raises(ValueErrorMsg):
         rec.insert_track_break(tr[0]["fix"]["t0"], tr[0]["fix"]["t1"])      # already marked
     r = _qc(rec)

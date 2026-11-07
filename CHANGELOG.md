@@ -6,6 +6,12 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.25.0 — 2026-11-07
+
+- **Overlay colours:** in Tools → Overlays, click an overlay's colour to draw it in another colour on the map (↺ goes back to its own colours). The colours are kept with the map display, so they are remembered and travel in templates.
+- **Sawtooth routes:** the return crossover now runs straight across the pattern, at right angles to the survey direction (090° or 270° for a survey heading 000°), onto the reciprocal sawtooth.
+- **Quality Control → Fix** puts the ERROR row in the Effort table one second after the last good track point before the break, so in the merged export it comes after that track point rather than tying with it.
+
 ## 0.24.0 — 2026-11-07
 
 - **"Config packs" are now called templates everywhere**: in Settings → Templates (**Use this template…**, **Update…**, **Save as a new template…**, **Get a template from the web**), in the docs (docs/CONFIG_PACKS.md is now **docs/TEMPLATES.md**) and in the code.

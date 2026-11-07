@@ -62,10 +62,10 @@ export function systematicPoints(start, brg, legs, legM, spacingM, side) {
 
 // Sawtooth (zig-zag). The pattern advances along `dir`; consecutive legs meet at `angle` degrees,
 // so each leg runs (180 − angle)/2 off `dir`, the first to the chosen side. The waypoints alternate
-// between the start line and a line `width` to that side. With `ret`, a short crossover leg at a
-// right angle to the last leg leads onto the reciprocal sawtooth (its waypoints on the opposite
-// line from the outbound ones), which comes back through the outbound pattern, crossing each leg at
-// its middle, and ends level with the start on the far line.
+// between the start line and a line `width` to that side. With `ret`, a crossover leg straight
+// across (at right angles to `dir`) leads onto the reciprocal sawtooth (its waypoints on the
+// opposite line from the outbound ones), which comes back through the outbound pattern, crossing
+// each leg at its middle, and ends level with the start on the far line.
 // Worked out on a flat plane around the start (metres along, metres to starboard): over a survey
 // area the difference from great circles is negligible, and the two patterns line up exactly.
 export function sawtoothPoints(start, dir, legs, legM, angle, side, ret) {
@@ -81,12 +81,11 @@ export function sawtoothPoints(start, dir, legs, legM, angle, side, ret) {
   const pts = P.map((q, k) => ({ ll: k ? toLL(q) : start, name: k === 0 ? 'Start' : k === legs ? (ret ? 'Far end' : 'End') : `Turn ${k}`,
     ...(k ? { leg: `Leg ${k}`, survey: true } : {}) }));
   if (ret) {
-    const C = P.map(([x, y]) => [x, w - y]);                 // the reciprocal pattern's waypoints
-    const pn = P[legs], d = [(pn[0] - P[legs - 1][0]) / legM, (pn[1] - P[legs - 1][1]) / legM];
-    const cn = C[legs], t = (pn[0] - cn[0]) * d[0] + (pn[1] - cn[1]) * d[1];
-    const q = [cn[0] + t * d[0], cn[1] + t * d[1]];          // the foot of the right angle from the far end onto it
-    pts.push({ ll: toLL(q), name: 'Crossover', leg: 'Crossover', survey: false });
-    for (let k = legs, j = 1; k >= 0; k--, j++) {
+    // the reciprocal pattern's waypoints: on the opposite line from the outbound ones
+    const C = P.map(([x, y]) => [x, w - y]);
+    // the crossover: straight across from the far end, at right angles to the survey direction
+    pts.push({ ll: toLL(C[legs]), name: 'Return start', leg: 'Crossover', survey: false });
+    for (let k = legs - 1, j = 1; k >= 0; k--, j++) {
       pts.push({ ll: toLL(C[k]), name: k === 0 ? 'End' : `Return turn ${j}`, leg: `Return leg ${j}`, survey: true });
     }
   }
@@ -662,7 +661,7 @@ export class Planner {
                 el('option', { value: 'return', selected: !!w.ret }, 'Return: a reciprocal sawtooth back through it')))),
           el('p', { class: 'hint saw-summary' }, `The legs alternate between ${n3((+w.direction || 0) + sg * th)}°T and ${n3((+w.direction || 0) - sg * th)}°T, `,
             `advancing toward ${n3(w.direction)}°T: ${along.toFixed(1)} nm along that line and ${width.toFixed(1)} nm wide.`,
-            w.ret ? ' At the far end a short crossover leg, at a right angle to the last leg, leads onto the reciprocal sawtooth, which comes back through the outbound one, crossing each of its legs in the middle.' : ''),
+            w.ret ? ` At the far end a crossover leg straight across (${n3((+w.direction || 0) + sg * 90 * (Math.max(1, Math.round(+w.legs || 1)) % 2 ? -1 : 1))}°T, ${width.toFixed(1)} nm) leads onto the reciprocal sawtooth, which comes back through the outbound one, crossing each of its legs in the middle.` : ''),
           startHint);
       } else {
       modeBox = sec('Systematic trackline',

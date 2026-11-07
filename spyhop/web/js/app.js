@@ -485,6 +485,7 @@ class App {
       case 'display':
         this.S.config.display = m.display;
         this.applyDisplay();
+        this.map.restyleOverlays();
         this.map.redrawData();
         this.map.updateVessel(this.S.vessel);
         break;
@@ -2192,7 +2193,7 @@ class App {
     const allOn = m.map.hasLayer(m.layers.imported);
     const remove = async (n) => { if (await confirmBox('Remove overlay?', `Remove ${n} from Spyhop’s overlays folder? It can be imported again.`, 'Remove', true)) api(`/api/overlays/${encodeURIComponent(n)}`, undefined, 'DELETE').catch(() => {}); };
     pane.replaceChildren(el('div', { id: 'overlay-panel' }, el('section', { class: 'settings-sec' }, el('h3', {}, 'Map overlays'),
-      el('p', { class: 'hint' }, 'GeoJSON, GPX or KML files: planned transects, management areas, other surveys. They are kept in Spyhop’s overlays folder.'),
+      el('p', { class: 'hint' }, 'GeoJSON, GPX or KML files: planned transects, management areas, other surveys. They are kept in Spyhop’s overlays folder. Click an overlay’s colour to change it (↺ goes back to its own colours); the colours are kept with the map display, so they travel in templates too.'),
       el('div', { class: 'btnrow' }, el('button', { class: 'primary', onclick: () => this.importOverlay() }, 'Import…'),
         list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, true)); this.renderOverlays(); } }, 'Show all') : null,
         list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, false)); this.renderOverlays(); } }, 'Hide all') : null),
@@ -2203,7 +2204,10 @@ class App {
         el('tbody', {}, list.map((n) => el('tr', { 'data-overlay': n },
           el('td', {}, el('input', { type: 'checkbox', class: 'ov-show', checked: m.overlayVisible(n), 'aria-label': `Show ${n}`,
             onchange: (e) => { m.setOverlayVisible(n, e.target.checked); } })),
-          el('td', {}, el('span', { class: 'ov-swatch', style: { background: m.overlayColor(n) } }), n),
+          el('td', { class: 'ov-name' }, el('input', { type: 'color', class: 'ov-color', value: m.overlayColor(n), title: 'Colour on the map',
+            'aria-label': `Colour of ${n}`, onchange: async (e) => { await m.setOverlayColor(n, e.target.value); this.renderOverlays(); } }),
+          m.customOverlayColor(n) ? el('button', { class: 'icon ov-color-reset', title: 'Back to its own colours',
+            onclick: async () => { await m.setOverlayColor(n, null); this.renderOverlays(); } }, '↺') : null, ' ', n),
           el('td', { class: 'nowrap' },
             el('button', { title: 'Zoom the map to this overlay', onclick: () => { m.setOverlayVisible(n, true); m.zoomToOverlay(n); this.renderOverlays(); } }, 'Zoom to'),
             el('button', { class: 'ov-remove', title: 'Remove this overlay', onclick: () => remove(n) }, 'Remove'))))))

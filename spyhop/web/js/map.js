@@ -857,7 +857,34 @@ export class MapView {
   // Each overlay file can be shown or hidden (Tools → Overlays); hidden ones are remembered.
   hiddenOverlays() { try { return new Set(JSON.parse(localStorage.getItem('wsr.overlayHidden') || '[]')); } catch { return new Set(); } }
   overlayVisible(name) { return !this.hiddenOverlays().has(name); }
-  overlayColor(name) { return colorFor(name); }
+  // colours chosen in Tools → Overlays (display.csv overlay_colors), else one made from the file name
+  overlayColors() {
+    try { const c = JSON.parse(this.app.S.config.display.overlay_colors || '{}'); return c && typeof c === 'object' ? c : {}; } catch { return {}; }
+  }
+  customOverlayColor(name) { const c = this.overlayColors()[name]; return /^#[0-9a-f]{6}$/i.test(c || '') ? c : null; }
+  overlayColor(name) { return this.customOverlayColor(name) || hslToHex(colorFor(name)); }
+  async setOverlayColor(name, hex) {
+    const all = this.overlayColors();
+    if (hex) all[name] = hex; else delete all[name];
+    this.app.S.config.display.overlay_colors = JSON.stringify(all);      // at once; the broadcast confirms it
+    await this.app.saveDisplay({ overlay_colors: this.app.S.config.display.overlay_colors });
+    this.restyleOverlays();
+  }
+  overlayStyle(name, f) {
+    const custom = this.customOverlayColor(name), color = custom || colorFor(name);
+    return { color: (!custom && f?.properties?.stroke) || color, weight: +f?.properties?.['stroke-width'] || 2.5, opacity: 0.9,
+      fillOpacity: 0.1, dashArray: f?.properties?.dash || null };
+  }
+  markerColor(name, f) { const custom = this.customOverlayColor(name); return (!custom && f?.properties?.['marker-color']) || custom || colorFor(name); }
+  // after a colour change (here, from another window or from a template)
+  restyleOverlays() {
+    for (const [name, gl] of Object.entries(this.overlayLayers || {})) {
+      gl.eachLayer((l) => {
+        if (l instanceof L.CircleMarker) { const c = this.markerColor(name, l.feature); l.setStyle({ color: c, fillColor: c }); }
+        else if (l.setStyle) l.setStyle(this.overlayStyle(name, l.feature));
+      });
+    }
+  }
   setOverlayVisible(name, on) {
     const hidden = this.hiddenOverlays();
     if (on) hidden.delete(name); else hidden.add(name);
@@ -882,12 +909,10 @@ export class MapView {
       try {
         const txt = await (await fetch(`/overlays/${encodeURIComponent(name)}`)).text();
         const gj = toGeoJSON(name, txt);
-        const color = colorFor(name);
         const gl = L.geoJSON(gj, {
-          style: (f) => ({ color: f?.properties?.stroke || color, weight: +f?.properties?.['stroke-width'] || 2.5, opacity: 0.9,
-            fillOpacity: 0.1, dashArray: f?.properties?.dash || null }),
+          style: (f) => this.overlayStyle(name, f),
           pointToLayer: (f, ll) => {
-            const c = f.properties?.['marker-color'] || color;
+            const c = this.markerColor(name, f);
             return L.circleMarker(ll, { radius: +f.properties?.['marker-radius'] || 5, color: c, fillColor: c, fillOpacity: 0.8 });
           },
           onEachFeature: (f, layer) => {
@@ -913,6 +938,16 @@ function gratText(v, isLat, step) {
   if (step >= 1) return `${d}°${hemi}`;
   const mtxt = step * 60 >= 1 ? String(Math.round(m)).padStart(2, '0') : m.toFixed(1).padStart(4, '0');
   return `${d}°${mtxt}'${hemi}`;
+}
+
+// "hsl(h,s%,l%)" → "#rrggbb" (for <input type=color>)
+function hslToHex(hsl) {
+  const m = /hsl\((\d+(?:\.\d+)?),\s*(\d+)%,\s*(\d+)%\)/.exec(hsl || '');
+  if (!m) return hsl;
+  const h = +m[1], s = +m[2] / 100, l = +m[3] / 100;
+  const k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = (n) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))).toString(16).padStart(2, '0');
+  return `#${f(0)}${f(8)}${f(4)}`;
 }
 
 function colorFor(name) {

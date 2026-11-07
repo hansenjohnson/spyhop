@@ -14,7 +14,7 @@ import math
 import re
 import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import geo, schema, tzguess
@@ -1071,8 +1071,18 @@ class Recorder:
 
         hhmm = lambda x: x.astimezone(tz).strftime("%H:%M:%S")
         added = []
-        err = make(t0, "ERROR", f"Trackline break (GPS jump or loss) until {hhmm(t1)}, added by Quality Control → Fix.")
-        r = self._write(lambda: t.add(err, index_for(t0)))
+        # the ERROR row goes one second after the last track point before the break, so that in the
+        # merged export (sorted by time) it comes after that point rather than tying with it
+        last = None
+        for p in self.track.points if self.track else []:
+            pt = parse_time(p.get("DateTime", ""))
+            if pt is not None and pt <= t0 and (last is None or pt > last):
+                last = pt
+        t_err = (last or t0) + timedelta(seconds=1)
+        if t_err >= t1:
+            t_err = t0
+        err = make(t_err, "ERROR", f"Trackline break (GPS jump or loss) until {hhmm(t1)}, added by Quality Control → Fix.")
+        r = self._write(lambda: t.add(err, index_for(t_err)))
         if r:
             added.append(r)
         follows = any(x[0] is not None and t0 < x[0] <= t1 for x in timed)

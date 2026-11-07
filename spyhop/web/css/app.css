@@ -483,3 +483,5 @@ table.overlay-table td { vertical-align: middle; }
 .feed-preset { margin: 0.35em 0; }
 .feed-add { margin-top: 0.6em; }
 .feed-active { color: var(--ok); font-weight: 600; }
+.overlay-table input.ov-color { width: 2.2em; height: 1.5em; padding: 0; border: 1px solid var(--line, #ccc); vertical-align: middle; cursor: pointer; }
+.overlay-table button.ov-color-reset { padding: 0 0.3em; vertical-align: middle; }
