@@ -16,7 +16,7 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 
 from .recorder import Recorder, ValueErrorMsg
-from . import awake, configpack, __version__, diag, reports, schema, updater
+from . import awake, configpack, __version__, diag, filters, reports, schema, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports
 from .store import safe_name
@@ -506,7 +506,7 @@ class App:
         targets = {"data": cfg.root, "app": cfg.root, "exports": cfg.export_dir, "charts": cfg.charts_dir,
                    "overlays": cfg.overlays_dir, "survey": cfg.data_dir, "datafolder": cfg.data_dir,
                    "nmealogs": cfg.data_dir / "nmea_logs", "logs": diag.log_dir(cfg.root),
-                   "reports": reports.user_dir(cfg),
+                   "reports": reports.user_dir(cfg), "filters": filters.user_dir(cfg),
                    "backups": configpack.backups_dir(cfg), "packs": configpack.packs_dir(cfg)}
         if what in targets:
             p = targets[what]
@@ -514,6 +514,8 @@ class App:
                 p.mkdir(parents=True, exist_ok=True)
             if what == "reports":
                 reports.prepare_user_dir(cfg)
+            if what == "filters":
+                filters.ensure_dir(cfg)
             if what in ("nmealogs", "logs"):
                 p.mkdir(parents=True, exist_ok=True)
         elif what.startswith("config:"):
@@ -773,6 +775,69 @@ class App:
             os.replace(tmp, dest)
         return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}")
 
+    # ---- filters (Tools → Filter; filters.py)
+    async def filters_list(self, request):
+        cfg = self.rec.cfg
+        saved, errors = filters.load(cfg)
+        return json_ok(filters=saved, errors=errors, folder=str(filters.user_dir(cfg)),
+                       columns={t: filters.columns(t) for t in filters.TABLES}, ops=filters.OPS,
+                       pdf=find_chrome() is not None)
+
+    @staticmethod
+    def _filter_spec(b) -> dict:
+        try:
+            return filters.clean(b.get("spec"))
+        except filters.FilterError as e:
+            raise ValueErrorMsg(str(e))
+
+    async def filter_run(self, request):
+        b = await request.json()
+        spec = self._filter_spec(b)
+        return json_ok(result=filters.run(self.rec, spec), counts=filters.counts(self.rec, spec["table"]))
+
+    async def filter_save(self, request):
+        b = await request.json()
+        try:
+            f = filters.save(self.rec.cfg, b.get("spec") or {}, b.get("replace") or None)
+        except filters.FilterError as e:
+            raise ValueErrorMsg(str(e))
+        self._broadcast_soon({"type": "filters"})
+        return json_ok(filter=f)
+
+    async def filter_delete(self, request):
+        b = await request.json()
+        try:
+            filters.delete(self.rec.cfg, str(b.get("file", "")))
+        except filters.FilterError as e:
+            raise ValueErrorMsg(str(e))
+        self._broadcast_soon({"type": "filters"})
+        return json_ok()
+
+    async def filter_export(self, request):
+        """Save a filter's result as CSV, HTML or PDF in the exports folder."""
+        b = await request.json()
+        spec, fmt = self._filter_spec(b), b.get("format", "csv")
+        if fmt not in ("csv", "html", "pdf"):
+            raise ValueErrorMsg("Save as csv, html or pdf.")
+        if self.rec.survey is None:
+            raise ValueErrorMsg("Open a survey first.")
+        res = filters.run(self.rec, spec)
+        prefix = safe_name(self.rec.survey.get("prefix") or "no-survey")
+        stem = filters.file_name(spec["name"] or "filter")[:-5]
+        dest = self.rec.cfg.export_dir / f"{prefix}_{stem}_{time.strftime('%Y%m%d-%H%M%S')}.{fmt}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if fmt == "pdf":
+            try:
+                await asyncio.get_running_loop().run_in_executor(None, html_to_pdf, filters.to_html(self.rec, res), dest, 3000)
+            except PdfError as e:
+                raise ValueErrorMsg(str(e))
+        else:
+            text = filters.to_csv(res) if fmt == "csv" else filters.to_html(self.rec, res)
+            tmp = dest.with_name(dest.name + ".tmp")
+            tmp.write_text(text, encoding="utf-8", newline="")
+            os.replace(tmp, dest)
+        return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}", count=res["count"])
+
     # ---- config packs (Settings → Templates; configpack.py)
     async def groupconfig_check(self, request):
         """Check a pack before pulling it: from a web address ({url}), a pack in the config packs
@@ -1000,6 +1065,11 @@ class App:
         r.add_get("/api/reports", self.reports_list)
         r.add_get("/api/reports/{id}", self.report_data)
         r.add_post("/api/reports/save", self.report_save)
+        r.add_get("/api/filters", self.filters_list)
+        r.add_post("/api/filters/run", self.filter_run)
+        r.add_post("/api/filters/save", self.filter_save)
+        r.add_post("/api/filters/delete", self.filter_delete)
+        r.add_post("/api/filters/export", self.filter_export)
         r.add_post("/api/survey/start", self.survey_start)
         r.add_post("/api/survey/end", self.survey_end)
         r.add_post("/api/survey/meta", self.survey_meta)

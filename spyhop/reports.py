@@ -234,7 +234,7 @@ def to_html(rec, res: dict) -> str:
     except Exception:                                    # pragma: no cover - only decoration
         sv = None
     if sv:
-        info.append(("Dates", f"{(sv.get('start_time') or '')[:10]} – {(sv.get('end_time') or 'still active')[:10]}"))
+        info.append(("Dates", f"{(sv.get('start_time') or '')[:10]} – {(sv.get('end_time') or '')[:10] or 'still active'}"))
     now = rec.now()
     head = "".join(f'<th class="{"r" if c["align"] == "right" else ""}">{e(c["label"])}</th>' for c in res["columns"])
     nowrap = {i for i, c in enumerate(res["columns"]) if c["label"].lower() in ("time", "date", "position")}

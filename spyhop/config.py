@@ -146,7 +146,7 @@ DEFAULT_SHORTCUTS = ["combo", "action", "prefill"], [
     ["Mod+1", "tab:sightings", ""],
     ["Mod+2", "tab:effort", ""],
     ["Mod+3", "tab:events", ""],
-    ["Mod+4", "tab:reports", ""],
+    ["Mod+4", "tab:summary", ""],
     ["Mod+5", "tab:settings", ""],
     ["Mod+Shift+C", "center-vessel", ""],
     ["Mod+Shift+M", "toggle-log", ""],
@@ -193,8 +193,9 @@ def clean_combo(combo: str) -> str:
 NEW_LIST_ROWS = {"event_types": ["Gear Reported", "Gear Recovered", "Other"], "species": ["Dead bird"]}
 NEW_ACTIONS = {"toggle-log", "add-current"}
 REMOVED_ACTIONS = {"cycle-latlon", "add:surfacings"}
-# tabs renamed or merged in 0.7.0: existing shortcuts are pointed at the new tab
-RENAMED_ACTIONS = {"tab:summary": "tab:reports", "tab:planning": "tab:route"}
+# tabs renamed in 0.7.0: existing shortcuts are pointed at the new tab. (Summary was merged into
+# Reports in 0.7.0 and is its own tab again from 0.18: Mod+4 is moved back once, below.)
+RENAMED_ACTIONS = {"tab:planning": "tab:route"}
 
 DEFAULT_DISPLAY = {
     "marker_radius": "8",
@@ -373,6 +374,17 @@ class Config:
                 if r.get("action") in RENAMED_ACTIONS:
                     r["action"] = RENAMED_ACTIONS[r["action"]]
                     renamed = True
+            moved = self.settings_dir / "summary_shortcut_moved.txt"
+            if not moved.exists():          # 0.18: Mod+4 showed Reports → Summary; Summary is its own tab now
+                for r in keep:
+                    if r.get("combo") == "Mod+4" and r.get("action") == "tab:reports":
+                        r["action"] = "tab:summary"
+                        renamed = True
+                try:
+                    moved.parent.mkdir(parents=True, exist_ok=True)
+                    moved.write_text("Mod+4 now shows Tools -> Summary (Spyhop 0.18).\n")
+                except OSError:
+                    pass
             if new or renamed or len(keep) != len(rows):
                 _write_csv(p, DEFAULT_SHORTCUTS[0],
                            [[r.get("combo", ""), r.get("action", ""), r.get("prefill", "")] for r in keep] + new)

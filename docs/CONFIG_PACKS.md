@@ -1,6 +1,6 @@
 # Config packs
 
-A **config pack** holds one set of Spyhop config files: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates. It lets a team use the same lists on every computer, and lets one computer switch between setups (for example a vessel crew and an aerial crew).
+A **config pack** holds one set of Spyhop config files: the species, event types, observers and behaviours lists, keyboard shortcuts, map display, report templates and saved filters. It lets a team use the same lists on every computer, and lets one computer switch between setups (for example a vessel crew and an aerial crew).
 
 Packs are managed in **Settings → Templates**. They are kept in the **`config_packs` folder in the survey data folder**, and Spyhop lists every pack there. For each one it shows the latest change, whether it matches this computer's config, and which pack is in use. From the list you can:
 
@@ -24,10 +24,11 @@ A pack is a zip file (or, on GitHub, a repository or a folder in one) containing
 | `shortcuts.csv` | Keyboard shortcuts. |
 | `display.csv` | Map display: marker shapes and colours, track styles, text sizes. Leave it out if each person should keep their own. |
 | `reports/*.json` | Report templates (see `spyhop/report_defs/README.md`). |
+| `filters/*.json` | Saved filters (Tools → Filter), one file each. |
 
 **Only the files in the pack are changed.** For example, a pack with only `species.csv` and `observers.csv` changes only those two lists on each computer.
 
-**Report templates go as a set.** If the pack has a `reports` folder with templates in it, each computer ends up with exactly those templates: any other templates of its own are removed. A pack with no templates leaves each computer's templates alone.
+**Report templates go as a set.** If the pack has a `reports` folder with templates in it, each computer ends up with exactly those templates: any other templates of its own are removed. A pack with no templates leaves each computer's templates alone. **Saved filters** work the same way: a pack with a `filters` folder replaces each computer's saved filters with its own.
 
 Survey data, waypoints and personal settings (data folder, GPS inputs, clock, sleep and the rest of Settings → General) are never in a pack and never changed by one.
 
@@ -82,7 +83,7 @@ You can also type the **path of a zip or folder on this computer**, such as a pa
 
 **Nothing is merged.** Each file from the pack replaces this computer's copy, so changes made on this computer to those files are lost, apart from the backup. If a file should differ on one computer, leave it out of the pack.
 
-**A pack with any problem isn't pulled at all.** Problems are files Spyhop can't read: a list missing its `name` column, or a report template with a mistake. Spyhop names the problem files, and nothing on the computer changes.
+**A pack with any problem isn't pulled at all.** Problems are files Spyhop can't read: a list missing its `name` column, or a report template or saved filter with a mistake. Spyhop names the problem files, and nothing on the computer changes.
 
 **During a survey:** using a pack is allowed, after a warning. Rows already recorded are never changed. If a pull removes a list entry that earlier rows use, those rows keep their values, and Quality Control flags them as "not in the list".
 
@@ -90,6 +91,6 @@ You can also type the **path of a zip or folder on this computer**, such as a pa
 
 Each backup is itself a pack. The latest backups are listed under **Backups**; press **Restore…** on one, then **Restore and overwrite**. **Open the backups folder** shows them all.
 
-A backup made when the computer had no report templates of its own includes a small marker file, so restoring it also removes the templates the pack added.
+A backup made when the computer had no report templates (or saved filters) of its own includes a small marker file, so restoring it also removes the ones the pack added.
 
 Backups saved before Spyhop 0.14.0 are in the `config_backups` folder in Spyhop's own folder. To restore one, copy it into the backups folder, or type its path under **Get a pack from the web**.

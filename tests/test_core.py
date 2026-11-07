@@ -933,13 +933,27 @@ def test_renamed_tab_shortcuts_migrated(tmp_path):
     Config(tmp_path)
     p = tmp_path / "shortcuts.csv"
     rows = read_csv(p)
-    assert any(r["action"] == "tab:reports" for r in rows)
+    assert any(r["combo"] == "Mod+4" and r["action"] == "tab:summary" for r in rows)
     with open(p, "a", newline="") as fh:
         fh.write("Mod+9,tab:summary,\nMod+8,tab:planning,\n")
     Config(tmp_path)
     acts = [r["action"] for r in read_csv(p)]
-    assert "tab:summary" not in acts and "tab:planning" not in acts
-    assert acts.count("tab:reports") == 2 and "tab:route" in acts
+    assert "tab:planning" not in acts and "tab:route" in acts and acts.count("tab:summary") == 2
+
+
+def test_mod4_moves_back_to_summary_once(tmp_path):
+    from spyhop.config import Config
+    Config(tmp_path)
+    p = tmp_path / "shortcuts.csv"
+    (tmp_path / "settings" / "summary_shortcut_moved.txt").unlink(missing_ok=True)
+    text = p.read_text().replace("Mod+4,tab:summary", "Mod+4,tab:reports")
+    p.write_text(text + "Mod+7,tab:reports,\n")
+    Config(tmp_path)
+    acts = {r["combo"]: r["action"] for r in read_csv(p)}
+    assert acts["Mod+4"] == "tab:summary" and acts["Mod+7"] == "tab:reports"
+    p.write_text(p.read_text().replace("Mod+4,tab:summary", "Mod+4,tab:reports"))
+    Config(tmp_path)                                       # only once: the user's choice now stays
+    assert {r["combo"]: r["action"] for r in read_csv(p)}["Mod+4"] == "tab:reports"
 
 
 # ---------------------------------------------------------------- 0.8.0
@@ -1745,3 +1759,95 @@ def test_offline_backoff_is_per_server(tmp_path):
         asyncio.run(go())
     finally:
         stop()
+
+
+def test_filters_presets_run_and_export(rec):
+    from spyhop import filters
+    saved, errors = filters.load(rec.cfg)                     # first use: the starting presets
+    assert not errors
+    assert [f["name"] for f in saved] == ["Blue whales", "Dead birds", "Gear", "Right whales"]
+    rec.new_row("sightings", {"Species": "North Atlantic right whale", "Count": "3", "Calves": "1", "Notes": "mom & calf"})
+    rec.new_row("sightings", {"Species": "Humpback whale", "Count": "2"})
+    rec.new_row("sightings", {"Species": "RIWH", "Count": "2"})            # typed as the code
+    rec.new_row("sightings", {"Species": "Spyhop mystery whale", "Count": "1"})   # not in the list
+    rec.new_row("events", {"EventType": "Gear Reported", "Notes": "buoy line"})
+    rec.new_row("events", {"EventType": "CTD cast"})
+    by = {f["name"]: f for f in saved}
+    r = filters.run(rec, by["Right whales"])
+    assert r["count"] == 2 and r["total"] == 4
+    assert [c["label"] for c in r["columns"]] == ["Time", "Position", "Num", "Calves", "Notes"]
+    assert r["totals"] == ["", "", "5", "1", ""] and "°" in r["rows"][0][1] and len(r["row_ids"]) == 2
+    assert filters.run(rec, by["Gear"])["rows"][0][1] == "Gear Reported"
+    # codes in this survey, with counts; a name with no code counts by its name
+    c = {x["code"]: x["n"] for x in filters.counts(rec, "sightings")}
+    assert c == {"RIWH": 2, "HUWH": 1, "Spyhop mystery whale": 1}
+    spec = {"name": "Big groups", "table": "sightings", "codes": [], "columns": ["code", "Count"],
+            "rules": [{"column": "Count", "op": "gt", "value": "1"}, {"column": "Notes", "op": "not_contains", "value": "calf"}]}
+    r = filters.run(rec, spec)
+    assert r["rows"] == [["HUWH", "2"], ["RIWH", "2"]]
+    assert filters.run(rec, {**spec, "rules": [], "codes": ["Spyhop mystery whale"]})["count"] == 1
+    # on effort only: rows made while effort was ON
+    before = filters.run(rec, {**spec, "rules": [], "on_effort": True})["count"]
+    import time as _t
+    _t.sleep(1.05)                                          # times are to the second
+    if rec.tables["effort"].rows[-1].get("Effort") != "ON":
+        rec.toggle_effort()
+    rec.new_row("sightings", {"Species": "Humpback whale", "Count": "1"})
+    _t.sleep(1.05)
+    rec.toggle_effort()
+    rec.new_row("sightings", {"Species": "Humpback whale", "Count": "1"})
+    assert filters.run(rec, {**spec, "rules": [], "on_effort": True})["count"] == before + 1
+    rec.delete("sightings", rec.tables["sightings"].rows[-1]["RowID"])
+    rec.delete("sightings", rec.tables["sightings"].rows[-1]["RowID"])
+    # time range in the survey clock
+    later = filters.run(rec, {**spec, "rules": [], "time_from": "2999-01-01T00:00"})
+    assert later["count"] == 0
+    with pytest.raises(filters.FilterError):
+        filters.clean({**spec, "columns": ["Nope"]})
+    with pytest.raises(filters.FilterError):
+        filters.clean({**spec, "rules": [{"column": "Count", "op": "gt", "value": "lots"}]})
+    assert "Big groups" in filters.to_html(rec, filters.run(rec, spec))
+    csv_text = filters.to_csv(filters.run(rec, spec))
+    assert csv_text.startswith("﻿Species code,Num\r\n")
+    # save, rename (replace), delete
+    f = filters.save(rec.cfg, spec)
+    assert f["file"] == "big_groups.json" and (filters.user_dir(rec.cfg) / "big_groups.json").exists()
+    g = filters.save(rec.cfg, {**spec, "name": "Groups"}, replace=f["file"])
+    assert g["file"] == "groups.json" and not (filters.user_dir(rec.cfg) / "big_groups.json").exists()
+    filters.delete(rec.cfg, "groups.json")
+    with pytest.raises(filters.FilterError):
+        filters.delete(rec.cfg, "../species.csv")
+    # deleting every preset doesn't bring them back
+    for x in filters.load(rec.cfg)[0]:
+        filters.delete(rec.cfg, x["file"])
+    assert filters.load(rec.cfg)[0] == []
+    filters.save(rec.cfg, {**spec, "name": "Right whales", "codes": ["RIWH"]})
+    out = rec.export(["filter:right_whales.json"])
+    assert out.name.startswith("Test_filter_right_whales") and out.suffix == ".csv"
+    with pytest.raises(ValueErrorMsg):
+        rec.export(["filter:nope.json"])
+
+
+def test_filters_travel_in_config_packs(tmp_path):
+    import json as _json
+    from spyhop import configpack, filters
+    from spyhop.config import Config
+    cfg = Config(tmp_path / "app")
+    data = configpack.make_zip(cfg)
+    files = {}
+    import zipfile as _zf, io as _io
+    with _zf.ZipFile(_io.BytesIO(data)) as z:
+        files = {n: z.read(n) for n in z.namelist()}
+    assert "filters/right_whales.json" in files            # the starting presets are in a pack
+    files["filters/sea_state.json"] = _json.dumps({"name": "Rough", "table": "effort", "columns": ["time", "SeaState"],
+                                                   "rules": [{"column": "SeaState", "op": "gt", "value": "3"}]}).encode()
+    del files["filters/gear.json"]
+    pack = configpack.read_pack(files)
+    assert not pack["problems"]
+    plan = {r["file"]: r["status"] for r in configpack.compare(cfg, pack)}
+    assert plan["filters/sea_state.json"] == "new" and plan["filters/gear.json"] == "removed"
+    configpack.apply(cfg, pack)
+    names = sorted(f["name"] for f in filters.load(cfg)[0])
+    assert names == ["Blue whales", "Dead birds", "Right whales", "Rough"]
+    bad = configpack.read_pack({**files, "filters/x.json": b'{"table": "boats"}'})
+    assert any("filters/x.json" in p for p in bad["problems"])

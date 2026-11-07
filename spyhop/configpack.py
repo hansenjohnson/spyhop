@@ -1,7 +1,7 @@
-"""Config packs: a set of lists, shortcuts, map settings and report templates in one file.
+"""Config packs: a set of lists, shortcuts, map settings, report templates and saved filters in one file.
 
 A pack is a zip (or a folder) holding any of the files in PACK_CSV, report templates in
-`reports/*.json`, and `spyhop-config.csv`, a log of changes in plain CSV:
+`reports/*.json`, saved filters (Tools → Filter) in `filters/*.json`, and `spyhop-config.csv`, a log of changes in plain CSV:
 
     Date,Changed by,Files,Notes
     2026-11-06,Hansen Johnson,species.csv,Added Dead bird
@@ -11,7 +11,7 @@ and .spyhop are read too) and listed in Settings → Templates, where one can be
 overwritten with this computer's config, or saved new. A team also puts its pack on the web (a
 GitHub repository, a Dropbox or Google Drive link, any website); pulling it keeps a copy in the
 folder. Using a pack replaces this computer's copy of each file the pack has; it
-never merges. Report templates are replaced as a set when the pack has any. A backup zip of
+never merges. Report templates, and saved filters, are each replaced as a set when the pack has any. A backup zip of
 the current files (itself a valid pack) can be saved first, in config_packs/backups.
 
 Nothing in a pack is run: CSVs are checked for their columns, report templates are checked
@@ -35,7 +35,7 @@ import zipfile
 from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 
-from . import __version__, reports
+from . import __version__, filters, reports
 
 MANIFEST = "spyhop-config.csv"
 MANIFEST_HEADER = ["Date", "Changed by", "Files", "Notes"]
@@ -50,6 +50,21 @@ PACK_CSV = {
 }
 # in a backup made when there were no report templates, so pulling it removes any added since
 NO_REPORTS = "reports/_no_report_templates.txt"
+NO_FILTERS = "filters/_no_saved_filters.txt"
+
+
+def _report_ok(d):
+    if isinstance(d, dict) and d.get("enabled") is False:
+        return None
+    return reports._validate(d, "pack")
+
+
+# folders of JSON files a pack carries as a set: pack key -> (folder in the pack, folder here,
+# check, marker meaning "none", what one is called)
+SETS = {
+    "reports": ("reports", reports.user_dir, _report_ok, NO_REPORTS, "report template"),
+    "filters": ("filters", filters.user_dir, filters.validate, NO_FILTERS, "saved filter"),
+}
 PACK_SUFFIX = ".spyhop.zip"     # what Spyhop names packs it saves; it reads .zip and .spyhop too
 PACKS_DIR = "config_packs"      # in the survey data folder
 MAX_BYTES = 50 * 1024 * 1024
@@ -198,12 +213,13 @@ def _root(files: dict[str, bytes]) -> str:
         parts = n.split("/")
         if parts[-1] in known:
             cands.append("/".join(parts[:-1]))
-        elif len(parts) >= 2 and parts[-2] == "reports" and (parts[-1].endswith(".json") or parts[-1] == NO_REPORTS.split("/")[1]):
+        elif len(parts) >= 2 and any(parts[-2] == st[0] and (parts[-1].endswith(".json") or parts[-1] == st[3].split("/")[1])
+                                     for st in SETS.values()):
             cands.append("/".join(parts[:-2]))
     if not cands:
         raise PackError("That doesn't look like a Spyhop config pack: it has none of spyhop-config.csv, "
                         "species.csv, observers.csv, event_types.csv, behaviors.csv, shortcuts.csv, display.csv "
-                        "or reports/*.json.")
+                        "reports/*.json or filters/*.json.")
     return min(cands, key=lambda c: (c.count("/") if c else -1, c))
 
 
@@ -241,7 +257,7 @@ def read_pack(files: dict[str, bytes]) -> dict:
     root = _root(files)
     pre = root + "/" if root else ""
     inside = {n[len(pre):]: b for n, b in files.items() if n.startswith(pre)}
-    pack = {"csv": {}, "reports": None, "manifest": [], "manifest_text": "", "ignored": [], "problems": []}
+    pack = {"csv": {}, "reports": None, "filters": None, "manifest": [], "manifest_text": "", "ignored": [], "problems": []}
     for name, b in sorted(inside.items()):
         if name == MANIFEST:
             try:
@@ -263,30 +279,40 @@ def read_pack(files: dict[str, bytes]) -> dict:
                                         f"{', '.join(missing)} in its first row.")
             else:
                 pack["csv"][name] = text
-        elif name.startswith("reports/") and name.count("/") == 1 and name.endswith(".json"):
+        elif _set_of(name):
+            key, kind = _set_of(name)
+            st = SETS[key]
+            if pack[key] is None:
+                pack[key] = {}
+            if kind == "marker":
+                continue
             fn = name.split("/", 1)[1]
-            if pack["reports"] is None:
-                pack["reports"] = {}
             try:
                 text = _text(b, name)
                 d = json.loads(text)
             except (PackError, ValueError) as e:
                 pack["problems"].append(f"{name} isn't valid JSON ({e}).")
                 continue
-            if not (isinstance(d, dict) and d.get("enabled") is False):
-                why = reports._validate(d, "pack")
-                if why:
-                    pack["problems"].append(f"{name}: {why}.")
-                    continue
-            pack["reports"][fn] = text
-        elif name == NO_REPORTS:
-            if pack["reports"] is None:
-                pack["reports"] = {}
+            why = st[2](d)
+            if why:
+                pack["problems"].append(f"{name}: {why}.")
+                continue
+            pack[key][fn] = text
         elif name.startswith("reports/") and (name.endswith("README.md") or "/examples/" in name):
             continue
         else:
             pack["ignored"].append(name)
     return pack
+
+
+def _set_of(name: str):
+    """(set key, "file" | "marker") if a path in a pack belongs to one of SETS, else None."""
+    for key, st in SETS.items():
+        if name == st[3]:
+            return key, "marker"
+        if name.startswith(st[0] + "/") and name.count("/") == 1 and name.endswith(".json"):
+            return key, "file"
+    return None
 
 
 # ------------------------------------------------------------------ comparing / applying
@@ -313,15 +339,18 @@ def compare(cfg, pack: dict) -> list[dict]:
         here = _local_text(cfg.root / name)
         st = "new" if here is None else ("same" if _norm(here) == _norm(text) else "changed")
         out.append({"file": name, "status": st, "here": _count(here), "pack": _count(text), "unit": "rows"})
-    if pack["reports"] is not None:
-        rdir = reports.user_dir(cfg)
+    for key, (folder, user_dir, _ok, _m, _what) in SETS.items():
+        if pack.get(key) is None:
+            continue
+        rdir = user_dir(cfg)
         local = {p.name: p for p in rdir.glob("*.json")} if rdir.is_dir() else {}
-        for fn, text in sorted(pack["reports"].items()):
+        unit = key[:-1]
+        for fn, text in sorted(pack[key].items()):
             here = _local_text(local[fn]) if fn in local else None
             st = "new" if here is None else ("same" if _json_eq(here, text) else "changed")
-            out.append({"file": f"reports/{fn}", "status": st, "unit": "report"})
-        for fn in sorted(set(local) - set(pack["reports"])):
-            out.append({"file": f"reports/{fn}", "status": "removed", "unit": "report"})
+            out.append({"file": f"{folder}/{fn}", "status": st, "unit": unit})
+        for fn in sorted(set(local) - set(pack[key])):
+            out.append({"file": f"{folder}/{fn}", "status": "removed", "unit": unit})
     order = {"changed": 0, "new": 1, "removed": 2, "same": 3}
     return sorted(out, key=lambda r: (order[r["status"]], r["file"]))
 
@@ -336,9 +365,11 @@ def _json_eq(a: str, b: str) -> bool:
 def config_files(cfg) -> dict[str, Path]:
     """This computer's config files that a pack can hold, as {path in a pack: file}."""
     out = {n: cfg.root / n for n in PACK_CSV if (cfg.root / n).is_file()}
-    rdir = reports.user_dir(cfg)
-    if rdir.is_dir():
-        out.update({f"reports/{p.name}": p for p in sorted(rdir.glob("*.json"))})
+    filters.ensure_dir(cfg)            # so a pack has the starting filters, not "none"
+    for folder, user_dir, *_ in SETS.values():
+        rdir = user_dir(cfg)
+        if rdir.is_dir():
+            out.update({f"{folder}/{p.name}": p for p in sorted(rdir.glob("*.json"))})
     if (cfg.root / MANIFEST).is_file():
         out[MANIFEST] = cfg.root / MANIFEST
     return out
@@ -455,11 +486,13 @@ def pack_to_zip(pack: dict) -> bytes:
             z.writestr(MANIFEST, pack["manifest_text"] if pack["manifest_text"].startswith("\ufeff") else "\ufeff" + pack["manifest_text"])
         for name, text in pack["csv"].items():
             z.writestr(name, text)
-        if pack["reports"] is not None:
-            for fn, text in pack["reports"].items():
-                z.writestr(f"reports/{fn}", text)
-            if not pack["reports"]:
-                z.writestr(NO_REPORTS, "This pack has no report templates: pulling it removes any on the computer.\n")
+        for key, (folder, _d, _ok, marker, what) in SETS.items():
+            if pack.get(key) is None:
+                continue
+            for fn, text in pack[key].items():
+                z.writestr(f"{folder}/{fn}", text)
+            if not pack[key]:
+                z.writestr(marker, f"This pack has no {what}s: pulling it removes any on the computer.\n")
     return buf.getvalue()
 
 
@@ -533,9 +566,10 @@ def make_zip(cfg, note: str = "", backup: bool = False) -> bytes:
         z.writestr(MANIFEST, "\ufeff" + out.getvalue())       # the BOM makes Excel read it as UTF-8
         for name, p in files.items():
             z.write(p, name)
-        if backup and not any(n.startswith("reports/") for n in files):
-            z.writestr(NO_REPORTS, "This computer had no report templates of its own when this was made.\n"
-                                   "Pulling this pack removes any added since. Delete this file to leave templates alone.\n")
+        for folder, _d, _ok, marker, what in SETS.values():
+            if backup and not any(n.startswith(folder + "/") for n in files):
+                z.writestr(marker, f"This computer had no {what}s of its own when this was made.\n"
+                                   f"Pulling this pack removes any added since. Delete this file to leave them alone.\n")
     return buf.getvalue()
 
 
@@ -575,13 +609,15 @@ def apply(cfg, pack: dict) -> list[str]:
     plan = compare(cfg, pack)
     for name, text in pack["csv"].items():
         _write(cfg.root / name, text)
-    if pack["reports"] is not None:
-        rdir = reports.user_dir(cfg)
+    for key, (_f, user_dir, *_) in SETS.items():
+        if pack.get(key) is None:
+            continue
+        rdir = user_dir(cfg)
         rdir.mkdir(parents=True, exist_ok=True)
-        for fn, text in pack["reports"].items():
+        for fn, text in pack[key].items():
             _write(rdir / fn, text)
         for p in rdir.glob("*.json"):
-            if p.name not in pack["reports"]:
+            if p.name not in pack[key]:
                 p.unlink()
     if pack["manifest_text"]:
         _write(cfg.root / MANIFEST, pack["manifest_text"])

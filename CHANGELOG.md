@@ -6,6 +6,18 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.18.0 — 2026-11-07
+
+- **Tools → Summary** is its own tab again (after Quality Control); Ctrl/Cmd+4 opens it. Reports no longer has a Summary tab.
+- **Tools → Filter** (new) shows part of a table and exports it:
+  - pick **Sightings**, **Events** or **Effort**, then species or event types (chips show the codes in this survey and how many of each), the columns and their order;
+  - **more conditions:** on effort only, a time range, and rules on any column (*is*, *contains*, *is blank*, *is more than* and so on);
+  - the result updates as you go and as records come in, with totals under number columns; click a row to show it in its table;
+  - **Export CSV…**, **HTML…** or **PDF…** (in the exports folder);
+  - **saved filters**, by name, in a `filters` folder in Spyhop's folder: Right whales, Blue whales, Dead birds and Gear to start (the same as the reports). They travel in config packs and can be included in Export Data… as CSV.
+- Tools → Reports is unchanged for now, so the two can be compared; Filter may replace it.
+- Saved report pages of a survey still under way said "still acti" for its end date; they say "still active".
+
 ## 0.17.0 — 2026-11-07
 
 - **Settings → Basemap** (new tab after General) holds the downloads for offline use and the charts folder, moved from General.
