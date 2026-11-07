@@ -826,11 +826,22 @@ class App {
           el('td', {}, when(r.start_time)), el('td', {}, when(r.end_time)), el('td', {}, String(r.sightings)),
           el('td', {}, r.current ? el('b', {}, 'open now') : el('button', { onclick: () => this.openSurvey(r) }, 'Open'))))))
         : el('p', { class: 'hint' }, 'No surveys in this folder yet.'));
+    const folder = sec('Folders',
+      el('p', { id: 'survey-folder-link' }, 'Surveys are saved in ', el('span', { class: 'mono' }, S.config.data_dir), '. ',
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('datafolder'); } }, 'Open folder'), ' · ',
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('settings'); setTimeout(() => $('#settings-folders')?.scrollIntoView({ block: 'start' }), 50); } },
+          'Change it in Settings → General → Folders')));
+    pane.replaceChildren(...[current, list, folder].filter(Boolean));
+  }
+
+  // Settings → General → Folders: the survey data folder (can be changed) and Spyhop's own folder
+  foldersSection() {
+    const S = this.S;
     const dd = S.config.data_dir, isDefault = dd === S.config.default_data_dir;
     const pathBox = el('input', { type: 'text', value: this.dataDirDraft ?? dd, style: { flex: '1', minWidth: '18em' },
       oninput: (e) => { this.dataDirDraft = e.target.value; },
       onkeydown: (e) => { if (e.key === 'Enter') this.chooseDataFolder(e.target.value); } });
-    const folder = sec('Folders',
+    return el('section', { class: 'settings-sec', id: 'settings-folders' }, el('h3', {}, 'Folders'),
       el('h4', {}, 'Survey data folder'),
       el('p', {}, 'Survey files, waypoints and exports are saved in ', el('span', { class: 'mono' }, dd),
         isDefault ? el('span', { class: 'hint' }, ' (the default, inside Spyhop’s own folder)') : null, '. ',
@@ -844,7 +855,6 @@ class App {
       el('p', {}, 'Spyhop’s own files are in ', el('span', { class: 'mono' }, S.config.root), '. ',
         el('a', { href: '#', id: 'open-app-folder', onclick: (e) => { e.preventDefault(); this.open('app'); } }, 'Open folder')),
       el('p', { class: 'hint' }, 'It holds the config files (lists and shortcuts, edited in Settings → Dropdowns and Shortcuts; map display), saved reports, settings, offline charts, map overlays and the tile cache, logs, and config backups. Spyhop always uses this folder.'));
-    pane.replaceChildren(...[current, list, folder].filter(Boolean));
   }
 
   async exportData() {
@@ -1748,6 +1758,7 @@ class App {
         el('div', { class: 'grid2 checks' }, dchk('fade_enabled', 'Fade the trackline, sightings and events older than this (waypoints never fade)'))),
       sec('Basemap and offline charts', el('p', {}, 'The map’s layers, downloads for offline use and the charts folder are in ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('basemap'); } }, 'Settings → Basemap'), '.')),
+      this.foldersSection(),
       );
     for (const row of pane.querySelectorAll('label.row')) {
       const first = row.firstChild;

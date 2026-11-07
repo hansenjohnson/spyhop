@@ -32,8 +32,8 @@ Other options: `--install-shortcut` (make the Spyhop icon again), `--nmea serial
 
 **Saved routes** (top of the tab) lists the routes in the `routes` folder in Spyhop's folder, one GPX file each, with its mode, waypoints, length and when it was saved:
 
-- **Show** puts a route on the map on every tab, in its own colour (remembered; *Saved routes* in the map's layers menu switches them all on or off). Click a waypoint for its position and distance from the vessel, and **Open to edit**. **Show all** / **Hide all**.
-- **Open** loads a route into the editor below (*Current route*), to change it or activate it. If the route you're editing has unsaved changes, Spyhop asks first. The route being edited is marked *editing* (*editing · changed* once you change it; **Revert** goes back to the saved copy).
+- **Show** puts a route on the map on every tab, in its own colour (remembered; **Routes** in the map's layers menu switches all routes, saved and current, on or off). Click a waypoint for its position and distance from the vessel, and **Open to edit**. **Show all** / **Hide all**.
+- **Open** loads a route into the editor below (*Current route*), to change it or activate it. If the route you're editing has unsaved changes, Spyhop asks first. The route being edited is marked *editing* (*editing · changed* once you change it; **Revert** goes back to the saved copy). **Close** puts it away: the editor is emptied and the route is no longer drawn (it stays in the folder, and on the map if its **Show** box is ticked).
 - **Zoom to** and **Delete** (after asking).
 - **New route** starts an empty one; **Import GPX…** loads a GPX file into the editor; **Open the routes folder**; **Look for new files** picks up GPX files copied into the folder (from a plotter, another computer or a colleague). A GPX file that wasn't made by Spyhop opens as a manual route.
 
@@ -51,11 +51,20 @@ The **current route** is drawn on the map with numbered waypoints and kept betwe
   - which side the next leg goes to (starboard or port of leg 1)
 
   Legs alternate direction, joined by crossings of the leg spacing.
+- **Systematic — sawtooth (zig-zag):** the platform zig-zags with no crossings. Choose:
+  - the **start point**, as for parallel legs
+  - the **leg direction**: the bearing of leg 1
+  - the **leg length** (nm)
+  - the **turning angle**: how far the platform turns at each waypoint (90° gives legs at right angles; smaller angles give a flatter zig-zag), and whether the **first turn** is to starboard or port
+  - the **number of legs**
+  - **One way**, or **Return**: after the farthest waypoint the platform comes back on a reciprocal sawtooth, the outbound pattern mirrored about the line through the far end, so the legs cross back and together make a chain of diamonds. With an even number of legs it ends back at the start.
+
+  The legs alternate between the leg direction and the leg direction plus (or minus) the turning angle; Spyhop shows the direction the pattern advances, and how long and wide it is.
 - **Route** box at the top:
   - **Activate route** locks the waypoints where they are (no dragging or editing, and a vessel start is frozen at the position it had) and keeps the route on the map from every tab. **Deactivate** to edit it again.
-  - **Clear route** removes all its waypoints (saved routes and GPX files are kept).
+  - **Close route** empties the editor and takes the route off the map (asking first if it has unsaved changes or is active). **Clear waypoints** removes its waypoints but keeps it open (saved routes and GPX files are kept).
   - **Zoom to route.**
-  - The map's layers menu has a **Current route** entry to hide or show it.
+  - **Routes** in the map's layers menu hides or shows all routes at once; which ones are drawn is chosen here.
 - **Tables:**
   - **Legs:** from/to, course, distance, time, running total distance and time, and the ETA if you start now. Crossings are greyed.
   - **Totals:** total distance (and distance on the legs), total time and finish time.
@@ -121,7 +130,7 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
     - 📏 measure: click to add points, double-click or Esc to finish, click again to clear. Each leg shows true and magnetic bearing plus distance, and the total.
     - ◎ range rings
     - ⤢ zoom to the whole survey (overlays are imported in Tools → Overlays)
-  - **layers menu** (top right): base maps in two sections, **Online map tiles** and **Offline map tiles** (the files in the charts folder, and the built-in coastline), and overlays you can switch on and off, including a **graticule** (lat/lon grid; spacing adapts to the zoom, longitude labels run vertically so they don't collide)
+  - **layers menu** (top right): base maps in two sections, **Online map tiles** and **Offline map tiles** (the files in the charts folder, and the built-in coastline), and overlays you can switch on and off, also in two sections, **Offline overlays** (survey data, waypoints, routes, imported files, range rings…) and **Online overlays** (AIS, weather radar, map feeds), including a **graticule** (lat/lon grid; spacing adapts to the zoom, longitude labels run vertically so they don't collide)
   - **labels:** sightings show the species code plus the FieldID if there is one, e.g. `RIWH Eg-3720` (or SightNo if there's no species yet); events show their event code and ID, e.g. `CTD C-07` (or E1, E2… if both are blank)
   - **right-click menu:** add a sighting, event or waypoint at that point; measure from here; copy the position
   - **readout (bottom-left):** cursor position, bearing and distance from the vessel, and a nautical-mile scale
@@ -314,11 +323,11 @@ Spyhop's own folder holds your lists and settings:
 
 If you used Spyhop under its earlier name (Whale Survey Recorder), the old `WhaleSurveyRecorder` folder is moved to `Spyhop` the first time Spyhop starts, so your surveys and config files carry over.
 
-Both folders are shown in **Survey → Folders**, each with an **Open folder** link.
+Both folders are shown in **Settings → General → Folders**, each with an **Open folder** link.
 
 **Config packs:** a config pack is one small file (`<name>.spyhop.zip`) holding a team's setup: the lists, shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log), the network GPS / NMEA inputs, map feeds and which online overlays are on, and optionally waypoints, routes and overlays (ticked when saving). Settings are replaced; map feeds, waypoints, routes and overlays are only added, keeping any the computer already has. Serial GPS ports, the data folder, survey data and offline charts are never in a pack. A pack names the oldest Spyhop that can use it. **Settings → Templates** lists the packs in the `config_packs` folder of the survey data folder, with each one's latest change, whether it matches this computer, and which one is in use. **Use this pack…** shows what would change and then overwrites this computer's lists, shortcuts, display, reports and settings with the pack's, with no merging (a backup is saved first in `config_packs/backups`; **Restore…** undoes it). **Overwrite…** replaces a pack with this computer's config, and **Save this computer's config as a new pack…** makes a new one; both ask for your name and what changed and add it to the pack's record of changes. A team's pack on the web is pulled with **Get a pack from the web** → **Check**, and a copy is kept in the folder for offline use. Using a pack during a survey is allowed after a warning. See [CONFIG_PACKS.md](CONFIG_PACKS.md) for sharing and hosting packs.
 
-The **survey data folder** holds the survey files, waypoints and exports. It's `data/` inside Spyhop's folder unless you choose another one under **Survey → Folders** (**Choose folder…** opens your computer's folder chooser, or type/paste a path). It's remembered between sessions. If it isn't found at start-up (e.g. an unplugged drive), Spyhop uses the default for that session and tells you. Switching folders closes the open survey first.
+The **survey data folder** holds the survey files, waypoints and exports. It's `data/` inside Spyhop's folder unless you choose another one under **Settings → General → Folders** (the Survey tab links there; **Choose folder…** opens your computer's folder chooser, or type/paste a path). It's remembered between sessions. If it isn't found at start-up (e.g. an unplugged drive), Spyhop uses the default for that session and tells you. Switching folders closes the open survey first.
 
 ```
 Spyhop/                                   (Spyhop's own folder)

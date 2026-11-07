@@ -64,6 +64,7 @@ export class OnlineOverlays {
     let on = null;
     try { on = JSON.parse(localStorage.getItem('wsr.overlays') || 'null'); } catch {}
     for (const [name, layer] of layers) {
+      layer._group = 'online';
       mv.overlays[name] = layer;
       mv.layerControl.addOverlay(layer, name);
       if (on && on.includes(name)) layer.addTo(map);
@@ -297,6 +298,7 @@ export class OnlineOverlays {
         fl = this.feedLayers[f.id] = { feed: f, label, layer: L.geoJSON(null, { style: (ft) => this.feedStyle(f.id, ft),
           pointToLayer: (ft, ll) => L.circleMarker(ll, { radius: 6 }),
           onEachFeature: (ft, lay) => lay.bindPopup(() => this.feedPopup(f.id, ft), { maxWidth: 340 }) }) };
+        fl.layer._group = 'online';
         mv.overlays[label] = fl.layer;
         mv.layerControl.addOverlay(fl.layer, label);
         if (on && on.includes(label)) fl.layer.addTo(map);

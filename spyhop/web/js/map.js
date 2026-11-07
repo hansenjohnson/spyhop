@@ -954,18 +954,23 @@ export function toGeoJSON(name, txt) {
 
 // The layers menu with base layers in sections: online map tiles, then offline ones (files in the
 // charts folder, and the built-in coastline). Each layer carries _group: 'online' | 'offline' | 'builtin'.
+// Overlays go in two sections too: offline overlays (survey data, waypoints, routes, imported
+// files, chart overlays…) first, then online ones (layers with _group 'online': AIS, radar, map feeds,
+// online tile overlays).
 const GROUP_RANK = { online: 0, offline: 1, builtin: 2 };
+const rankOf = (l) => (l._isOverlay ? (l._group === 'online' ? 1 : 0) : (GROUP_RANK[l._group] ?? 0));
 const GroupedLayers = L.Control.Layers.extend({
   initialize(bases, overlays, options) {
     let n = 0;
     for (const l of [...Object.values(bases || {}), ...Object.values(overlays || {})]) l._order ??= n++;
     L.Control.Layers.prototype.initialize.call(this, bases, overlays, {
       ...options, sortLayers: true,
-      sortFunction: (a, b) => (GROUP_RANK[a._group] ?? 0) - (GROUP_RANK[b._group] ?? 0) || (a._order ?? 1e9) - (b._order ?? 1e9),
+      sortFunction: (a, b) => rankOf(a) - rankOf(b) || (a._order ?? 1e9) - (b._order ?? 1e9),
     });
   },
   _addLayer(layer, name, overlay) {
     layer._order ??= (this._nextOrder = (this._nextOrder || 1000) + 1);
+    layer._isOverlay = !!overlay;
     return L.Control.Layers.prototype._addLayer.call(this, layer, name, overlay);
   },
   _update() {
@@ -981,6 +986,17 @@ const GroupedLayers = L.Control.Layers.extend({
         h.textContent = g === 'online' ? 'Online map tiles' : 'Offline map tiles';
         this._baseLayersList.insertBefore(h, lab);
         last = g;
+      }
+    });
+    const ovs = this._layers.filter((x) => x.overlay);
+    let lastOv = null;
+    [...this._overlaysList.children].forEach((lab, i) => {
+      const g = ovs[i]?.layer?._group === 'online' ? 'online' : 'offline';
+      if (g !== lastOv) {
+        const h = L.DomUtil.create('div', 'layers-heading');
+        h.textContent = g === 'online' ? 'Online overlays' : 'Offline overlays';
+        this._overlaysList.insertBefore(h, lab);
+        lastOv = g;
       }
     });
     return this;

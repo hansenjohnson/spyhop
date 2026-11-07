@@ -20,9 +20,11 @@ const DEFAULTS = {
   mode: 'manual', speed: 10, start: 'first', name: 'Route 1',
   manual: { points: [] },
   sys: { start: null, bearing: 0, legs: 4, legNm: 10, spacingNm: 2, side: 'starboard' },
+  // sawtooth (zig-zag): starts at sys.start, like the parallel legs
+  saw: { bearing: 0, legs: 6, legNm: 5, turn: 90, side: 'starboard', ret: false },
   active: false, locked: null,      // an activated route: its waypoints, frozen
   file: null, savedKey: null,       // the saved route this was opened from / saved as, and its design then
-  layerOn: true,                    // the "Route" entry in the map's layers menu
+  layerOn: true,                    // the "Routes" entry in the map's layers menu (current and saved routes)
   style: { ...STYLE_DEFAULTS },
 };
 
@@ -58,6 +60,40 @@ export function systematicPoints(start, brg, legs, legM, spacingM, side) {
   return pts;
 }
 
+// Sawtooth (zig-zag): leg 1 along `brg`, then a turn of `turn` degrees to the chosen side, leg 2,
+// a turn back the other way, and so on: the legs alternate between brg and brg ± turn, so the
+// pattern advances along brg ± turn/2. With `ret`, after the farthest waypoint the platform comes
+// back along the same pattern mirrored about the line through that waypoint (the reciprocal
+// sawtooth), so outbound and return legs together make a chain of diamonds.
+export function sawtoothPoints(start, brg, legs, legM, turn, side, ret) {
+  const sgn = side === 'port' ? -1 : 1;
+  const rad = Math.PI / 180;
+  const norm = (a) => ((a % 360) + 360) % 360;
+  // worked out on a flat plane around the start (metres east, north), so the return pattern is an
+  // exact mirror image; over a survey area the difference from great circles is negligible
+  const kx = 111320 * Math.cos(start[0] * rad), ky = 110540;
+  const toLL = ([x, y]) => [start[0] + y / ky, start[1] + x / kx];
+  const heads = [];
+  for (let i = 0; i < legs; i++) heads.push(norm(i % 2 ? brg + sgn * turn : brg));
+  const xy = [[0, 0]];
+  heads.forEach((h) => { const [x, y] = xy[xy.length - 1]; xy.push([x + legM * Math.sin(h * rad), y + legM * Math.cos(h * rad)]); });
+  const pts = xy.map((q, i) => ({ ll: i ? toLL(q) : start, name: i === 0 ? 'Start' : i === legs ? (ret ? 'Far end' : 'End') : `Turn ${i}` }));
+  if (ret) {
+    const a = norm(brg + sgn * turn / 2) * rad, u = [Math.sin(a), Math.cos(a)];
+    const far = xy[legs];
+    for (let k = legs - 1; k >= 0; k--) {
+      // the outbound waypoint k, mirrored about the line through the far end along the pattern's axis
+      const d = [xy[k][0] - far[0], xy[k][1] - far[1]];
+      const along = d[0] * u[0] + d[1] * u[1];
+      const m = [far[0] + 2 * along * u[0] - d[0], far[1] + 2 * along * u[1] - d[1]];
+      pts.push({ ll: toLL(m), name: k === 0 ? 'End' : `Return turn ${legs - k}` });
+    }
+  }
+  return pts.map((q) => ({ ...q, ll: [+q.ll[0].toFixed(6), +q.ll[1].toFixed(6)] }));
+}
+
+export const MODE_LABELS = { manual: 'Manual', systematic: 'Systematic – parallel legs', sawtooth: 'Systematic – sawtooth' };
+
 export class Planner {
   constructor(app) {
     this.app = app;
@@ -70,17 +106,17 @@ export class Planner {
     this.savedCache = {};         // file -> {modified, points, style, name}
     try { this.shown = new Set(JSON.parse(localStorage.getItem(SHOWN) || '[]')); } catch { this.shown = new Set(); }
     this.savedLayer = L.layerGroup();
+    // one "Routes" entry in the layers menu for the current route and the saved routes shown;
+    // which ones are drawn is chosen in the Routes tab
+    this.routesLayer = L.layerGroup([this.savedLayer]);
     const m = app.map;
-    m.layerControl.addOverlay(this.layer, 'Current route');
-    m.layerControl.addOverlay(this.savedLayer, 'Saved routes');
-    this.savedLayer.addTo(m.map);
-    m.map.on('overlayadd', (e) => { if (e.layer === this.savedLayer) this.drawSaved(); });
-    // the user ticking / unticking "Route" in the layers menu (not our own add/remove)
+    m.layerControl.addOverlay(this.routesLayer, 'Routes');
+    if (this.state.layerOn) this.routesLayer.addTo(m.map);
     m.map.on('overlayadd overlayremove', (e) => {
-      if (e.layer !== this.layer || this._syncing) return;
+      if (e.layer !== this.routesLayer || this._syncing) return;
       this.state.layerOn = e.type === 'overlayadd';
       this.save();
-      if (this.state.layerOn) this.draw();
+      this.sync(); this.drawSaved();
       if (this.inTab) this.render();
     });
     this.sync();
@@ -90,15 +126,20 @@ export class Planner {
   // The route is on the map while the Routes tab is open, and from every tab once activated
   // (unless "Route" is unticked in the layers menu).
   sync() {
-    const want = this.state.layerOn && (this.inTab || this.state.active);
     const map = this.app.map.map;
     this._syncing = true;
     try {
-      if (want && !map.hasLayer(this.layer)) this.layer.addTo(map);
-      else if (!want && map.hasLayer(this.layer)) this.layer.remove();
+      if (this.state.layerOn && !map.hasLayer(this.routesLayer)) this.routesLayer.addTo(map);
+      else if (!this.state.layerOn && map.hasLayer(this.routesLayer)) map.removeLayer(this.routesLayer);
     } finally { this._syncing = false; }
+    const want = this.inTab || this.state.active;
+    if (want && !this.routesLayer.hasLayer(this.layer)) this.routesLayer.addLayer(this.layer);
+    else if (!want && this.routesLayer.hasLayer(this.layer)) this.routesLayer.removeLayer(this.layer);
     this.draw();
   }
+
+  // the current route is drawn now (Routes on in the layers menu, and the tab open or the route active)
+  currentShown() { return this.app.map.map.hasLayer(this.routesLayer) && this.routesLayer.hasLayer(this.layer); }
 
   load() {
     try {
@@ -106,7 +147,7 @@ export class Planner {
       if (s) {
         // a style never changed from the old orange default takes the new grey dotted one
         const st = s.style && Object.keys(OLD_DEFAULT_STYLE).every((k) => s.style[k] === OLD_DEFAULT_STYLE[k]) ? null : s.style;
-        return { ...DEFAULTS, ...s, manual: { ...DEFAULTS.manual, ...s.manual }, sys: { ...DEFAULTS.sys, ...s.sys }, style: { ...STYLE_DEFAULTS, ...st } };
+        return { ...DEFAULTS, ...s, manual: { ...DEFAULTS.manual, ...s.manual }, sys: { ...DEFAULTS.sys, ...s.sys }, saw: { ...DEFAULTS.saw, ...s.saw }, style: { ...STYLE_DEFAULTS, ...st } };
       }
     } catch {}
     return structuredClone(DEFAULTS);
@@ -130,6 +171,11 @@ export class Planner {
     }
     const start = vessel || s.sys.start;
     if (!start) return [];
+    if (s.mode === 'sawtooth') {
+      const w = s.saw;
+      return sawtoothPoints(start, ((+w.bearing || 0) % 360 + 360) % 360, Math.max(1, Math.min(200, Math.round(+w.legs || 1))),
+        Math.max(0, +w.legNm || 0) * M_PER_NM, Math.max(1, Math.min(179, +w.turn || 90)), w.side, !!w.ret);
+    }
     const legs = Math.max(1, Math.min(200, Math.round(+s.sys.legs || 1)));
     return systematicPoints(start, ((+s.sys.bearing || 0) % 360 + 360) % 360, legs,
       Math.max(0, +s.sys.legNm || 0) * M_PER_NM, Math.max(0, +s.sys.spacingNm || 0) * M_PER_NM, s.sys.side);
@@ -144,7 +190,9 @@ export class Planner {
       const m = distM(a.ll, b.ll);
       const sec = m / M_PER_NM / speed * 3600;
       total += m; totalS += sec;
-      const kind = this.state.mode === 'systematic' ? (i % 2 ? 'Crossing' : `Leg ${i / 2 + 1}`) : `Leg ${i + 1}`;
+      const n = Math.round(+this.state.saw.legs || 1);
+      const kind = this.state.mode === 'systematic' ? (i % 2 ? 'Crossing' : `Leg ${i / 2 + 1}`)
+        : this.state.mode === 'sawtooth' && i >= n ? `Return leg ${i - n + 1}` : `Leg ${i + 1}`;
       out.push({ kind, from: a.name, to: b.name, course: bearing(a.ll, b.ll), m, sec, total, totalS, survey: this.state.mode !== 'systematic' || i % 2 === 0 });
     }
     return out;
@@ -187,7 +235,7 @@ export class Planner {
 
   draw() {
     this.layer.clearLayers();
-    if (!this.app.map.map.hasLayer(this.layer)) return;
+    if (!this.currentShown()) return;
     const r = this.route();
     const st = this.state.style;
     if (r.length > 1) {
@@ -345,13 +393,13 @@ export class Planner {
     const map = this.app.map.map;
     const items = [];
     for (const f of this.shown) {
-      if (f === this.state.file && this.app.map.map.hasLayer(this.layer)) continue;
+      if (f === this.state.file && this.currentShown()) continue;
       const c = await this.savedRoute(f);
       if (c) items.push([f, c]);
     }
     if (seq !== this._savedSeq) return;
     this.savedLayer.clearLayers();
-    if (!map.hasLayer(this.savedLayer)) return;
+    if (!map.hasLayer(this.routesLayer)) return;
     for (const [f, c] of items) {
       const st = c.style, pts = c.points;
       if (pts.length > 1) {
@@ -381,8 +429,7 @@ export class Planner {
   setShown(file, on) {
     if (on) this.shown.add(file); else this.shown.delete(file);
     this.saveShown();
-    const m = this.app.map.map;
-    if (on && !m.hasLayer(this.savedLayer)) this.savedLayer.addTo(m);
+    if (on && !this.state.layerOn) { this.state.layerOn = true; this.save(); this.sync(); }
     this.drawSaved();
     if (this.inTab) this.render();
   }
@@ -400,10 +447,11 @@ export class Planner {
   applyDesign(d, file = null) {
     const s = this.state;
     Object.assign(s, {
-      mode: d.mode === 'systematic' ? 'systematic' : 'manual', speed: +d.speed > 0 ? +d.speed : s.speed,
+      mode: MODE_LABELS[d.mode] ? d.mode : 'manual', speed: +d.speed > 0 ? +d.speed : s.speed,
       start: d.start === 'vessel' ? 'vessel' : 'first', name: d.name || s.name,
       manual: { points: (d.manual?.points || []).filter((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)) },
       sys: { ...DEFAULTS.sys, ...(d.sys || {}) },
+      saw: { ...DEFAULTS.saw, ...(d.saw || {}) },
       style: d.style ? { ...STYLE_DEFAULTS, ...d.style } : s.style,
       active: false, locked: null, file,
     });
@@ -432,11 +480,25 @@ export class Planner {
     toast(c.exact ? `Opened “${this.state.name}”.` : `Opened ${file} as a manual route (${this.state.manual.points.length} waypoints).`, 'info', 4000);
   }
 
+  // put the route away: the editor is emptied and it's no longer drawn (a saved copy stays in the
+  // folder, and on the map if it's ticked under Saved routes)
+  async closeRoute() {
+    const s = this.state;
+    if (s.active && !await confirmBox('Close the active route?', `“${s.name}” is active. Deactivate and close it?`, 'Deactivate and close')) return;
+    if (!s.active && this.unsaved() && !await confirmBox('Close without saving?', `“${s.name}” has changes that aren’t saved. Close it anyway?`, 'Close without saving', true)) return;
+    const names = new Set((this.saved || []).map((x) => x.name.toLowerCase()));
+    let i = 1; while (names.has(`route ${i}`)) i++;
+    this.applyDesign({ mode: s.mode, speed: s.speed, start: 'first', name: `Route ${i}`, manual: { points: [] },
+      sys: { ...s.sys, start: null }, saw: { ...s.saw }, style: s.style });
+    this.render();
+  }
+
   async newRoute() {
     if (!await this.confirmLeave('start a new route')) return;
     const names = new Set((this.saved || []).map((x) => x.name.toLowerCase()));
     let i = 1; while (names.has(`route ${i}`)) i++;
-    this.applyDesign({ mode: this.state.mode, speed: this.state.speed, start: 'first', name: `Route ${i}`, manual: { points: [] }, sys: { ...DEFAULTS.sys }, style: this.state.style });
+    this.applyDesign({ mode: this.state.mode, speed: this.state.speed, start: 'first', name: `Route ${i}`, manual: { points: [] },
+      sys: { ...DEFAULTS.sys }, saw: { ...this.state.saw }, style: this.state.style });
     this.render();
   }
 
@@ -485,7 +547,7 @@ export class Planner {
       el('thead', {}, el('tr', {}, ['Show', 'Route', ''].map((h) => el('th', {}, h)))),
       el('tbody', {}, list.map((r) => {
         const editing = r.file === s.file;
-        const mode = { manual: 'Manual', systematic: 'Systematic', imported: 'GPX file' }[r.mode] || '';
+        const mode = { ...MODE_LABELS, imported: 'GPX file' }[r.mode] || '';
         const bits = [mode, r.points ? `${r.points} waypoints` : '', r.nm ? `${r.nm.toFixed(2)} nm` : '', `saved ${fmtDate(r.modified)}`].filter(Boolean);
         return el('tr', { class: editing ? 'editing' : '', 'data-file': r.file },
           el('td', {}, el('input', { type: 'checkbox', checked: this.shown.has(r.file), disabled: !!r.error,
@@ -495,7 +557,9 @@ export class Planner {
             r.error ? el('div', { class: 'warn-text' }, r.error)
               : el('div', { class: 'hint' }, bits.join(' · '), r.name + '.gpx' !== r.file ? ` · ${r.file}` : '')),
           el('td', { class: 'route-actions' },
-            el('button', { disabled: !!r.error || (editing && !this.unsaved()), onclick: () => this.openSaved(r.file) }, editing ? (this.unsaved() ? 'Revert' : 'Editing') : 'Open'),
+            editing ? el('button', { class: 'route-close', onclick: () => this.closeRoute() }, 'Close')
+              : el('button', { disabled: !!r.error, onclick: () => this.openSaved(r.file) }, 'Open'),
+            editing && this.unsaved() ? el('button', { onclick: () => this.openSaved(r.file) }, 'Revert') : null,
             el('button', { disabled: !!r.error, onclick: () => this.zoomSaved(r.file) }, 'Zoom to'),
             el('button', { class: 'danger-outline', onclick: () => this.deleteSaved(r.file) }, 'Delete')));
       }))))
@@ -508,7 +572,7 @@ export class Planner {
         this.shown.size ? el('button', { onclick: () => { this.shown.clear(); this.saveShown(); this.drawSaved(); this.render(); } }, 'Hide all') : null,
         el('button', { onclick: () => this.app.open('routes') }, 'Open the routes folder'),
         el('button', { onclick: () => this.loadSaved() }, 'Look for new files')),
-      el('p', { class: 'hint' }, 'Each route is a GPX file in the routes folder in Spyhop’s folder, so it can also go straight to a chart plotter or OpenCPN. Show puts a route on the map on every tab (Saved routes in the layers menu). Open loads it below to edit or activate. GPX files copied into the folder are listed after Look for new files.'));
+      el('p', { class: 'hint' }, 'Each route is a GPX file in the routes folder in Spyhop’s folder, so it can also go straight to a chart plotter or OpenCPN. Show puts a route on the map on every tab (Routes in the layers menu switches all routes on or off). Open loads it below to edit or activate. GPX files copied into the folder are listed after Look for new files.'));
     return sec;
   }
 
@@ -528,8 +592,8 @@ export class Planner {
 
     const design = sec('Design',
       el('div', { class: 'btnrow' }, el('b', {}, 'Mode:'),
-        radio('plan-mode', 'manual', 'Manual — click points on the map', s.mode, (v) => { s.mode = v; this.adding = false; this.picking = false; this.updateClickMode(); this.changed(true); }),
-        radio('plan-mode', 'systematic', 'Systematic — parallel legs', s.mode, (v) => { s.mode = v; this.adding = false; this.picking = false; this.updateClickMode(); this.changed(true); })),
+        ...[['manual', 'Manual — click points on the map'], ['systematic', 'Systematic — parallel legs'], ['sawtooth', 'Systematic — sawtooth (zig-zag)']]
+          .map(([v, l]) => radio('plan-mode', v, l, s.mode, (m) => { s.mode = m; this.adding = false; this.picking = false; this.updateClickMode(); this.changed(true); }))),
       el('div', { class: 'grid2' },
         num('Survey speed', () => s.speed, (v) => { s.speed = Math.max(0.1, +v || 10); }, { step: 0.5, min: 0.1, unit: 'kn' })));
 
@@ -559,13 +623,41 @@ export class Planner {
       latIn.onchange = lonIn.onchange = () => { if (latIn.value && lonIn.value) setTyped(); };
       const fixed = s.start !== 'vessel';
       if (!fixed) { latIn.disabled = true; lonIn.disabled = true; }
+      const startBox = el('div', { class: `route-fixed${fixed ? '' : ' off'}` },
+        el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Start point'), latIn, lonIn),
+        el('div', { class: 'btnrow' },
+          el('button', { disabled: !fixed, class: this.picking ? 'primary' : '', onclick: () => { this.picking = !this.picking; this.updateClickMode(); this.render(); } }, this.picking ? 'Click the map…' : 'Pick on the map'),
+          el('button', { disabled: !fixed || !this.vesselLL(), onclick: () => { const v = this.vesselLL(); if (v) { s.sys.start = v.map((x) => +x.toFixed(6)); s.start = 'first'; this.changed(true); } } }, 'Use the vessel position now')));
+      const startHint = el('p', { class: 'hint' }, s.start === 'vessel' ? 'Starting from the vessel’s current position; the route moves with the vessel until you choose a fixed start or activate it.'
+        : s.sys.start ? 'Drag the first waypoint on the map to move the whole pattern.' : 'Choose a start point: pick it on the map, type it, or use the vessel position.');
+      if (s.mode === 'sawtooth') {
+        const w = s.saw;
+        const axis = Math.round((((+w.bearing || 0) + (w.side === 'port' ? -1 : 1) * (+w.turn || 90) / 2) % 360 + 360) % 360);
+        const across = (Math.sin((+w.turn || 90) / 2 * Math.PI / 180) * (+w.legNm || 0));
+        const along = (Math.cos((+w.turn || 90) / 2 * Math.PI / 180) * (+w.legNm || 0) * Math.max(1, Math.round(+w.legs || 1)));
+        modeBox = sec('Sawtooth trackline',
+          startRow('A fixed point'), startBox,
+          el('div', { class: 'grid2' },
+            num('Leg direction', () => w.bearing, (v) => { w.bearing = ((+v || 0) % 360 + 360) % 360; }, { step: 1, min: -360, max: 360, unit: '°T (bearing of leg 1)' }),
+            num('Leg length', () => w.legNm, (v) => { w.legNm = Math.max(0, +v || 0); }, { step: 0.5, unit: 'nm' }),
+            num('Turning angle', () => w.turn, (v) => { w.turn = Math.max(1, Math.min(179, +v || 90)); }, { step: 1, min: 1, max: 179, unit: '° turned at each waypoint' }),
+            el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'First turn to'),
+              el('select', { onchange: (e) => { w.side = e.target.value; this.changed(true); } },
+                el('option', { value: 'starboard', selected: w.side !== 'port' }, 'Starboard (right)'),
+                el('option', { value: 'port', selected: w.side === 'port' }, 'Port (left)'))),
+            num('Number of legs', () => w.legs, (v) => { w.legs = Math.max(1, Math.min(200, Math.round(+v || 1))); }, { step: 1, min: 1, max: 200, unit: w.ret ? 'each way' : '' }),
+            el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Pattern'),
+              el('select', { class: 'saw-ret', onchange: (e) => { w.ret = e.target.value === 'return'; this.changed(true); } },
+                el('option', { value: 'oneway', selected: !w.ret }, 'One way'),
+                el('option', { value: 'return', selected: !!w.ret }, 'Return: a reciprocal sawtooth back from the far end')))),
+          el('p', { class: 'hint saw-summary' }, `The legs alternate between ${Math.round(+w.bearing || 0).toString().padStart(3, '0')}°T and `,
+            `${Math.round((((+w.bearing || 0) + (w.side === 'port' ? -1 : 1) * (+w.turn || 90)) % 360 + 360) % 360).toString().padStart(3, '0')}°T, so the pattern advances toward ${axis.toString().padStart(3, '0')}°T: `,
+            `${along.toFixed(1)} nm along that line, ${across.toFixed(1)} nm wide.`,
+            w.ret ? ' The return legs mirror the outbound ones about the line through the far end, crossing back to make a chain of diamonds.' : ''),
+          startHint);
+      } else {
       modeBox = sec('Systematic trackline',
-        startRow('A fixed point'),
-        el('div', { class: `route-fixed${fixed ? '' : ' off'}` },
-          el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Start point'), latIn, lonIn),
-          el('div', { class: 'btnrow' },
-            el('button', { disabled: !fixed, class: this.picking ? 'primary' : '', onclick: () => { this.picking = !this.picking; this.updateClickMode(); this.render(); } }, this.picking ? 'Click the map…' : 'Pick on the map'),
-            el('button', { disabled: !fixed || !this.vesselLL(), onclick: () => { const v = this.vesselLL(); if (v) { s.sys.start = v.map((x) => +x.toFixed(6)); s.start = 'first'; this.changed(true); } } }, 'Use the vessel position now'))),
+        startRow('A fixed point'), startBox,
         el('div', { class: 'grid2' },
           num('Survey direction', () => s.sys.bearing, (v) => { s.sys.bearing = ((+v || 0) % 360 + 360) % 360; }, { step: 1, min: -360, max: 360, unit: '°T (bearing of leg 1)' }),
           num('Number of legs', () => s.sys.legs, (v) => { s.sys.legs = Math.max(1, Math.min(200, Math.round(+v || 1))); }, { step: 1, min: 1, max: 200 }),
@@ -575,8 +667,8 @@ export class Planner {
             el('select', { onchange: (e) => { s.sys.side = e.target.value; this.changed(true); } },
               el('option', { value: 'starboard', selected: s.sys.side !== 'port' }, 'Starboard (right) of leg 1'),
               el('option', { value: 'port', selected: s.sys.side === 'port' }, 'Port (left) of leg 1')))),
-        el('p', { class: 'hint' }, s.start === 'vessel' ? 'Starting from the vessel’s current position; the route moves with the vessel until you choose a fixed start or activate it.'
-          : s.sys.start ? 'Drag the first waypoint on the map to move the whole pattern.' : 'Choose a start point: pick it on the map, type it, or use the vessel position.'));
+        startHint);
+      }
     }
 
     const nameIn = el('input', { type: 'text', value: s.name, style: 'width:16em', onchange: (e) => { s.name = e.target.value.trim() || 'Route'; this.save(); this.render(); } });
@@ -587,13 +679,14 @@ export class Planner {
         : n ? 'Not saved yet.' : 'Empty: design one below, or open a saved route.'),
       s.active
         ? el('p', {}, el('b', { class: 'route-active' }, '● Active. '), 'The waypoints are locked and the route is drawn on the map from every tab',
-          s.layerOn ? '' : ' (it is hidden now: tick “Current route” in the map’s layers menu)', '. Deactivate it to change it.')
+          s.layerOn ? '' : ' (it is hidden now: tick “Routes” in the map’s layers menu)', '. Deactivate it to change it.')
         : el('p', { class: 'hint' }, 'Draft: drawn on the map only while this tab is open. Activate it to lock the waypoints and keep it on the map.'),
       el('div', { class: 'btnrow' },
         s.active
           ? el('button', { onclick: () => this.deactivate() }, 'Deactivate (edit the route)')
           : el('button', { class: 'primary', disabled: n < 2, title: n < 2 ? 'The route needs at least two waypoints' : '', onclick: () => this.activate() }, 'Activate route'),
-        el('button', { disabled: !n && !s.active, onclick: () => this.clearRoute() }, 'Clear route'),
+        el('button', { class: 'route-close', disabled: !n && !s.active && !s.file, title: 'Close this route: empty the editor and take it off the map', onclick: () => this.closeRoute() }, 'Close route'),
+        el('button', { disabled: !n && !s.active, onclick: () => this.clearRoute() }, 'Clear waypoints'),
         el('button', { disabled: !n, onclick: () => this.fit() }, 'Zoom to route')));
 
     const st = s.style;
@@ -704,7 +797,7 @@ export class Planner {
     const surveyM = legs.filter((l) => l.survey).reduce((a, l) => a + l.m, 0);
     const totals = last ? el('div', { class: 'cards' },
       el('div', { class: 'card' }, el('div', { class: 'card-v' }, nm(last.total)), el('div', { class: 'card-l' }, 'nm in total')),
-      this.state.mode === 'systematic' ? el('div', { class: 'card' }, el('div', { class: 'card-v' }, nm(surveyM)), el('div', { class: 'card-l' }, 'nm on the legs')) : null,
+      this.state.mode === 'systematic' && surveyM !== last.total ? el('div', { class: 'card' }, el('div', { class: 'card-v' }, nm(surveyM)), el('div', { class: 'card-l' }, 'nm on the legs')) : null,
       el('div', { class: 'card' }, el('div', { class: 'card-v' }, dur(last.totalS)), el('div', { class: 'card-l' }, `at ${this.state.speed} kn`)),
       el('div', { class: 'card' }, el('div', { class: 'card-v' }, eta(last.totalS)), el('div', { class: 'card-l' }, 'finish, if you start now'))) : null;
     const legTable = el('table', { class: 'summary plan-table' },
@@ -757,6 +850,7 @@ ${r.map((p, i) => '  ' + pt('rtept', p, i)).join('\n')}
   design() {
     const s = this.state;
     const d = { spyhop: 1, mode: s.mode, speed: s.speed, start: s.start, name: s.name, manual: s.manual, sys: s.sys, style: s.style };
+    if (s.mode === 'sawtooth') d.saw = s.saw;
     // an activated route that started at the vessel is saved where it was frozen
     if (s.active && Array.isArray(s.locked) && s.start === 'vessel') {
       if (s.mode === 'manual') d.manual = { points: s.locked.map((p) => p.ll) };
@@ -810,7 +904,7 @@ export function parseRouteGpx(txt, fileName = '') {
       const d = JSON.parse(ext.textContent);
       // the route as drawn when saved (a route from the vessel is saved where the vessel was)
       const drawn = rte ? pts(rte.getElementsByTagName('rtept')) : pts(doc.getElementsByTagName('wpt'));
-      if (d && (d.mode === 'manual' || d.mode === 'systematic')) return { design: d, exact: true, points: drawn };
+      if (d && MODE_LABELS[d.mode]) return { design: d, exact: true, points: drawn };
     } catch { /* fall back to the points */ }
   }
   if (rte) { points = pts(rte.getElementsByTagName('rtept')); title = name(rte, 'name'); }

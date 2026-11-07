@@ -50,12 +50,13 @@ If your team shares its config files, use **Settings → Templates** instead. Pa
 ## Plan a route
 
 1. Open **Tools → Routes**, or right-click the map and choose **Start route here**.
-2. Set the **survey speed**, and choose **Manual** or **Systematic**:
+2. Set the **survey speed**, and choose **Manual**, **Systematic — parallel legs** or **Systematic — sawtooth**:
    - **Manual:** press **Add points on the map** and click each waypoint. Drag them to adjust.
-   - **Systematic:** set the start, the direction of the first leg, the number of legs, leg length and spacing. Spyhop draws back-and-forth lines.
+   - **Systematic — parallel legs:** set the start, the direction of the first leg, the number of legs, leg length and spacing. Spyhop draws back-and-forth lines.
+   - **Systematic — sawtooth:** set the start, the direction of the first leg, leg length, turning angle and number of legs, one way or with a return. Spyhop draws a zig-zag.
 3. The tables show each leg's course, distance and time, the totals and the finish time.
 4. Press **Activate route**. The waypoints lock, the route stays on the map from every tab, and clicking a waypoint shows its distance and bearing from the vessel.
-5. **Save route** keeps it in the routes folder. **Saved routes**, at the top of the tab, lists every saved route: **Show** puts one on the map, **Open** brings it back to edit or activate. **Export GPX…** downloads a copy for a chart plotter.
+5. **Save route** keeps it in the routes folder. **Saved routes**, at the top of the tab, lists every saved route: **Show** puts one on the map, **Open** brings it back to edit or activate, and **Close** puts it away again. **Export GPX…** downloads a copy for a chart plotter.
 
 ## Start a survey
 

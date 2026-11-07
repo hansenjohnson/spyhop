@@ -6,6 +6,16 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.23.0 — 2026-11-07
+
+- **Tools → Routes:**
+  - **Close route** (and **Close** on the route being edited in Saved routes) puts the route away: the editor is emptied and it's no longer drawn. It asks first if there are unsaved changes or the route is active. *Clear route* is now **Clear waypoints**.
+  - New mode **Systematic — sawtooth (zig-zag)**: leg direction, leg length, turning angle at each waypoint, first turn to starboard or port, number of legs, and **one way** or **return** (a reciprocal sawtooth back from the far end, mirrored so the legs make a chain of diamonds). Saved and reopened like the other modes.
+- **Map layers menu:**
+  - One **Routes** entry switches the current route and the saved routes on or off together (replacing *Current route* and *Saved routes*); which routes are drawn is chosen in the Routes tab.
+  - Overlays are in two sections, **Offline overlays** and **Online overlays**, like the map tiles.
+- The **survey data folder** and **Spyhop folder** moved from the Survey tab to **Settings → General → Folders**; the Survey tab shows where surveys are saved, with a link there.
+
 ## 0.22.0 — 2026-11-07
 
 - **Config packs hold a team's whole setup** (Settings → Templates), so every computer can be set up the same way from one small file:
