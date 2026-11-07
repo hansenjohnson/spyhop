@@ -213,7 +213,11 @@ export class MapView {
 
   saveOverlayState() {
     const on = Object.entries(this.overlays).filter(([, l]) => this.map.hasLayer(l)).map(([n]) => n);
-    try { localStorage.setItem('wsr.overlays', JSON.stringify(on)); } catch {}
+    // keep names not (yet) in the menu, e.g. map feeds still loading, so they come back on
+    let before = [];
+    try { before = JSON.parse(localStorage.getItem('wsr.overlays') || '[]') || []; } catch {}
+    const keep = before.filter((n) => !(n in this.overlays) && / \(feed\)$/.test(n));
+    try { localStorage.setItem('wsr.overlays', JSON.stringify([...on, ...keep])); } catch {}
     if (this.map.hasLayer(this.layers.rings)) this.drawRings();
   }
 

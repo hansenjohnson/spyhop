@@ -138,7 +138,7 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
   - **Settings** has a second row of tabs:
     - **General:** map display, text size (tables, interface and the status bar), tracking and reminders, bearings, distances and the clock, and sleep.
     - **Basemap:** downloading areas for offline use, and the charts folder (see *Maps offline* below).
-    - **Inputs:** the GPS / NMEA inputs.
+    - **Inputs:** the GPS / NMEA inputs, and the **online overlays** (AIS, weather radar, map feeds; see *Online overlays* below).
     - **Shortcuts:** every keyboard shortcut and what it does.
     - **Dropdowns:** the species, event, behaviour and observer lists.
     - **Templates:** config packs (see *Config packs* below).
@@ -239,6 +239,21 @@ A report is a chosen part of one table: some rows, some columns. It updates as y
 - **PDFs** are printed by Google Chrome or Microsoft Edge, which Spyhop finds by itself. Set `SPYHOP_CHROME` to the path of another Chromium-based browser if needed.
 - Until 0.18, Tools → Reports held report templates of a different kind (JSON files with `id` and `where`), and 0.18 called this tab Filter. Old templates are moved to `reports/old_report_templates` and no longer used; 0.18's saved filters become saved reports.
 
+## Online overlays (Settings → Inputs)
+
+Live data from the internet, drawn over the map. Each one is also in the map's layers menu (marked *online* or *feed*), and the ones you leave on are on next time.
+
+- **AIS vessels** from [Open Waters AIS](https://openwaters.io/ais/), a free network of coastal-authority feeds and volunteer receivers. Spyhop asks for the vessels in view every 30 s and when the map moves; zoom in if it says so (the area is limited). Each vessel is coloured by type (cargo green, tanker red, passenger blue, fishing orange, sailing and pleasure purple, tugs and special craft teal, other grey): a triangle pointing the way it's heading when it's moving, a dot when it isn't, a diamond for an aid to navigation. Click one for its name, MMSI, type, speed, course, status, when it was last heard and the source, and its distance and bearing from your vessel. **Hide AIS vessels that aren't moving** thins a busy harbour. The map's credits line names the sources. AIS from the internet can be minutes old and misses vessels out of receiver range or without AIS: not for navigation or collision avoidance.
+- **Weather radar, US:** NOAA NEXRAD base reflectivity mosaic, from the Iowa Environmental Mesonet (Iowa State University), updated every 5 minutes.
+- **Weather radar, worldwide:** RainViewer's latest radar frame (every 10 minutes; the time is in the credits line), where radars exist. Free for personal and educational use; the detail stops at about zoom 7.
+- **Radar opacity** applies to both.
+- **Map feeds:** areas, lines or points from the web, such as management zones.
+  - **Ready-made:** **Right whale Seasonal Management Areas (NOAA)** (mandatory 10-knot zones; drawn solid while in effect and dashed otherwise, and the popup says which with the dates) and **Right whale Slow Zones / DMAs (NOAA NEFSC)** (the voluntary Slow Zones in effect now).
+  - **Any feed:** a name and an address: an ArcGIS address ending in `/FeatureServer/<number>` (one layer), `/FeatureServer` (all its layers) or `/MapServer/<number>`, or a link to a GeoJSON file. Spyhop checks it when you add it.
+  - Each feed has **Show**, a colour, how often to fetch it again (every 15 minutes to weekly), **Update now**, **Zoom to** and **Remove**. Click an area for its details.
+  - Spyhop keeps the last copy of each feed (in `feeds/` in Spyhop's folder), so it still shows offline; if it couldn't update, the list says so and which copy is showing. Always check official notices: these are approximate.
+- AIS and radar need the internet and aren't kept for offline use.
+
 ## Maps offline
 
 - **Bundled coastline:** a world coastline from Natural Earth (1:10 m scale) always draws under the map, so you have a coastline even with no internet. Only the part in view is drawn, simplified to the zoom, so it stays quick. It is coarse, so don't navigate by it.
@@ -312,6 +327,7 @@ Spyhop/                                   (Spyhop's own folder)
   settings/  settings.json  current_survey.txt
   charts/    *.mbtiles      overlays/  imported GeoJSON/GPX/KML
   routes/    saved routes (Tools → Routes), one GPX file each
+  feeds/     the last copy of each map feed (Settings → Inputs)
   reports/   saved reports (Tools → Reports), one *.json each
   spyhop-config.csv   the record of changes of the config pack last used or saved
   logs/      diagnostic logs (spyhop.log, crash.log, diagnostics zips)

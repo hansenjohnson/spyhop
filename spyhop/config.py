@@ -228,6 +228,7 @@ DEFAULT_DISPLAY = {
 }
 
 DEFAULT_SETTINGS = {
+    "online_feeds": [],             # map feeds (Settings → Inputs → Online overlays; feeds.py)
     "tracking_enabled": False,
     "tracking_interval": 10,
     "track_break_kn": 30,           # break the trackline where it moves faster than this (0 = never)

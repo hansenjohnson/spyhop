@@ -16,7 +16,7 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 
 from .recorder import Recorder, ValueErrorMsg
-from . import awake, configpack, __version__, diag, reports, routes, schema, updater
+from . import awake, configpack, __version__, diag, feeds, reports, routes, schema, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports
 from .store import safe_name
@@ -735,6 +735,148 @@ class App:
         dest.write_text(gpx, encoding="utf-8")
         return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}")
 
+    # ---- online overlays (map.js / online.js): AIS from Open Waters, RainViewer radar frames
+    AIS_URL = os.environ.get("SPYHOP_AIS_URL", "https://ais.openwaters.io/v1/vessels")          # env: for tests
+    RAINVIEWER_URL = os.environ.get("SPYHOP_RAINVIEWER_URL", "https://api.rainviewer.com/public/weather-maps.json")
+
+    async def ais_vessels(self, request):
+        """Vessels in a box from Open Waters AIS (GeoJSON), fetched by Spyhop so the window gets a
+        plain answer offline. Answers for the same box are reused for 15 s."""
+        try:
+            parts = [float(x) for x in str(request.query.get("bbox", "")).split(",")]
+            s_, w_, n_, e_ = parts
+        except ValueError:
+            raise ValueErrorMsg("bbox must be minLat,minLon,maxLat,maxLon")
+        if not (-90 <= s_ < n_ <= 90 and -180 <= w_ <= 180 and -180 <= e_ <= 180):
+            raise ValueErrorMsg("That box isn't on the map.")
+        if (n_ - s_) * ((e_ - w_) % 360 or 360) > 100:
+            return json_ok(features=[], too_big=True)
+        key = ",".join(f"{v:.3f}" for v in (s_, w_, n_, e_))
+        cache = getattr(self, "_ais_cache", None)
+        if cache is None:
+            cache = self._ais_cache = {}
+        now = time.monotonic()
+        hit = cache.get(key)
+        if hit and now - hit[0] < 15:
+            return json_ok(**hit[1])
+        status, body, _ = await self.tiles._download(f"{self.AIS_URL}?bbox={key}")
+        if status != 200:
+            raise ValueErrorMsg("Couldn't get AIS vessels: " + (f"Open Waters AIS answered {status}" if status else "no internet connection"))
+        try:
+            data = json.loads(body)
+        except ValueError:
+            raise ValueErrorMsg("Open Waters AIS sent something that isn't GeoJSON.")
+        out = {"features": data.get("features", []) if isinstance(data, dict) else []}
+        for k in [k for k, v in cache.items() if now - v[0] > 60]:
+            cache.pop(k, None)
+        cache[key] = (now, out)
+        return json_ok(**out)
+
+    async def rainviewer_frames(self, request):
+        """RainViewer's list of radar frames (the last 2 hours, every 10 minutes)."""
+        hit = getattr(self, "_rv_cache", None)
+        now = time.monotonic()
+        if hit and now - hit[0] < 120:
+            return json_ok(**hit[1])
+        status, body, _ = await self.tiles._download(self.RAINVIEWER_URL)
+        if status != 200:
+            raise ValueErrorMsg("Couldn't get the radar frames: " + (f"RainViewer answered {status}" if status else "no internet connection"))
+        try:
+            d = json.loads(body)
+            frames = [{"time": f["time"], "path": f["path"]} for f in d["radar"]["past"]]
+            out = {"host": d["host"], "frames": frames}
+        except (ValueError, KeyError, TypeError):
+            raise ValueErrorMsg("RainViewer sent something unexpected.")
+        self._rv_cache = (now, out)
+        return json_ok(**out)
+
+    # ---- online map feeds (Settings → Inputs → Online overlays; feeds.py)
+    def _feeds(self) -> list[dict]:
+        return [f for f in (self.rec.cfg.settings.get("online_feeds") or []) if isinstance(f, dict) and f.get("id")]
+
+    def _feed_status(self, f: dict) -> dict:
+        c = feeds.load_cache(self.rec.cfg, f["id"])
+        return {**f, "fetched": c.get("fetched") if c else None, "count": len(c["features"]) if c else None}
+
+    async def feeds_list(self, request):
+        return json_ok(feeds=[self._feed_status(f) for f in self._feeds()], presets=feeds.PRESETS,
+                       folder=str(feeds.feeds_dir(self.rec.cfg)))
+
+    async def _fetch_feed(self, f: dict) -> list[dict]:
+        try:
+            feats = await feeds.fetch(self.tiles._download, f["url"])
+        except feeds.FeedError as e:
+            raise ValueErrorMsg(f"{f['name']}: {e}")
+        feeds.save_cache(self.rec.cfg, f["id"], feats)
+        return feats
+
+    def _save_feeds(self, lst):
+        self.rec.cfg.save_settings({"online_feeds": lst})
+        self._broadcast_soon({"type": "feeds"})
+
+    async def feed_add(self, request):
+        b = await request.json()
+        lst = self._feeds()
+        try:
+            f = feeds.clean({**(b.get("feed") or {}), "id": None}, lst)
+        except feeds.FeedError as e:
+            raise ValueErrorMsg(str(e))
+        warning = None
+        try:
+            feats = await self._fetch_feed(f)
+        except ValueErrorMsg as e:
+            if "no internet connection" not in str(e):
+                raise
+            feats, warning = None, "Added, but there's no internet connection now: it will load when there is."
+        lst.append(f)
+        self._save_feeds(lst)
+        return json_ok(feed=self._feed_status(f), count=None if feats is None else len(feats), warning=warning)
+
+    async def feed_update(self, request):
+        b = await request.json()
+        lst = self._feeds()
+        new = b.get("feed") or {}
+        old = next((f for f in lst if f["id"] == new.get("id")), None)
+        if not old:
+            raise ValueErrorMsg("There's no feed like that.")
+        try:
+            f = feeds.clean({**old, **new}, lst)
+        except feeds.FeedError as e:
+            raise ValueErrorMsg(str(e))
+        if f["url"] != old["url"]:
+            feeds.drop_cache(self.rec.cfg, f["id"])
+        self._save_feeds([f if x["id"] == f["id"] else x for x in lst])
+        return json_ok(feed=self._feed_status(f))
+
+    async def feed_delete(self, request):
+        b = await request.json()
+        lst = self._feeds()
+        fid = str(b.get("id") or "")
+        if not any(f["id"] == fid for f in lst):
+            raise ValueErrorMsg("There's no feed like that.")
+        feeds.drop_cache(self.rec.cfg, fid)
+        self._save_feeds([f for f in lst if f["id"] != fid])
+        return json_ok()
+
+    async def feed_data(self, request):
+        """A feed's features: the saved copy while it's fresh, else fetched again; the saved copy
+        (marked stale) if that fails."""
+        fid = request.query.get("id", "")
+        f = next((x for x in self._feeds() if x["id"] == fid), None)
+        if not f:
+            raise ValueErrorMsg("There's no feed like that.")
+        cache = feeds.load_cache(self.rec.cfg, fid)
+        force = request.query.get("force") == "1"
+        if cache and not force and time.time() - (cache.get("fetched") or 0) < f["refresh_min"] * 60:
+            return json_ok(features=cache["features"], fetched=cache.get("fetched"))
+        try:
+            feats = await self._fetch_feed(f)
+            return json_ok(features=feats, fetched=time.time())
+        except ValueErrorMsg as e:
+            if cache:
+                return json_ok(features=cache["features"], fetched=cache.get("fetched"), stale=True, error=str(e))
+            raise
+
     # ---- saved routes (Tools → Routes; routes.py)
     async def routes_list(self, request):
         return json_ok(routes=routes.list_routes(self.rec.cfg), folder=str(routes.routes_dir(self.rec.cfg)))
@@ -1172,6 +1314,13 @@ class App:
         r.add_post("/api/overlays", self.overlay_upload)
         r.add_delete("/api/overlays/{name}", self.overlay_delete)
         r.add_post("/api/plan/gpx", self.plan_gpx)
+        r.add_get("/api/ais", self.ais_vessels)
+        r.add_get("/api/feeds", self.feeds_list)
+        r.add_get("/api/feeds/data", self.feed_data)
+        r.add_post("/api/feeds/add", self.feed_add)
+        r.add_post("/api/feeds/update", self.feed_update)
+        r.add_post("/api/feeds/delete", self.feed_delete)
+        r.add_get("/api/radar/rainviewer", self.rainviewer_frames)
         r.add_get("/api/routes", self.routes_list)
         r.add_get("/api/routes/file", self.route_file)
         r.add_post("/api/routes/save", self.route_save)

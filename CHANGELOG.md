@@ -6,6 +6,13 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.21.0 — 2026-11-07
+
+- **Online overlays**, in a new section of **Settings → Inputs** and in the map's layers menu:
+  - **AIS vessels** from Open Waters AIS (free, no account): the vessels in view, every 30 s, coloured by type and pointing the way they're heading; click one for its details and its distance and bearing from you. Option to hide vessels that aren't moving.
+  - **Weather radar**: US (NOAA NEXRAD, via the Iowa Environmental Mesonet, every 5 minutes) and worldwide (RainViewer, every 10 minutes), with an opacity setting.
+  - **Map feeds**: add any ArcGIS FeatureServer / MapServer layer or service, or a GeoJSON file, with its own colour and refresh. Ready-made: NOAA's **right whale Seasonal Management Areas** (shown solid while in effect, dashed otherwise) and **right whale Slow Zones / DMAs** (NEFSC). The last copy of each feed is kept, so it still shows offline.
+
 ## 0.20.0 — 2026-11-07
 
 - **Tools → Routes** (was Route) keeps any number of routes, in a new `routes` folder in Spyhop's folder (one GPX file each, so a route can also go straight to a chart plotter).

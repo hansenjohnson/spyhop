@@ -465,3 +465,17 @@ table.overlay-table td { vertical-align: middle; }
 .route-actions { white-space: nowrap; }
 .route-actions button { margin-right: 0.3em; }
 .plan-wp.saved span { opacity: 0.85; }
+/* online overlays: AIS, radar, map feeds (Settings → Inputs) */
+.ais-icon { background: none; border: none; }
+.ais-icon svg { display: block; margin: auto; filter: drop-shadow(0 0 1px rgba(0,0,0,.5)); }
+.attr-warn { color: var(--alert); }
+.feeds-table { width: 100%; }
+.feeds-table td { vertical-align: middle; }
+.feeds-table td.feed-name { width: 100%; }
+.feed-url { word-break: break-all; font-size: 0.85em; }
+.feed-actions { white-space: nowrap; }
+.feed-actions button { margin-right: 0.3em; }
+.feed-presets { margin: 0.6em 0; }
+.feed-preset { margin: 0.35em 0; }
+.feed-add { margin-top: 0.6em; }
+.feed-active { color: var(--ok); font-weight: 600; }

@@ -1892,3 +1892,56 @@ def test_status_bar_font_size_default(tmp_path):
     from spyhop.config import Config
     cfg = Config(tmp_path)
     assert cfg.display["status_font_size"] == "13"
+
+
+def test_online_feeds_fetch_and_cache(tmp_path):
+    import asyncio, json as _json
+    from spyhop import feeds
+    from spyhop.config import Config
+    cfg = Config(tmp_path)
+    poly = {"type": "Feature", "properties": {"zone_name": "Cape Cod Bay", "st_mo": 1, "st_day": 1, "end_mo": 5, "end_day": 15},
+            "geometry": {"type": "Polygon", "coordinates": [[[-70.5, 41.8], [-70.1, 41.8], [-70.1, 42.1], [-70.5, 41.8]]]}}
+    calls = []
+
+    async def download(url):
+        calls.append(url)
+        if url.endswith("/FeatureServer?f=json"):
+            return 200, _json.dumps({"layers": [{"id": 0, "name": "Slow Zones", "geometryType": "esriGeometryPolygon"},
+                                                 {"id": 2, "name": "Labels", "geometryType": "esriGeometryPoint"}]}).encode(), ""
+        if "broken" in url:
+            return 200, b'{"error": {"code": 400, "message": "Invalid URL"}}', ""
+        if "/query?" in url:
+            assert "f=geojson" in url and "outSR=4326" in url
+            return 200, _json.dumps({"type": "FeatureCollection", "features": [poly]}).encode(), ""
+        if url.endswith(".geojson"):
+            return 200, _json.dumps({"type": "FeatureCollection", "features": [poly, {"type": "Feature", "geometry": None}]}).encode(), ""
+        if "broken" in url:
+            return 200, b'{"error": {"code": 400, "message": "Invalid URL"}}', ""
+        return 0, b"", "no internet connection"
+
+    run = lambda u: asyncio.run(feeds.fetch(download, u))   # noqa: E731
+    assert len(run("https://x.example/arcgis/rest/services/SMA/FeatureServer/3")) == 1
+    both = run("https://x.example/arcgis/rest/services/DMA/FeatureServer")
+    assert len(both) == 2 and {f["properties"]["_layer"] for f in both} == {"Slow Zones", "Labels"}
+    assert len(run("https://x.example/data/zones.geojson")) == 1               # a feature with no geometry is dropped
+    with pytest.raises(feeds.FeedError, match="Invalid URL"):
+        run("https://x.example/broken/FeatureServer/0")
+    with pytest.raises(feeds.FeedError, match="no internet"):
+        run("https://offline.example/zones.json")
+    # pasted addresses are tidied; bad ones refused
+    assert feeds.clean_url("https://x.example/a/FeatureServer/3/query?where=1=1&f=pjson") == "https://x.example/a/FeatureServer/3"
+    for bad in ("", "ftp://x/y", "zones.geojson"):
+        with pytest.raises(feeds.FeedError):
+            feeds.clean_url(bad)
+    f = feeds.clean({"name": "SMA", "url": "https://x.example/a/FeatureServer/3", "color": "#d81b60", "refresh_min": 2})
+    assert f["refresh_min"] == 5 and len(f["id"]) == 8
+    with pytest.raises(feeds.FeedError, match="already"):
+        feeds.clean({"name": "sma", "url": "https://x.example/b.geojson"}, [f])
+    with pytest.raises(feeds.FeedError):
+        feeds.clean({"name": "x", "url": "https://x.example/b.geojson", "color": "red"})
+    feeds.save_cache(cfg, f["id"], [poly])
+    c = feeds.load_cache(cfg, f["id"])
+    assert c["features"][0]["properties"]["zone_name"] == "Cape Cod Bay" and c["fetched"] > 0
+    feeds.drop_cache(cfg, f["id"])
+    assert feeds.load_cache(cfg, f["id"]) is None
+    assert all(p["url"].startswith("https://services2.arcgis.com/") for p in feeds.PRESETS)

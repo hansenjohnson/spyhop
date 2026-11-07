@@ -21,6 +21,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
   - save any number of routes (as GPX files in a routes folder), show them on the chart and open them to edit
   - activate a route to keep it on the chart, with ETAs at each waypoint
   - GPX export and import
+- **Online overlays** (when there's internet): AIS vessels from Open Waters AIS, US (NOAA NEXRAD) and worldwide (RainViewer) weather radar, and map feeds from ArcGIS or GeoJSON, with NOAA's right whale Seasonal Management Areas and Slow Zones ready to add; feeds stay available offline
 - **GPS and instruments:**
   - serial/USB, UDP, TCP, gpsd and file replay, with priorities between inputs
   - depth, wind, weather and engine readings with time-series plots

@@ -35,6 +35,7 @@ spyhop/
   reports.py      Tools → Reports: report specs → rows and columns, CSV/HTML pages; saved reports in <Spyhop>/reports
   report_defs/    the starting saved reports, copied into that folder once
   routes.py       the routes folder (Tools → Routes): list, read, save, delete GPX files
+  feeds.py        map feeds (Settings → Inputs): ArcGIS / GeoJSON fetch, presets, the saved copy in <Spyhop>/feeds
   browser.py      finds Chrome/Edge for the app window and for PDF printing (headless --print-to-pdf)
   tzguess.py      the clock's time zone from the platform's position (tzfpy)
   diag.py         diagnostic logs, crash capture, performance snapshots, the diagnostics bundle
@@ -48,6 +49,7 @@ spyhop/
     js/map.js            the Leaflet map, markers, track, tools
     js/depth.js          the water depth at the cursor, read from Seascape's depth tiles
     js/planning.js       Tools → Routes: the route editor, activation, and the saved routes (/api/routes*)
+    js/online.js         online overlays: AIS (/api/ais), radar (NEXRAD tiles, /api/radar/rainviewer), map feeds (/api/feeds*)
     js/reports.js        Tools → Reports and Run Reports (runs reports on the server, /api/reports*)
     js/plot.js           instrument time-series plots
     js/summary_html.js   the self-contained Summary page (HTML export)

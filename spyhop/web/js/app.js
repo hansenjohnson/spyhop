@@ -6,6 +6,7 @@ import { buildSummaryHtml } from './summary_html.js';
 import { openInstrumentPlot } from './plot.js';
 import { Planner } from './planning.js';
 import { ReportsTool } from './reports.js';
+import { OnlineOverlays } from './online.js';
 
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = IS_MAC ? '⌘' : 'Ctrl';
@@ -24,6 +25,7 @@ class App {
     this.map = new MapView(this, $('#map'));
     this.planner = new Planner(this);
     this.reportsTool = new ReportsTool(this);
+    this.online = new OnlineOverlays(this);
     this.applyDisplay();
     this.renderAll();
     try { this.logSize = localStorage.getItem('wsr.logsize') || 'normal'; } catch { this.logSize = 'normal'; }
@@ -504,6 +506,7 @@ class App {
       case 'reload': this.reload(); break;
       case 'reports': this.reportsTool.onDefsChanged(); break;
       case 'routes': this.planner.loadSaved(); break;
+      case 'feeds': this.online.loadFeeds(); break;
       default: break;
     }
   }
@@ -2069,8 +2072,17 @@ class App {
     const pane = $('#pane-inputs');
     if (!pane) return;
     pane.replaceChildren(this.nmeaSection(), el('p', { class: 'hint' }, 'Live readings from these inputs and the raw NMEA log are in ',
-      el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('nmea'); } }, 'Tools → Instruments'), '.'));
+      el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('nmea'); } }, 'Tools → Instruments'), '.'),
+      this.online.section());
     this.updateNmeaStatus();
+  }
+
+  // an online overlay loaded or changed: redraw its part of Settings → Inputs (not while typing in it)
+  onlineChanged() {
+    if (this.tab !== 'inputs') return;
+    const box = $('#online-overlays');
+    if (!box || box.contains(document.activeElement) && document.activeElement.matches('input[type=text], select')) return;
+    box.replaceWith(this.online.section());
   }
 
   updateInstruments() {
