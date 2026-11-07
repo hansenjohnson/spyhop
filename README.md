@@ -37,7 +37,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
   - tables of gear, dead birds, right whales and blue whales
   - saved as HTML or PDF
   - reports are JSON definitions that each group can add to or change
-- **Group config:** a team keeps its lists, shortcuts, map settings and report templates in one place on the web (e.g. GitHub, Dropbox or Google Drive), and each computer pulls the latest with one button, keeping a backup.
+- **Config packs:** save the lists, shortcuts, map settings and report templates as one `.spyhop.zip` file, switch between packs, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer pulls the latest with one button, keeping a backup.
 - **Export:** separate CSVs, a merged time-ordered CSV (sightings, effort, events and track) with the conditions on every row, GPX, GeoJSON, and the reports, in one zip.
 
 ## System requirements
@@ -100,7 +100,7 @@ Download and unzip the [latest release](https://github.com/hansenjohnson/spyhop/
    - **SIMULATOR** to practise
    
    Press **Apply**. The status bar shows the position once there's a fix.
-2. **Check your lists** (once): edit species, event types, behaviours and observers in **Survey → Dropdowns**, and the keyboard shortcuts in **Survey → Shortcuts**. If your team shares a config pack, pull it from **Survey → File → Group config** instead.
+2. **Check your lists** (once): edit species, event types, behaviours and observers in **Survey → Dropdowns**, and the keyboard shortcuts in **Survey → Shortcuts**. If your team shares a config pack, use it from **Survey → File → Config packs** instead.
 3. **Plan the route** (optional): **Survey → Route**, then **Activate route**.
 4. **Start:** in **Survey → File**, press **Start New Survey…**. Enter a name (in your team's own naming convention) and the survey details. Spyhop adds the *Start* row to Effort and starts the trackline.
 5. **Go on effort:** Ctrl+Shift+F (⌘⇧F on a Mac) adds an Effort row that switches effort ON or OFF. Fill in the conditions and the observers.

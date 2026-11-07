@@ -1475,7 +1475,7 @@ def test_lists_locked_during_survey(tmp_path):
     assert [s["name"] for s in app.rec.cfg.lists["species"]] == ["X"]
 
 
-def test_make_pack_logs_the_change(tmp_path):
+def test_config_packs_folder(tmp_path):
     import asyncio, zipfile as _zf
     from spyhop import configpack
     from spyhop.server import App
@@ -1483,33 +1483,88 @@ def test_make_pack_logs_the_change(tmp_path):
     cfg = app.rec.cfg
 
     class Req:
-        def __init__(self, body): self.body = body
+        def __init__(self, body=None, query=None, match=None):
+            self.body, self.query, self.match_info = body or {}, query or {}, match or {}
         can_read_body = True
         async def json(self): return self.body
-        match_info = {}
     run = lambda coro: json.loads(asyncio.run(coro).text)          # noqa: E731
-    assert run(app.groupconfig_changes(Req({})))["files"] is None    # nothing to compare with yet
+    folder = cfg.data_dir / "config_packs"
+    assert run(app.configpacks_list(Req()))["packs"] == []
+    assert run(app.groupconfig_changes(Req()))["files"] is None     # nothing to compare with yet
     with pytest.raises(ValueErrorMsg, match="your name"):
-        asyncio.run(app.groupconfig_pack(Req({"by": "", "notes": "x"})))
-    r = run(app.groupconfig_pack(Req({"by": "H. Johnson", "notes": "First version", "name": "2026-NEA-CCB-spyhop_config"})))
-    assert r["name"] == "2026-NEA-CCB-spyhop_config.zip"
-    with _zf.ZipFile(cfg.export_dir / r["name"]) as z:
+        asyncio.run(app.configpacks_save(Req({"by": "", "notes": "x", "name": "a"})))
+
+    # save a new pack: <name>.spyhop.zip in the data folder's config_packs, with the change logged
+    r = run(app.configpacks_save(Req({"by": "H. Johnson", "notes": "First version", "name": "2026-NEA-CCB"})))
+    assert r["name"] == "2026-NEA-CCB.spyhop.zip" and (folder / r["name"]).is_file()
+    with _zf.ZipFile(folder / r["name"]) as z:
         log = configpack.read_manifest(z.read("spyhop-config.csv").decode("utf-8-sig"))
     assert log[0]["by"] == "H. Johnson" and log[0]["notes"] == "First version" and log[0]["files"] == "all"
-    # the local record of changes has the row too, and the next pack lists only what changed
-    assert configpack.read_manifest((cfg.root / "spyhop-config.csv").read_text(encoding="utf-8-sig"))[0]["notes"] == "First version"
-    ch = run(app.groupconfig_changes(Req({})))
-    assert ch["files"] == [] and ch["since"] == "pack" and ch["by"] == "H. Johnson"
-    assert ch["name"] == "2026-NEA-CCB-spyhop_config.zip"
+    with pytest.raises(ValueErrorMsg, match="already a pack"):
+        asyncio.run(app.configpacks_save(Req({"by": "H", "notes": "again", "name": "2026-NEA-CCB.spyhop.zip"})))
+    L = run(app.configpacks_list(Req()))
+    assert [p["name"] for p in L["packs"]] == ["2026-NEA-CCB.spyhop.zip"] and L["packs"][0]["matches"]
+    assert L["current"]["name"] == "2026-NEA-CCB.spyhop.zip" and L["current"]["how"] == "saved"
+    assert L["backups_folder"] == str(folder / "backups")
+    assert run(app.groupconfig_changes(Req()))["files"] == []
+
+    # change a list: the pack now differs; overwriting it continues the pack's own record
     cfg.save_list("observers", [{"name": "JM", "full_name": "J. M."}])
-    assert run(app.groupconfig_changes(Req({})))["files"] == ["observers.csv"]
-    run(app.groupconfig_pack(Req({"by": "H. Johnson", "notes": "New observer JM", "files": "observers.csv",
-                                  "name": "2026-NEA-CCB-spyhop_config.zip"})))
-    with _zf.ZipFile(cfg.export_dir / "2026-NEA-CCB-spyhop_config.zip") as z:
+    L = run(app.configpacks_list(Req()))
+    assert L["packs"][0]["differs"] == ["observers.csv"] and not L["packs"][0]["matches"]
+    assert run(app.groupconfig_changes(Req(query={"name": "2026-NEA-CCB.spyhop.zip"})))["files"] == ["observers.csv"]
+    (cfg.root / "spyhop-config.csv").write_text("Date,Changed by,Files,Notes\r\n2020-01-01,X,all,unrelated\r\n", encoding="utf-8")
+    run(app.configpacks_save(Req({"by": "H. Johnson", "notes": "New observer JM", "files": "observers.csv",
+                                  "name": "2026-NEA-CCB.spyhop.zip", "overwrite": True})))
+    with _zf.ZipFile(folder / "2026-NEA-CCB.spyhop.zip") as z:
         log = configpack.read_manifest(z.read("spyhop-config.csv").decode("utf-8-sig"))
         assert "JM" in z.read("observers.csv").decode()
-    assert [x["notes"] for x in log] == ["New observer JM", "First version"] and log[0]["files"] == "observers.csv"
-    assert configpack.safe_pack_name('a/b:c') == "a_b_c.zip" and configpack.safe_pack_name("  ") == ""
+    assert [x["notes"] for x in log] == ["New observer JM", "First version"]
+    with pytest.raises(ValueErrorMsg, match="no pack called"):
+        asyncio.run(app.configpacks_save(Req({"by": "H", "notes": "x", "name": "nope.spyhop.zip", "overwrite": True})))
+
+    # use a pack from the folder: a backup goes to config_packs/backups, no copy is made
+    run(app.configpacks_save(Req({"by": "H", "notes": "with JM", "name": "with-jm"})))
+    cfg.save_list("observers", [{"name": "ZZ", "full_name": "Z. Z."}])
+    chk = run(app.groupconfig_check(Req({"pack": "with-jm.spyhop.zip"})))
+    assert chk["kind"] == "folder" and [f["file"] for f in chk["files"] if f["status"] != "same"] == ["observers.csv"]
+    res = run(app.groupconfig_pull(Req({"token": chk["token"], "backup": True})))
+    assert res["changed"] == ["observers.csv"] and res["copy"] is None
+    assert Path(res["backup"]).parent == folder / "backups" and res["backup"].endswith(".spyhop.zip")
+    assert cfg.lists["observers"][0]["name"] == "JM"
+    L = run(app.configpacks_list(Req()))
+    assert L["current"] == {**L["current"], "name": "with-jm.spyhop.zip", "how": "loaded"}
+    assert [b["name"] for b in L["backups"]] == [Path(res["backup"]).name]
+    assert sorted(p["name"] for p in L["packs"]) == ["2026-NEA-CCB.spyhop.zip", "with-jm.spyhop.zip"]   # backups not listed
+
+    # restore the backup: ZZ again
+    chk = run(app.groupconfig_check(Req({"backup": Path(res["backup"]).name})))
+    assert chk["kind"] == "backup"
+    run(app.groupconfig_pull(Req({"token": chk["token"], "backup": False})))
+    assert cfg.lists["observers"][0]["name"] == "ZZ"
+    with pytest.raises(ValueErrorMsg, match="name of a"):
+        asyncio.run(app.groupconfig_check(Req({"pack": "../settings.json"})))
+
+    # a pack from elsewhere (a web address, or here a file outside the folder) is kept as a copy
+    outside = tmp_path / "team pack.zip"
+    outside.write_bytes((folder / "with-jm.spyhop.zip").read_bytes())
+    chk = run(app.groupconfig_check(Req({"url": str(outside)})))
+    assert chk["kind"] == "file"
+    res = run(app.groupconfig_pull(Req({"token": chk["token"], "backup": False})))
+    assert res["copy"] == "team pack.spyhop.zip" and (folder / "team pack.spyhop.zip").is_file()
+    assert run(app.configpacks_list(Req()))["current"]["name"] == "team pack.spyhop.zip"
+
+    # download from the folder; names outside it refused
+    resp = asyncio.run(app.configpacks_file(Req(match={"name": "with-jm.spyhop.zip"})))
+    assert resp.status == 200
+    from aiohttp import web as _web
+    with pytest.raises(_web.HTTPNotFound):
+        asyncio.run(app.configpacks_file(Req(match={"name": "../x.zip"})))
+    assert configpack.safe_pack_name('a/b:c') == "a_b_c.spyhop.zip" and configpack.safe_pack_name("  ") == ""
+    assert configpack.safe_pack_name("x.zip") == "x.spyhop.zip" and configpack.safe_pack_name("y.spyhop") == "y.spyhop.zip"
+    assert configpack._download_name("https://drive.google.com/uc?export=download&id=1",
+                                     {"Content-Disposition": 'attachment; filename="2026-NEA-CCB-spyhop_config.zip"'}) == "2026-NEA-CCB-spyhop_config.zip"
+    assert configpack._download_name("https://api.github.com/repos/team/spyhop-config/zipball", {}) == "spyhop-config"
 
 
 def _png_bytes():

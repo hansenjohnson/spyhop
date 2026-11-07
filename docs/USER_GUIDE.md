@@ -280,7 +280,7 @@ If you used Spyhop under its earlier name (Whale Survey Recorder), the old `Whal
 
 Both folders are shown in **Survey → File → Folders**, each with an **Open folder** link.
 
-**Group config:** a team can share its config files and report templates as a **config pack** on the web. Each computer then pulls the pack from **Survey → File → Group config**: paste the address, press **Check for new config** to see what would change, then **Pull and overwrite**. Whoever looks after the pack makes the next version with **Make a pack from this computer…**, which asks for their name and what changed and adds that to the pack's record of changes. Pulling replaces this computer's copies of the files in the pack, with no merging, and can save a backup zip first; a backup can be pulled again to undo. Pulling during a survey is allowed after a warning. See [CONFIG_PACKS.md](CONFIG_PACKS.md) for making and hosting a pack.
+**Config packs:** a config pack is one file (`<name>.spyhop.zip`) holding the lists, shortcuts, map display and report templates. **Survey → File → Config packs** lists the packs in the `config_packs` folder of the survey data folder, with each one's latest change, whether it matches this computer, and which one is in use. **Use this pack…** shows what would change and then overwrites this computer's config files with the pack's, with no merging (a backup is saved first in `config_packs/backups`; **Restore…** undoes it). **Overwrite…** replaces a pack with this computer's config, and **Save this computer's config as a new pack…** makes a new one; both ask for your name and what changed and add it to the pack's record of changes. A team's pack on the web is pulled with **Get a pack from the web** → **Check**, and a copy is kept in the folder for offline use. Using a pack during a survey is allowed after a warning. See [CONFIG_PACKS.md](CONFIG_PACKS.md) for sharing and hosting packs.
 
 The **survey data folder** holds the survey files, waypoints and exports. It's `data/` inside Spyhop's folder unless you choose another one under **Survey → File → Folders** (**Choose folder…** opens your computer's folder chooser, or type/paste a path). It's remembered between sessions. If it isn't found at start-up (e.g. an unplugged drive), Spyhop uses the default for that session and tells you. Switching folders closes the open survey first.
 
@@ -291,14 +291,14 @@ Spyhop/                                   (Spyhop's own folder)
   settings/  settings.json  current_survey.txt
   charts/    *.mbtiles      overlays/  imported GeoJSON/GPX/KML
   reports/   your own report definitions (*.json), with a README and examples/
-  spyhop-config.csv   the record of changes of the last group config pack pulled
-  config_backups/     backups saved before pulling a group config pack (the default place)
+  spyhop-config.csv   the record of changes of the config pack last used or saved
   logs/      diagnostic logs (spyhop.log, crash.log, diagnostics zips)
   data/                                   (default survey data folder — or the one you chose)
     <survey name>_sightings.csv   _effort.csv   _events.csv   _track.csv   _metadata.csv   _instruments.csv
     waypoints.csv                 <- kept across surveys (an older marks.csv is renamed to this)
     exports/   <survey>_export_<time>.zip, or a single exported file; saved summaries and reports (.html, .pdf)
     nmea_logs/ <survey>_nmea_<time>.nmea  <- raw NMEA, when recording is on
+    config_packs/  <name>.spyhop.zip config packs; backups/ holds the backups saved before using one
 ```
 
 - The track CSV's **Effort** column is `Start` (from the Start row until the first ON or OFF), then `ON`/`OFF`, and `End` on the final point, written when you end the survey. A script can tell the start and end of the track apart from off-effort periods.

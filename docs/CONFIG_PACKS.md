@@ -1,8 +1,17 @@
-# Group config packs
+# Config packs
 
-A **config pack** lets a team share one set of Spyhop config files: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates. Someone in the team keeps the pack on the web. Each computer pulls the latest pack from **Survey → File → Group config** whenever it has an internet connection.
+A **config pack** holds one set of Spyhop config files: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates. It lets a team use the same lists on every computer, and lets one computer switch between setups (for example a vessel crew and an aerial crew).
 
-Nothing is downloaded until someone presses **Check for new config**. A pack is small (usually well under 100 KB), so checking at sea costs very little.
+Packs are managed in **Survey → File → Config packs**. They are kept in the **`config_packs` folder in the survey data folder**, and Spyhop lists every pack there. For each one it shows the latest change, whether it matches this computer's config, and which pack is in use. From the list you can:
+
+- **Use this pack…:** see what would change, then overwrite this computer's config files with the pack's (a backup is saved first).
+- **Overwrite…:** replace the pack with this computer's config, adding your name and what changed to its record of changes.
+- **Download:** get the file, to upload it for the team.
+- **Save this computer's config as a new pack…** (under the list): give it a name, your name and what changed.
+
+Spyhop names the packs it saves **`<name>.spyhop.zip`**. They are ordinary zip files, so they open in any zip tool, and the double ending marks them as Spyhop packs. Spyhop also reads packs named `.zip` or `.spyhop`.
+
+A team usually keeps its pack on the web too, so each computer can get the latest when it has internet (**Get a pack from the web**). Nothing is downloaded until someone presses **Check**. A pack is small (usually well under 100 KB), so checking at sea costs very little. Spyhop keeps a copy of each pack it pulls in the config packs folder, so it can be used again offline.
 
 ## What's in a pack
 
@@ -35,19 +44,18 @@ A plain CSV that you can edit in Excel, with one row per change:
 
 - Write dates as `YYYY-MM-DD`, so they sort properly.
 - Add a row each time you change the pack. The rows can be in any order; Spyhop shows the newest first.
-- When someone checks the pack, Spyhop shows them the latest changes. After a pull, the latest change is shown in Settings, so anyone can see which version a computer has.
+- When someone checks the pack, Spyhop shows them the latest changes. The list shows the latest change of every pack, and which one this computer is using.
 - In Excel, use **File → Save As → CSV UTF-8**, to keep accented names.
 
-## Making a pack
+## Making and changing a pack
 
-1. On a computer whose config files are set up the way the team wants, open **Survey → File → Group config** and press **Make a pack from this computer…**.
-2. Spyhop asks for **your name**, **what changed**, and the pack's **file name**. It fills in **Files changed** itself: the files changed on this computer since the last pull or pack ("all" the first time). It adds these as a row to `spyhop-config.csv` and saves the zip (also in the exports folder). It remembers your name and the file name for next time.
-3. To leave a file out (such as `display.csv`), unzip the pack, delete the file, and zip it again.
-4. Publish it as described below.
+1. Set up the lists and shortcuts the way the team wants (**Survey → Dropdowns** and **Survey → Shortcuts**).
+2. In **Survey → File → Config packs**, press **Save this computer's config as a new pack…**, or **Overwrite…** on the pack you are updating.
+3. Spyhop asks for **your name** and **what changed** (and, for a new pack, its name). It fills in **Files changed** itself: for a new pack, the files changed since this computer last used or saved a pack ("all" if it doesn't know); for an overwrite, the files that differ from that pack. It adds this as a row to the pack's `spyhop-config.csv` and saves the pack in the config packs folder.
+4. To leave a file out (such as `display.csv`), unzip the pack, delete the file, and zip it again.
+5. To share it, press **Download** (or **Open the config packs folder**) and publish the file as described below. Upload a new version in place of the old one at the same address. In Google Drive, right-click the file → **File information → Manage versions → Upload new version**, so the link stays the same.
 
-To change the pack later: pull the current pack, make your changes in Survey → Dropdowns and Shortcuts, then press **Make a pack from this computer…** again and upload the new zip in place of the old one at the same address. In Google Drive, right-click the file → **File information → Manage versions → Upload new version**, so the link stays the same.
-
-Before publishing a change, it's worth checking that it pulls cleanly. Type the path of the zip or folder on your own computer into **Web address of the pack** and press **Check for new config**: Spyhop lists any problems without changing anything.
+Overwriting a pack continues that pack's own record of changes. A new pack starts from this computer's record (the record of the pack it last used).
 
 ## Where to put it
 
@@ -63,23 +71,25 @@ Use an address that downloads the pack **without signing in**, because Spyhop do
 
 SharePoint and OneDrive links within an organisation usually require signing in, so they don't work here. Partners outside your organisation also can't open them.
 
-You can also type the **path of a zip or folder on this computer**, such as a pack copied from a USB stick, or a backup.
+You can also type the **path of a zip or folder on this computer**, such as a pack on a USB stick. Simpler still, copy the file into the config packs folder: it then appears in the list.
 
-## Pulling on each computer
+## Using a pack
 
-1. Open **Survey → File → Group config**, paste the address once (Spyhop remembers it), and press **Check for new config**.
+1. Press **Use this pack…** on a pack in the list. For the team's pack on the web, paste its address once under **Get a pack from the web** (Spyhop remembers it) and press **Check**.
 2. Spyhop lists every file in the pack and what would happen to it (new, changed, same, or removed), with row counts. It also shows the pack's recent changes and any problems.
-3. Leave **Save a backup of this computer's config files first** ticked. You can choose where the backup goes; by default it's the `config_backups` folder inside the Spyhop folder.
-4. Press **Pull and overwrite**. The new lists, shortcuts and templates are used straight away, with no need to restart.
+3. Leave **Save a backup of this computer's config files first** ticked. By default backups go in `config_packs/backups` in the survey data folder; you can choose another folder.
+4. Press **Use it and overwrite** (or **Pull and overwrite** for a web pack). The new lists, shortcuts and templates are used straight away, with no need to restart. A web pack is also saved in the config packs folder, replacing an older copy with the same name.
 
 **Nothing is merged.** Each file from the pack replaces this computer's copy, so changes made on this computer to those files are lost, apart from the backup. If a file should differ on one computer, leave it out of the pack.
 
 **A pack with any problem isn't pulled at all.** Problems are files Spyhop can't read: a list missing its `name` column, or a report template with a mistake. Spyhop names the problem files, and nothing on the computer changes.
 
-**During a survey:** pulling is allowed, after a warning. Rows already recorded are never changed. If a pull removes a list entry that earlier rows use, those rows keep their values, and Quality Control flags them as "not in the list".
+**During a survey:** using a pack is allowed, after a warning. Rows already recorded are never changed. If a pull removes a list entry that earlier rows use, those rows keep their values, and Quality Control flags them as "not in the list".
 
-## Undoing a pull
+## Undoing it
 
-Each backup is itself a pack. To go back, type the backup's path (shown after the pull, and kept in the backups folder; **Open the backups folder** opens it) into **Web address of the pack**, then press **Check** and **Pull**.
+Each backup is itself a pack. The latest backups are listed under **Backups**; press **Restore…** on one, then **Restore and overwrite**. **Open the backups folder** shows them all.
 
-A backup made when the computer had no report templates of its own includes a small marker file, so pulling it also removes the templates the pull added.
+A backup made when the computer had no report templates of its own includes a small marker file, so restoring it also removes the templates the pack added.
+
+Backups saved before Spyhop 0.14.0 are in the `config_backups` folder in Spyhop's own folder. To restore one, copy it into the backups folder, or type its path under **Get a pack from the web**.

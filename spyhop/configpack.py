@@ -1,4 +1,4 @@
-"""Group config packs: a team's shared lists, shortcuts, map settings and report templates.
+"""Config packs: a set of lists, shortcuts, map settings and report templates in one file.
 
 A pack is a zip (or a folder) holding any of the files in PACK_CSV, report templates in
 `reports/*.json`, and `spyhop-config.csv`, a log of changes in plain CSV:
@@ -6,11 +6,13 @@ A pack is a zip (or a folder) holding any of the files in PACK_CSV, report templ
     Date,Changed by,Files,Notes
     2026-11-06,Hansen Johnson,species.csv,Added Dead bird
 
-A team puts the pack on the web (a GitHub repository, a Dropbox or Google Drive link, any
-website). Each computer checks the address in Survey → File → Group config, sees what would
-change, and pulls it. Pulling replaces this computer's copy of each file the pack has; it
+Packs are kept in `<survey data folder>/config_packs` as `<name>.spyhop.zip` (plain zips; .zip
+and .spyhop are read too) and listed in Survey → File → Config packs, where one can be used,
+overwritten with this computer's config, or saved new. A team also puts its pack on the web (a
+GitHub repository, a Dropbox or Google Drive link, any website); pulling it keeps a copy in the
+folder. Using a pack replaces this computer's copy of each file the pack has; it
 never merges. Report templates are replaced as a set when the pack has any. A backup zip of
-the current files (itself a valid pack) can be saved first.
+the current files (itself a valid pack) can be saved first, in config_packs/backups.
 
 Nothing in a pack is run: CSVs are checked for their columns, report templates are checked
 like any other, and files Spyhop doesn't know are listed and left alone.
@@ -48,6 +50,8 @@ PACK_CSV = {
 }
 # in a backup made when there were no report templates, so pulling it removes any added since
 NO_REPORTS = "reports/_no_report_templates.txt"
+PACK_SUFFIX = ".spyhop.zip"     # what Spyhop names packs it saves; it reads .zip and .spyhop too
+PACKS_DIR = "config_packs"      # in the survey data folder
 MAX_BYTES = 50 * 1024 * 1024
 TIMEOUT_S = 30
 CACHE_S = 15 * 60
@@ -80,7 +84,7 @@ def resolve(address: str) -> tuple[str, str]:
         owner, repo = parts[0], parts[1].removesuffix(".git")
         if len(parts) == 2:
             return "url", f"https://api.github.com/repos/{owner}/{repo}/zipball"
-        if len(parts) >= 5 and parts[2] in ("blob", "raw") and parts[-1].lower().endswith(".zip"):
+        if len(parts) >= 5 and parts[2] in ("blob", "raw") and is_pack_name(parts[-1]):
             # a zip committed to the repository: its raw download, not a zip of the repository
             return "url", f"https://raw.githubusercontent.com/{owner}/{repo}/{'/'.join(parts[3:])}"
         if len(parts) >= 4 and parts[2] in ("tree", "blob"):
@@ -102,6 +106,27 @@ def resolve(address: str) -> tuple[str, str]:
 
 def fetch(address: str) -> tuple[dict[str, bytes], str]:
     """The pack's files as {path inside the pack: bytes}, and a short description of the source."""
+    files, source, _name = fetch_named(address)
+    return files, source
+
+
+def _download_name(url: str, headers) -> str:
+    """A file name for a downloaded pack: the server's, else the address's, else made from the address."""
+    cd = headers.get("Content-Disposition", "") if headers else ""
+    m = re.search(r"filename\*\s*=\s*[^']*'[^']*'([^;]+)", cd) or re.search(r'filename\s*=\s*"?([^";]+)"?', cd)
+    if m:
+        return urllib.parse.unquote(m.group(1)).strip()
+    u = urllib.parse.urlparse(url)
+    parts = [x for x in u.path.split("/") if x]
+    if parts and is_pack_name(parts[-1]):
+        return urllib.parse.unquote(parts[-1])
+    if u.netloc == "api.github.com" and len(parts) >= 3:          # repos/<owner>/<repo>/zipball[/branch]
+        return parts[2]
+    return "config pack from " + (u.netloc or "the web")
+
+
+def fetch_named(address: str) -> tuple[dict[str, bytes], str, str]:
+    """fetch(), plus a file name for a copy of the pack."""
     kind, target = resolve(address)
     if kind == "file":
         p = Path(target)
@@ -110,15 +135,16 @@ def fetch(address: str) -> tuple[dict[str, bytes], str]:
             for f in p.rglob("*"):
                 if f.is_file() and not any(x.startswith(".") for x in f.relative_to(p).parts):
                     files[f.relative_to(p).as_posix()] = f.read_bytes()
-            return files, str(p)
+            return files, str(p), p.name
         if not p.is_file():
             raise PackError(f"There's no file or folder at {p}.")
-        return _unzip(p.read_bytes(), ""), str(p)
+        return _unzip(p.read_bytes(), ""), str(p), p.name
     url, _, sub = target.partition("#")
     req = urllib.request.Request(url, headers={"User-Agent": f"Spyhop/{__version__}", "Accept": "*/*"})
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
             data = r.read(MAX_BYTES + 1)
+            name = _download_name(r.geturl() or url, r.headers)
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
             raise PackError(f"The web server refused (error {e.code}). The pack must be shared so anyone with the link can open it, without signing in.")
@@ -135,7 +161,9 @@ def fetch(address: str) -> tuple[dict[str, bytes], str]:
             raise PackError("That address gave a web page, not a zip file. Use a direct download link (see the help below), "
                             "and check the file is shared with anyone who has the link.")
         raise PackError("That address didn't give a zip file.")
-    return _unzip(data, sub), url
+    if sub:
+        name = f"{name} {sub.strip('/').replace('/', ' ')}"
+    return _unzip(data, sub), url, name
 
 
 def _unzip(data: bytes, sub: str) -> dict[str, bytes]:
@@ -316,12 +344,137 @@ def config_files(cfg) -> dict[str, Path]:
     return out
 
 
+def is_pack_name(name: str) -> bool:
+    return str(name).lower().endswith((".zip", ".spyhop"))
+
+
+def pack_stem(name: str) -> str:
+    """The name without .spyhop.zip, .spyhop or .zip."""
+    n = str(name or "")
+    for suf in (PACK_SUFFIX, ".spyhop", ".zip"):
+        if n.lower().endswith(suf):
+            return n[: -len(suf)]
+    return n
+
+
 def safe_pack_name(name) -> str:
-    """A file name for a pack zip, or "" for none."""
-    n = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(name or "").strip()).strip(" .")
-    if not n:
-        return ""
-    return n if n.lower().endswith(".zip") else n + ".zip"
+    """A file name for a pack Spyhop saves (<name>.spyhop.zip), or "" for none."""
+    n = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", pack_stem(str(name or "").strip())).strip(" .")
+    return n + PACK_SUFFIX if n else ""
+
+
+def packs_dir(cfg) -> Path:
+    return cfg.data_dir / PACKS_DIR
+
+
+def backups_dir(cfg) -> Path:
+    custom = str(cfg.settings.get("group_config_backup_dir") or "").strip()
+    return Path(custom).expanduser() if custom else packs_dir(cfg) / "backups"
+
+
+def _pack_file(cfg, name: str) -> Path:
+    """A pack in the config packs folder, by its file name (no folders)."""
+    n = str(name or "")
+    if not n or "/" in n or "\\" in n or n.startswith(".") or not is_pack_name(n):
+        raise PackError("That isn't the name of a config pack.")
+    return packs_dir(cfg) / n
+
+
+def list_packs(cfg) -> list[dict]:
+    """The packs in the config packs folder, newest first, each compared with this computer's config."""
+    d = packs_dir(cfg)
+    out = []
+    files = [p for p in d.iterdir() if p.is_file() and not p.name.startswith(".") and is_pack_name(p.name)] if d.is_dir() else []
+    for p in sorted(files, key=lambda p: p.stat().st_mtime, reverse=True):
+        st = p.stat()
+        item = {"name": p.name, "path": str(p), "size": st.st_size,
+                "modified": datetime.fromtimestamp(st.st_mtime).astimezone().isoformat(timespec="seconds")}
+        try:
+            pack = read_pack(_unzip(p.read_bytes(), ""))
+            plan = compare(cfg, pack)
+            item.update(latest=pack["manifest"][0] if pack["manifest"] else None, changes=len(pack["manifest"]),
+                        problems=pack["problems"][:3], differs=[r["file"] for r in plan if r["status"] != "same"])
+            item["matches"] = not pack["problems"] and not item["differs"]
+        except PackError as e:
+            item["error"] = str(e)
+        out.append(item)
+    return out
+
+
+def list_backups(cfg, limit: int = 20) -> list[dict]:
+    d = backups_dir(cfg)
+    files = [p for p in d.iterdir() if p.is_file() and is_pack_name(p.name)] if d.is_dir() else []
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return [{"name": p.name, "path": str(p), "size": p.stat().st_size,
+             "modified": datetime.fromtimestamp(p.stat().st_mtime).astimezone().isoformat(timespec="seconds")}
+            for p in files[:limit]]
+
+
+def read_pack_file(cfg, name: str) -> dict:
+    p = _pack_file(cfg, name)
+    if not p.is_file():
+        raise PackError(f"There's no pack called {name} in {p.parent}.")
+    return read_pack(_unzip(p.read_bytes(), ""))
+
+
+def changed_from_pack(cfg, name: str) -> list[str]:
+    """The files that differ between this computer and a pack in the folder."""
+    return [r["file"] for r in compare(cfg, read_pack_file(cfg, name)) if r["status"] != "same"]
+
+
+def save_pack(cfg, name: str, by: str, files: str, notes: str, overwrite: bool = False) -> Path:
+    """Save this computer's config as a pack in the config packs folder, adding a row to its record of changes.
+    A new pack continues this computer's record; overwriting continues the record of the pack replaced."""
+    if overwrite:
+        p = _pack_file(cfg, name)
+        if not p.is_file():
+            raise PackError(f"There's no pack called {name} to overwrite.")
+        try:
+            old = read_pack(_unzip(p.read_bytes(), ""))["manifest_text"]
+        except PackError:
+            old = ""
+        if old:
+            _write(cfg.root / MANIFEST, old)
+    else:
+        fn = safe_pack_name(name)
+        if not fn:
+            raise PackError("Give the pack a name.")
+        p = packs_dir(cfg) / fn
+        if p.exists():
+            raise PackError(f"There's already a pack called {fn}. Choose another name, or use Overwrite on that pack.")
+    log_change(cfg, by, files or "all", notes)
+    _write_bytes(p, make_zip(cfg))
+    return p
+
+
+def pack_to_zip(pack: dict) -> bytes:
+    """A zip holding just a pack's config files (as read), e.g. to keep a copy of one pulled from the web."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        if pack["manifest_text"]:
+            z.writestr(MANIFEST, pack["manifest_text"] if pack["manifest_text"].startswith("\ufeff") else "\ufeff" + pack["manifest_text"])
+        for name, text in pack["csv"].items():
+            z.writestr(name, text)
+        if pack["reports"] is not None:
+            for fn, text in pack["reports"].items():
+                z.writestr(f"reports/{fn}", text)
+            if not pack["reports"]:
+                z.writestr(NO_REPORTS, "This pack has no report templates: pulling it removes any on the computer.\n")
+    return buf.getvalue()
+
+
+def keep_copy(cfg, pack: dict, filename: str) -> Path:
+    """Save a pulled pack in the config packs folder, replacing an older copy with the same name."""
+    p = packs_dir(cfg) / (safe_pack_name(filename) or "config pack" + PACK_SUFFIX)
+    _write_bytes(p, pack_to_zip(pack))
+    return p
+
+
+def in_packs_dir(cfg, path: str) -> bool:
+    try:
+        return Path(path).resolve().parent == packs_dir(cfg).resolve()
+    except OSError:
+        return False
 
 
 def fingerprints(cfg) -> dict[str, str]:
@@ -387,14 +540,14 @@ def make_zip(cfg, note: str = "", backup: bool = False) -> bytes:
 
 
 def save_backup(cfg, folder: str | Path | None) -> Path:
-    d = Path(folder).expanduser() if folder else cfg.root / "config_backups"
+    d = Path(folder).expanduser() if folder else backups_dir(cfg)
     if folder and not d.is_absolute():
         raise PackError("Give the full path of the backup folder.")
     try:
         d.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         raise PackError(f"Can't use {d} for the backup: {e}")
-    p = d / f"spyhop-config-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
+    p = d / f"spyhop-config-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}{PACK_SUFFIX}"
     p.write_bytes(make_zip(cfg, f"Backup of this computer's config files (Spyhop {__version__})", backup=True))
     return p
 
@@ -404,6 +557,14 @@ def _write(p: Path, text: str):
     fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=p.name + ".")
     with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
+    os.replace(tmp, p)
+
+
+def _write_bytes(p: Path, data: bytes):
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=p.parent, prefix="." + p.name + ".")
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
     os.replace(tmp, p)
 
 

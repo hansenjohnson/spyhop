@@ -506,10 +506,10 @@ class App:
                    "overlays": cfg.overlays_dir, "survey": cfg.data_dir, "datafolder": cfg.data_dir,
                    "nmealogs": cfg.data_dir / "nmea_logs", "logs": diag.log_dir(cfg.root),
                    "reports": reports.user_dir(cfg),
-                   "backups": Path(cfg.settings.get("group_config_backup_dir") or cfg.root / "config_backups")}
+                   "backups": configpack.backups_dir(cfg), "packs": configpack.packs_dir(cfg)}
         if what in targets:
             p = targets[what]
-            if what == "backups":
+            if what in ("backups", "packs"):
                 p.mkdir(parents=True, exist_ok=True)
             if what == "reports":
                 reports.prepare_user_dir(cfg)
@@ -725,22 +725,39 @@ class App:
             os.replace(tmp, dest)
         return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}")
 
-    # ---- group config packs (Survey → File → Group config; configpack.py)
+    # ---- config packs (Survey → File → Config packs; configpack.py)
     async def groupconfig_check(self, request):
+        """Check a pack before pulling it: from a web address ({url}), a pack in the config packs
+        folder ({pack: file name}) or a backup ({backup: file name})."""
         b = await request.json() if request.can_read_body else {}
-        url = str(b.get("url", "")).strip()
         cfg = self.rec.cfg
-        cfg.save_settings({"group_config_url": url})
+        if b.get("pack") or b.get("backup"):
+            try:
+                if b.get("pack"):
+                    url, kind = str(configpack._pack_file(cfg, b["pack"])), "folder"
+                else:
+                    name = str(b["backup"])
+                    if "/" in name or "\\" in name or not configpack.is_pack_name(name):
+                        raise configpack.PackError("That isn't the name of a backup.")
+                    url, kind = str(configpack.backups_dir(cfg) / name), "backup"
+            except configpack.PackError as e:
+                raise ValueErrorMsg(str(e))
+        else:
+            url, kind = str(b.get("url", "")).strip(), "web"
+            cfg.save_settings({"group_config_url": url})
 
         def work():
-            files, source = configpack.fetch(url)
+            files, source, name = configpack.fetch_named(url)
             pack = configpack.read_pack(files)
-            return source, pack, configpack.compare(cfg, pack)
+            return source, name, pack, configpack.compare(cfg, pack)
         try:
-            source, pack, plan = await asyncio.get_running_loop().run_in_executor(None, work)
+            source, name, pack, plan = await asyncio.get_running_loop().run_in_executor(None, work)
         except configpack.PackError as e:
             raise ValueErrorMsg(str(e))
-        return json_ok(token=configpack.remember(url, pack), source=source, files=plan,
+        if kind == "web" and configpack.resolve(url)[0] == "file":
+            kind = "folder" if configpack.in_packs_dir(cfg, url) else "file"
+        pack["_kind"], pack["_name"] = kind, name
+        return json_ok(token=configpack.remember(url, pack), source=source, files=plan, kind=kind, name=name,
                        manifest=pack["manifest"][:8], ignored=pack["ignored"], problems=pack["problems"],
                        survey_active=self.rec.survey_active())
 
@@ -755,20 +772,33 @@ class App:
         bdir = str(b.get("backup_dir", "") or "").strip()
         cfg.save_settings({"group_config_backup": backup, "group_config_backup_dir": bdir})
 
+        kind = pack.get("_kind", "web")
+
         def work():
             saved = configpack.save_backup(cfg, bdir) if backup else None
-            return saved, configpack.apply(cfg, pack)
+            changed = configpack.apply(cfg, pack)
+            copy = None
+            if kind in ("web", "file"):          # keep a copy in the config packs folder, for reuse offline
+                try:
+                    copy = configpack.keep_copy(cfg, pack, pack.get("_name") or "")
+                except OSError as e:
+                    log.warning("couldn't keep a copy of the pack: %s", e)
+            return saved, changed, copy
         try:
-            saved, changed = await asyncio.get_running_loop().run_in_executor(None, work)
+            saved, changed, copy = await asyncio.get_running_loop().run_in_executor(None, work)
         except configpack.PackError as e:
             raise ValueErrorMsg(str(e))
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        cfg.save_settings({"group_config_last": {
-            "url": url, "pulled": now, "latest": pack["manifest"][0] if pack["manifest"] else None, "changed": changed},
-            "group_config_fingerprints": {"from": "pull", "when": now, "files": configpack.fingerprints(cfg)}})
-        log.info("group config pulled from %s: %s", url, ", ".join(changed) or "no changes")
+        current = copy.name if copy else (Path(url).name if kind == "folder" else None)
+        upd = {"group_config_fingerprints": {"from": "pull", "when": now, "files": configpack.fingerprints(cfg)},
+               "group_config_current": {"name": current, "how": "backup" if kind == "backup" else "loaded", "when": now}}
+        if kind in ("web", "file"):
+            upd["group_config_last"] = {"url": url, "pulled": now, "latest": pack["manifest"][0] if pack["manifest"] else None,
+                                        "changed": changed}
+        cfg.save_settings(upd)
+        log.info("group config loaded from %s: %s", url, ", ".join(changed) or "no changes")
         self._broadcast_soon({"type": "reload"})
-        return json_ok(changed=changed, backup=str(saved) if saved else None)
+        return json_ok(changed=changed, backup=str(saved) if saved else None, copy=copy.name if copy else None)
 
     async def groupconfig_backup(self, request):
         b = await request.json() if request.can_read_body else {}
@@ -779,31 +809,62 @@ class App:
             raise ValueErrorMsg(str(e))
         return json_ok(path=str(p), folder=str(p.parent))
 
-    async def groupconfig_changes(self, request):
-        """What "Make a pack" would put in the log's Files column: the files changed since the last pull or pack."""
+    async def configpacks_list(self, request):
         cfg = self.rec.cfg
-        base = cfg.settings.get("group_config_fingerprints") or {}
-        changed = configpack.changed_since(cfg, base.get("files"))
-        return json_ok(files=changed, since=base.get("from"), when=base.get("when"),
-                       by=cfg.settings.get("group_config_author", ""), name=cfg.settings.get("group_config_pack_name", ""))
+        try:
+            packs, backups = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: (configpack.list_packs(cfg), configpack.list_backups(cfg)))
+        except OSError as e:
+            raise ValueErrorMsg(f"Couldn't read the config packs folder: {e}")
+        return json_ok(folder=str(configpack.packs_dir(cfg)), packs=packs, backups=backups,
+                       backups_folder=str(configpack.backups_dir(cfg)),
+                       current=cfg.settings.get("group_config_current") or None)
 
-    async def groupconfig_pack(self, request):
+    async def groupconfig_changes(self, request):
+        """What the record of changes' Files column should say: for a new pack, the files changed since the
+        last load, pull or save; for overwriting a pack ({name}), the files that differ from it."""
+        cfg = self.rec.cfg
+        name = request.query.get("name", "")
+        info = {"by": cfg.settings.get("group_config_author", "")}
+        if name:
+            try:
+                return json_ok(files=configpack.changed_from_pack(cfg, name), since="pack_file", **info)
+            except configpack.PackError as e:
+                raise ValueErrorMsg(str(e))
+        base = cfg.settings.get("group_config_fingerprints") or {}
+        return json_ok(files=configpack.changed_since(cfg, base.get("files")), since=base.get("from"),
+                       when=base.get("when"), **info)
+
+    async def configpacks_save(self, request):
         b = await request.json() if request.can_read_body else {}
-        by, notes, files = (str(b.get(k, "") or "").strip() for k in ("by", "notes", "files"))
+        by, notes, files, name = (str(b.get(k, "") or "").strip() for k in ("by", "notes", "files", "name"))
+        overwrite = bool(b.get("overwrite"))
         if not by or not notes:
             raise ValueErrorMsg("Give your name and what changed, for the pack's record of changes.")
         cfg = self.rec.cfg
-        configpack.log_change(cfg, by, files or "all", notes)
-        data = configpack.make_zip(cfg)
-        name = configpack.safe_pack_name(b.get("name")) or f"spyhop-config-pack-{datetime.now().strftime('%Y%m%d')}.zip"
-        cfg.export_dir.mkdir(parents=True, exist_ok=True)
-        p = cfg.export_dir / name
-        p.write_bytes(data)
-        cfg.save_settings({"group_config_author": by, "group_config_pack_name": p.name, "group_config_fingerprints": {
-            "from": "pack", "when": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "files": configpack.fingerprints(cfg)}})
-        log.info("config pack made by %s: %s (%s)", by, notes, files or "all")
-        return json_ok(name=p.name, path=str(p), url=f"/api/download/{quote(p.name)}")
+        try:
+            p = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: configpack.save_pack(cfg, name, by, files, notes, overwrite))
+        except configpack.PackError as e:
+            raise ValueErrorMsg(str(e))
+        except OSError as e:
+            raise ValueErrorMsg(f"Couldn't save the pack: {e}")
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        cfg.save_settings({"group_config_author": by,
+                           "group_config_fingerprints": {"from": "pack", "when": now, "files": configpack.fingerprints(cfg)},
+                           "group_config_current": {"name": p.name, "how": "saved", "when": now}})
+        log.info("config pack %s by %s: %s (%s)", "overwritten" if overwrite else "saved", by, notes, files or "all")
+        return json_ok(name=p.name, path=str(p), url=f"/api/configpacks/file/{quote(p.name)}")
+
+    async def configpacks_file(self, request):
+        """Download a pack from the config packs folder (to upload it for the group)."""
+        try:
+            p = configpack._pack_file(self.rec.cfg, request.match_info["name"])
+        except configpack.PackError as e:
+            raise web.HTTPNotFound(text=str(e))
+        if not p.is_file():
+            raise web.HTTPNotFound()
+        return web.FileResponse(p, headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(p.name)}"})
 
     # ---- updates (Survey → About; updater.py)
     async def update_check(self, request):
@@ -911,7 +972,9 @@ class App:
         r.add_post("/api/groupconfig/check", self.groupconfig_check)
         r.add_post("/api/groupconfig/pull", self.groupconfig_pull)
         r.add_post("/api/groupconfig/backup", self.groupconfig_backup)
-        r.add_post("/api/groupconfig/pack", self.groupconfig_pack)
+        r.add_get("/api/configpacks", self.configpacks_list)
+        r.add_post("/api/configpacks/save", self.configpacks_save)
+        r.add_get("/api/configpacks/file/{name}", self.configpacks_file)
         r.add_get("/api/groupconfig/changes", self.groupconfig_changes)
         r.add_post("/api/open", self.open)
         r.add_get("/api/nmea", self.nmea)

@@ -43,7 +43,7 @@ Behind the scenes they are plain CSV files, which you can also edit in Excel, Nu
 
 After editing a file, save it and press **Reload config files**. Keep the header row as it is. Spyhop adds new columns and entries itself when it is updated.
 
-If your team shares its config files, use **Survey → File → Group config** instead: paste the address of the team's pack, press **Check for new config** to see what would change, then **Pull**. This overwrites this computer's copies of the pack's files, so keep the backup option ticked. See docs/CONFIG_PACKS.md.
+If your team shares its config files, use **Survey → File → Config packs** instead. Paste the address of the team's pack under **Get a pack from the web** and press **Check** to see what would change, then **Pull and overwrite**; or press **Use this pack…** on a pack already in the list. This overwrites this computer's copies of the pack's files, so keep the backup option ticked. To save your own setup as a pack, press **Save this computer's config as a new pack…**. See docs/CONFIG_PACKS.md.
 
 ## Plan a route
 

@@ -6,6 +6,14 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.14.0 — 2026-11-06
+
+- **Config packs are kept in a folder and listed.** They live in the `config_packs` folder of the survey data folder. Survey → File → Config packs (formerly Group config) lists them, with each one's latest change, whether it matches this computer's config, and which is in use.
+- From the list: **Use this pack…** (with the same check, warning and backup as before), **Overwrite…** with this computer's config, and **Download**. **Save this computer's config as a new pack…** replaces "Make a pack from this computer…".
+- Packs are saved as `<name>.spyhop.zip`: still ordinary zips, but easy to tell apart. Packs named `.zip` or `.spyhop` are read too.
+- A pack pulled from the web is also kept in the folder, so it can be used again offline.
+- Backups now go in `config_packs/backups` (unless you chose a folder), are listed, and can be restored with one button. Older backups stay in the `config_backups` folder in Spyhop's folder.
+
 ## 0.13.2 — 2026-11-06
 
 - The map readout shows the water depth at the cursor, next to the scale bar, when the Seascape layer is shown. It reads Seascape's depth tiles, so it works offline wherever the map has been viewed or downloaded.

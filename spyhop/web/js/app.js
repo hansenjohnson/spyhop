@@ -1323,127 +1323,207 @@ class App {
       buttons: [{ label: 'Open it', value: () => this.open(`export:${r.name}`) }, { label: 'Done', primary: true, value: true }] });
   }
 
-  // ---------------------------------------------------------------- group config (configpack.py)
+  // ---------------------------------------------------------------- config packs (configpack.py)
   groupConfigSection() {
     const S = this.S, st = S.config.settings, gc = (this.gc ||= {});
     const sec = (title, ...kids) => el('section', { class: 'settings-sec', id: 'group-config' }, el('h3', {}, title), ...kids);
     const when = (iso) => { const p = iso && timeParts(iso, this.clock()); return p ? `${p.date} ${p.time.slice(0, 5)} ${p.abbr}` : ''; };
-    const urlBox = el('input', { type: 'text', id: 'gc-url', placeholder: 'https://github.com/your-team/spyhop-config', value: gc.url ?? st.group_config_url ?? '',
-      style: { flex: '1', minWidth: '22em' }, oninput: (e) => { gc.url = e.target.value; },
-      onkeydown: (e) => { if (e.key === 'Enter') this.checkGroupConfig(); } });
-    const last = st.group_config_last || {};
-    const lastP = last.pulled ? el('p', { id: 'gc-last' }, `Last pulled ${when(last.pulled)}`,
-      last.latest ? ` — the pack’s latest change: ${[last.latest.date, last.latest.by, last.latest.notes].filter(Boolean).join(' · ')}` : '',
-      last.url && last.url !== (gc.url ?? st.group_config_url) ? el('span', { class: 'hint' }, ` (from ${last.url})`) : null)
-      : el('p', { id: 'gc-last', class: 'hint' }, 'No group config has been pulled on this computer yet.');
+    if ((!gc.list || gc.listDir !== S.config.data_dir) && !gc.loading) this.loadConfigPacks();
+    const L = gc.list;
+    const stem = (n) => n.replace(/\.spyhop\.zip$|\.spyhop$|\.zip$/i, '');
+    const ext = (n) => n.slice(stem(n).length);
+    const cur = L?.current?.name && L.packs.find((p) => p.name === L.current.name);
+    const btn = (label, attrs, fn) => el('button', { ...attrs, onclick: fn }, label);
+
+    // ---- this computer's config and the packs in the folder
     const kids = [
-      el('p', {}, 'A team can keep its config files in one place on the web — the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates — and each computer pulls them from there when it has an internet connection. Nothing is downloaded until you press Check.'),
-      el('p', { class: 'warnbox' }, el('b', {}, 'Pulling overwrites this computer’s config files. '),
-        'Every file in the pack replaces the one here; nothing is merged, so changes made on this computer to those files are lost (save a backup first to keep them). If the pack has report templates, they replace all of this computer’s templates. Survey data, waypoints and your own settings (data folder, GPS inputs, clock and the rest of Survey → Settings) are never changed.'),
-      el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Web address of the pack:', urlBox),
-        el('button', { id: 'btn-gc-check', onclick: () => this.checkGroupConfig() }, gc.busy === 'check' ? 'Checking…' : 'Check for new config')),
-      lastP,
+      el('p', {}, 'A config pack holds the team’s config files in one file: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates. Packs are kept in the config packs folder in the survey data folder; share one by uploading it (or copying it to a USB stick) and use it on another computer.'),
     ];
+    if (!L) kids.push(el('p', { class: 'hint' }, gc.loading ? 'Reading the config packs folder…' : ''));
+    else {
+      let curText;
+      const c = L.current;
+      if (c?.name && cur) {
+        const how = { saved: 'Saved to', loaded: 'Loaded from', backup: 'Restored from a backup, then' }[c.how] || 'From';
+        curText = el('p', { id: 'gc-current' }, el('b', {}, 'This computer’s config: '), `${how} `, el('span', { class: 'mono' }, cur.name),
+          c.when ? ` (${when(c.when)})` : '', cur.matches ? ' — no changes since.'
+            : cur.differs?.length ? ` — changed since: ${cur.differs.join(', ')}.` : '.');
+      } else if (c?.how === 'backup') curText = el('p', { id: 'gc-current' }, el('b', {}, 'This computer’s config: '), `restored from a backup${c.when ? ` (${when(c.when)})` : ''}.`);
+      else curText = el('p', { id: 'gc-current' }, el('b', {}, 'This computer’s config: '), c?.name ? `from ${c.name}, which is no longer in the folder.` : 'not saved to or loaded from a pack in this folder yet.');
+      kids.push(curText);
+      kids.push(el('p', { class: 'hint' }, 'Packs in ', el('span', { class: 'mono' }, L.folder)));
+      if (!L.packs.length) kids.push(el('p', { class: 'hint', id: 'gc-nopacks' }, 'No packs here yet. Save this computer’s config as a pack, or get one from a web address below.'));
+      else {
+        kids.push(el('table', { class: 'summary gc-packs', id: 'gc-packs' },
+          el('thead', {}, el('tr', {}, ['Pack', 'Latest change', 'Compared with here', ''].map((h) => el('th', {}, h)))),
+          el('tbody', {}, L.packs.map((p) => {
+            const inUse = cur && p.name === cur.name;
+            const status = p.error ? el('span', { class: 'err' }, p.error)
+              : p.problems?.length ? el('span', { class: 'err' }, `Has problems: ${p.problems[0]}`)
+                : p.matches ? 'Same' : `Differs: ${p.differs.join(', ')}`;
+            const latest = p.latest ? el('span', {}, [p.latest.date, p.latest.by].filter(Boolean).join(' · '),
+              p.latest.notes ? el('div', { class: 'gc-note' }, p.latest.notes) : null) : el('span', { class: 'hint' }, 'no record of changes');
+            return el('tr', { class: inUse ? 'gc-inuse' : '', 'data-pack': p.name },
+              el('td', {}, el('b', {}, stem(p.name)), el('span', { class: 'hint' }, ext(p.name)), inUse ? el('span', { class: 'pill' }, 'in use') : null),
+              el('td', {}, latest),
+              el('td', {}, status),
+              el('td', { class: 'gc-actions' },
+                btn('Use this pack…', { class: 'gc-use', disabled: !!(p.error || p.problems?.length) }, () => this.checkGroupConfig({ pack: p.name })),
+                btn('Overwrite…', { class: 'gc-overwrite', title: 'Overwrite this pack with this computer’s config' }, () => this.saveConfigPack(p.name)),
+                el('a', { class: 'button', href: `/api/configpacks/file/${encodeURIComponent(p.name)}`, download: p.name }, 'Download')));
+          }))));
+      }
+    }
+    kids.push(el('div', { class: 'btnrow' },
+      btn('Save this computer’s config as a new pack…', { id: 'gc-save-new', class: 'primary' }, () => this.saveConfigPack(null)),
+      btn('Open the config packs folder', {}, () => this.open('packs')),
+      btn('Refresh', {}, () => this.loadConfigPacks())));
+
+    // ---- what a pack would change (from the list, the web or a backup)
     if (gc.done) {
       kids.push(el('p', { class: 'okbox', id: 'gc-done' }, gc.done.changed.length
-        ? `Pulled: ${gc.done.changed.join(', ')}.` : 'Pulled; nothing needed changing.',
+        ? `Done: ${gc.done.changed.join(', ')} ${gc.done.changed.length > 1 ? 'were' : 'was'} replaced.` : 'Done; nothing needed changing.',
+        gc.done.copy ? el('span', {}, ' A copy was kept in the config packs folder as ', el('span', { class: 'mono' }, gc.done.copy), '.') : '',
         gc.done.backup ? el('span', {}, ' Backup saved as ', el('span', { class: 'mono' }, gc.done.backup), '. ') : ' ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); gc.done = null; this.renderSurvey(); } }, 'OK')));
     }
     const r = gc.result;
-    if (r) {
-      const label = { new: 'New — will be added', changed: 'Changed — replaces this computer’s copy', same: 'Same as here', removed: 'Not in the pack — will be removed' };
-      const todo = r.files.filter((f) => f.status !== 'same');
-      const box = [el('h4', {}, 'What the pack would change'), el('p', { class: 'hint' }, `From ${r.source}`)];
-      if (r.problems.length) {
-        box.push(el('div', { class: 'errbox' }, el('b', {}, 'The pack has problems, so it can’t be pulled. Ask whoever looks after it to fix:'),
-          el('ul', {}, r.problems.map((p) => el('li', {}, p)))));
-      }
-      box.push(el('table', { class: 'summary gc-files' },
-        el('thead', {}, el('tr', {}, ['File', 'What happens', 'Here', 'In the pack'].map((h) => el('th', {}, h)))),
-        el('tbody', {}, r.files.map((f) => el('tr', { class: `gc-${f.status}` },
-          el('td', { class: 'mono' }, f.file), el('td', {}, label[f.status]),
-          el('td', {}, f.unit === 'rows' && f.here != null ? `${f.here} rows` : ''),
-          el('td', {}, f.unit === 'rows' && f.pack != null ? `${f.pack} rows` : ''))))));
-      if (r.manifest.length) {
-        box.push(el('h4', {}, 'Recent changes in the pack (spyhop-config.csv)'), el('table', { class: 'summary' },
-          el('thead', {}, el('tr', {}, ['Date', 'Changed by', 'Files', 'Notes'].map((h) => el('th', {}, h)))),
-          el('tbody', {}, r.manifest.map((m) => el('tr', {}, el('td', {}, m.date), el('td', {}, m.by), el('td', {}, m.files), el('td', {}, m.notes))))));
-      } else box.push(el('p', { class: 'hint' }, 'The pack has no spyhop-config.csv, so there’s no record of its changes.'));
-      if (r.ignored.length) box.push(el('p', { class: 'hint' }, `Not config files, so left alone: ${r.ignored.join(', ')}`));
-      if (!r.problems.length) {
-        if (!todo.length) box.push(el('p', { id: 'gc-uptodate' }, el('b', {}, 'This computer already has this config.')));
-        else {
-          const dirBox = el('input', { type: 'text', id: 'gc-backup-dir', value: gc.backupDir ?? st.group_config_backup_dir ?? '',
-            placeholder: `${S.config.root}${S.config.root.includes('\\') ? '\\' : '/'}config_backups`, style: { flex: '1', minWidth: '18em' },
-            oninput: (e) => { gc.backupDir = e.target.value; } });
-          const backup = el('input', { type: 'checkbox', id: 'gc-backup', checked: gc.backup ?? st.group_config_backup !== false,
-            onchange: (e) => { gc.backup = e.target.checked; } });
-          box.push(
-            el('label', { class: 'check' }, backup, el('span', {}, 'Save a backup of this computer’s config files first (a zip you can pull again to undo)')),
-            el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Backup folder:', dirBox),
-              el('button', { onclick: async () => { const p = await this.pickFolder(); if (p) { gc.backupDir = p; dirBox.value = p; } } }, 'Choose…')),
-            el('div', { class: 'btnrow' }, el('button', { id: 'btn-gc-pull', class: 'primary', onclick: () => this.pullGroupConfig() },
-              gc.busy === 'pull' ? 'Pulling…' : `Pull and overwrite ${todo.length} file${todo.length > 1 ? 's' : ''}`),
-              el('button', { onclick: () => { gc.result = null; this.renderSurvey(); } }, 'Cancel')));
-        }
-      }
-      kids.push(el('div', { id: 'gc-result', class: 'gc-result' }, ...box));
-    }
-    kids.push(
+    if (r) kids.push(this.configPackResult(r));
+
+    // ---- from the web
+    const urlBox = el('input', { type: 'text', id: 'gc-url', placeholder: 'https://drive.google.com/file/d/…', value: gc.url ?? st.group_config_url ?? '',
+      style: { flex: '1', minWidth: '22em' }, oninput: (e) => { gc.url = e.target.value; },
+      onkeydown: (e) => { if (e.key === 'Enter') this.checkGroupConfig(); } });
+    const last = st.group_config_last || {};
+    kids.push(el('h4', {}, 'Get a pack from the web'),
+      el('p', {}, 'Paste the link to the team’s pack (Google Drive, Dropbox, GitHub or a website, shared so anyone with the link can open it). Nothing is downloaded until you press Check; a copy of the pack is then kept in the config packs folder, so it can be used again without internet.'),
+      el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Web address of the pack:', urlBox),
+        el('button', { id: 'btn-gc-check', onclick: () => this.checkGroupConfig() }, gc.busy === 'check' ? 'Checking…' : 'Check')),
+      last.pulled ? el('p', { id: 'gc-last', class: 'hint' }, `Last pulled from the web ${when(last.pulled)}`,
+        last.latest ? ` — the pack’s latest change: ${[last.latest.date, last.latest.by, last.latest.notes].filter(Boolean).join(' · ')}` : '',
+        last.url && last.url !== (gc.url ?? st.group_config_url) ? ` (from ${last.url})` : '') : null);
+
+    // ---- backups
+    const bk = L?.backups || [];
+    kids.push(el('h4', {}, 'Backups'),
+      el('p', { class: 'hint' }, 'Spyhop saves a backup of this computer’s config before using a pack (unless you untick it), in ',
+        el('span', { class: 'mono' }, L?.backups_folder || 'config_packs/backups'), '.'),
+      bk.length ? el('table', { class: 'summary', id: 'gc-backups' }, el('tbody', {}, bk.slice(0, 5).map((b) => el('tr', {},
+        el('td', {}, when(b.modified)), el('td', { class: 'mono' }, b.name),
+        el('td', {}, btn('Restore…', {}, () => this.checkGroupConfig({ backup: b.name }))))))) : null,
       el('div', { class: 'btnrow' },
-        el('button', { id: 'btn-gc-backup', onclick: () => this.backupGroupConfig() }, 'Save a backup now'),
-        el('button', { onclick: () => this.open('backups') }, 'Open the backups folder'),
-        el('button', { id: 'gc-make', onclick: () => this.makeGroupPack() }, 'Make a pack from this computer…')),
-      el('details', { class: 'hint' }, el('summary', {}, 'How to set up a pack'),
-        el('p', {}, '“Make a pack from this computer…” asks for your name and what you changed, adds that to the record of changes (spyhop-config.csv), and downloads a zip of this computer’s config files. Upload it in place of the old one, keeping the same link (in Google Drive: Manage versions → Upload new version). To leave a file out of the pack (e.g. display.csv, so each person keeps their own marker and text sizes), unzip it, delete the file and zip it again.'),
-        el('p', {}, 'Any address that downloads without signing in works: a public GitHub repository (its address, or a folder in it), a Dropbox shared link, a Google Drive link to the zip (shared with “Anyone with the link”), or a zip on a website. SharePoint and OneDrive links usually need a sign-in, so they don’t work. You can also type the path of a zip or folder on this computer, such as a backup or a pack on a USB stick. See docs/CONFIG_PACKS.md.')));
-    return sec('Group config', ...kids);
+        btn('Save a backup now', { id: 'btn-gc-backup' }, () => this.backupGroupConfig()),
+        btn('Open the backups folder', {}, () => this.open('backups'))),
+      el('details', { class: 'hint' }, el('summary', {}, 'How to share a pack with the team'),
+        el('p', {}, 'Save this computer’s config as a pack (or overwrite the team’s pack with it), giving your name and what you changed: that’s added to the pack’s record of changes (spyhop-config.csv inside it). Then upload the file in place of the old one, keeping the same link (in Google Drive: Manage versions → Upload new version). Others press Check with that link.'),
+        el('p', {}, 'Packs are ordinary zip files named .spyhop.zip, so they open in any zip tool; Spyhop also reads packs named .zip or .spyhop. To leave a file out of a pack (e.g. display.csv, so each person keeps their own marker and text sizes), unzip it, delete the file and zip it again. SharePoint and OneDrive links usually need a sign-in, so they don’t work. See docs/CONFIG_PACKS.md.')));
+    return sec('Config packs', ...kids);
   }
 
-  async makeGroupPack() {
+  configPackResult(r) {
+    const S = this.S, st = S.config.settings, gc = this.gc;
+    const label = { new: 'New — will be added', changed: 'Changed — replaces this computer’s copy', same: 'Same as here', removed: 'Not in the pack — will be removed' };
+    const todo = r.files.filter((f) => f.status !== 'same');
+    const title = r.kind === 'backup' ? `Restoring the backup ${r.name}` : r.kind === 'folder' ? `Using the pack ${r.name}` : 'The pack from the web';
+    const box = [el('h4', {}, `${title}: what would change`), el('p', { class: 'hint' }, `From ${r.source}`)];
+    box.push(el('p', { class: 'warnbox' }, el('b', {}, 'This overwrites this computer’s config files. '),
+      'Every file in the pack replaces the one here; nothing is merged. If the pack has report templates, they replace all of this computer’s templates. Survey data, waypoints and your own settings (data folder, GPS inputs, clock and the rest of Survey → Settings) are never changed.'));
+    if (r.problems.length) {
+      box.push(el('div', { class: 'errbox' }, el('b', {}, 'The pack has problems, so it can’t be used. Ask whoever looks after it to fix:'),
+        el('ul', {}, r.problems.map((p) => el('li', {}, p)))));
+    }
+    box.push(el('table', { class: 'summary gc-files' },
+      el('thead', {}, el('tr', {}, ['File', 'What happens', 'Here', 'In the pack'].map((h) => el('th', {}, h)))),
+      el('tbody', {}, r.files.map((f) => el('tr', { class: `gc-${f.status}` },
+        el('td', { class: 'mono' }, f.file), el('td', {}, label[f.status]),
+        el('td', {}, f.unit === 'rows' && f.here != null ? `${f.here} rows` : ''),
+        el('td', {}, f.unit === 'rows' && f.pack != null ? `${f.pack} rows` : ''))))));
+    if (r.manifest.length) {
+      box.push(el('h4', {}, 'Recent changes in the pack (spyhop-config.csv)'), el('table', { class: 'summary' },
+        el('thead', {}, el('tr', {}, ['Date', 'Changed by', 'Files', 'Notes'].map((h) => el('th', {}, h)))),
+        el('tbody', {}, r.manifest.map((m) => el('tr', {}, el('td', {}, m.date), el('td', {}, m.by), el('td', {}, m.files), el('td', {}, m.notes))))));
+    } else box.push(el('p', { class: 'hint' }, 'The pack has no spyhop-config.csv, so there’s no record of its changes.'));
+    if (r.ignored.length) box.push(el('p', { class: 'hint' }, `Not config files, so left alone: ${r.ignored.join(', ')}`));
+    const cancel = el('button', { onclick: () => { gc.result = null; this.renderSurvey(); } }, 'Cancel');
+    if (!r.problems.length) {
+      if (!todo.length) {
+        box.push(el('p', { id: 'gc-uptodate' }, el('b', {}, 'This computer already has this config.')),
+          el('div', { class: 'btnrow' }, el('button', { id: 'btn-gc-pull', onclick: () => this.pullGroupConfig() },
+            r.kind === 'web' || r.kind === 'file' ? 'Keep a copy in the config packs folder' : 'Mark it as in use'), cancel));
+      } else {
+        const dirBox = el('input', { type: 'text', id: 'gc-backup-dir', value: gc.backupDir ?? st.group_config_backup_dir ?? '',
+          placeholder: this.gc.list?.backups_folder || '', style: { flex: '1', minWidth: '18em' },
+          oninput: (e) => { gc.backupDir = e.target.value; } });
+        const backup = el('input', { type: 'checkbox', id: 'gc-backup', checked: gc.backup ?? st.group_config_backup !== false,
+          onchange: (e) => { gc.backup = e.target.checked; } });
+        const verb = r.kind === 'backup' ? 'Restore and overwrite' : r.kind === 'folder' ? 'Use it and overwrite' : 'Pull and overwrite';
+        box.push(
+          el('label', { class: 'check' }, backup, el('span', {}, 'Save a backup of this computer’s config files first (it can be restored to undo)')),
+          el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Backup folder:', dirBox),
+            el('button', { onclick: async () => { const p = await this.pickFolder(); if (p) { gc.backupDir = p; dirBox.value = p; } } }, 'Choose…')),
+          el('div', { class: 'btnrow' }, el('button', { id: 'btn-gc-pull', class: 'primary', onclick: () => this.pullGroupConfig() },
+            gc.busy === 'pull' ? 'Working…' : `${verb} ${todo.length} file${todo.length > 1 ? 's' : ''}`), cancel));
+      }
+    } else box.push(el('div', { class: 'btnrow' }, cancel));
+    return el('div', { id: 'gc-result', class: 'gc-result' }, ...box);
+  }
+
+  async loadConfigPacks() {
+    const gc = (this.gc ||= {});
+    gc.loading = true;
+    try { gc.list = await api('/api/configpacks'); gc.listDir = this.S.config.data_dir; } catch { gc.list = gc.list || null; gc.listDir = this.S.config.data_dir; }
+    gc.loading = false;
+    if (this.tab === 'survey') this.renderSurvey();
+  }
+
+  // name: overwrite that pack in the folder; null: save a new one
+  async saveConfigPack(name) {
     let info;
-    try { info = await api('/api/groupconfig/changes'); } catch { return; }
-    const since = info.since === 'pull' ? 'the last pull' : info.since === 'pack' ? 'the last pack made here' : null;
+    try { info = await api('/api/groupconfig/changes' + (name ? `?name=${encodeURIComponent(name)}` : '')); } catch { return; }
+    const since = info.since === 'pull' ? 'the last time a pack was used here' : info.since === 'pack' ? 'the last pack saved here' : null;
     const filesText = info.files == null ? 'all' : info.files.join('; ');
-    const name = el('input', { type: 'text', id: 'mp-by', value: info.by || '', style: { width: '100%' }, placeholder: 'e.g. H. Johnson' });
+    const by = el('input', { type: 'text', id: 'mp-by', value: info.by || '', style: { width: '100%' }, placeholder: 'e.g. H. Johnson' });
     const notes = el('textarea', { id: 'mp-notes', rows: 3, style: { width: '100%' }, placeholder: 'e.g. Added Dead bird; new observer JM' });
     const files = el('input', { type: 'text', id: 'mp-files', value: filesText, style: { width: '100%' } });
-    const fname = el('input', { type: 'text', id: 'mp-name', value: info.name || '', style: { width: '100%' },
-      placeholder: `spyhop-config-pack-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.zip` });
+    const fname = el('input', { type: 'text', id: 'mp-name', style: { width: '100%' }, placeholder: 'e.g. 2026-NEA-CCB' });
+    const filesHint = name ? (info.files?.length ? `Different from ${name}.` : `Nothing differs from ${name}.`)
+      : since ? (info.files?.length ? `Changed on this computer since ${since}.` : `Nothing has changed on this computer since ${since}.`)
+        : 'Spyhop doesn’t know what changed, so it says all.';
     const body = el('div', { class: 'stack-form' },
-      el('p', {}, 'This adds a row to the pack’s record of changes (spyhop-config.csv), then saves a zip of this computer’s config files for you to upload.'),
-      el('label', { class: 'stack' }, 'Your name', name),
+      name ? el('p', { class: 'warnbox' }, el('b', {}, `This replaces ${name} `), 'with this computer’s config files. If this is the team’s pack, check with whoever looks after it first; the change is added to the pack’s record of changes.')
+        : el('p', {}, 'This saves this computer’s config files as a new pack in the config packs folder, with your change added to its record of changes (spyhop-config.csv).'),
+      name ? null : el('label', { class: 'stack' }, 'Pack name', fname, el('span', { class: 'hint' }, 'Saved as <name>.spyhop.zip')),
+      el('label', { class: 'stack' }, 'Your name', by),
       el('label', { class: 'stack' }, 'What changed', notes),
-      el('label', { class: 'stack' }, 'Files changed', files,
-        el('span', { class: 'hint' }, since ? (info.files?.length ? `Changed on this computer since ${since}.` : `Nothing has changed on this computer since ${since}.`)
-          : 'Spyhop doesn’t know what changed (no pull or pack yet), so it says all.')),
-      el('label', { class: 'stack' }, 'File name', fname,
-        el('span', { class: 'hint' }, 'Use the same name as the pack you are replacing.')));
+      el('label', { class: 'stack' }, 'Files changed', files, el('span', { class: 'hint' }, filesHint)));
     for (;;) {
-      const ok = await modal({ title: 'Make a config pack', body, buttons: [{ label: 'Cancel', value: false }, { label: 'Make the pack', value: true, primary: true }],
-        onOpen: () => { setTimeout(() => (name.value ? notes : name).focus(), 0); return true; } });
+      const ok = await modal({ title: name ? 'Overwrite a config pack' : 'Save a new config pack', body,
+        buttons: [{ label: 'Cancel', value: false }, { label: name ? 'Overwrite the pack' : 'Save the pack', value: true, primary: true }],
+        onOpen: () => { setTimeout(() => (!name ? fname : by.value ? notes : by).focus(), 0); return true; } });
       if (!ok) return;
-      if (name.value.trim() && notes.value.trim()) break;
+      if (!name && !fname.value.trim()) { toast('Please give the pack a name.', 'warn'); continue; }
+      if (by.value.trim() && notes.value.trim()) break;
       toast('Please give your name and what changed.', 'warn');
     }
-    let r;
-    try { r = await api('/api/groupconfig/pack', { by: name.value, notes: notes.value, files: files.value, name: fname.value }); } catch { return; }
-    const a = el('a', { href: r.url, download: r.name });
-    document.body.append(a); a.click(); a.remove();
-    toast(`Pack saved: ${r.name} (also in the exports folder). Upload it in place of the old one.`, 'info', 8000);
+    try {
+      const r = await api('/api/configpacks/save', { name: name || fname.value, overwrite: !!name, by: by.value, notes: notes.value, files: files.value });
+      toast(`${name ? 'Pack overwritten' : 'Pack saved'}: ${r.name}`, 'info', 6000);
+    } catch { return; }
+    await this.loadConfigPacks();
   }
 
   async pickFolder() {
     try { return (await api('/api/pick-folder', {})).path || null; } catch { return null; }
   }
 
-  async checkGroupConfig() {
+  // from = {pack: name} or {backup: name}; else the web address box
+  async checkGroupConfig(from = null) {
     const gc = (this.gc ||= {});
-    const url = ($('#gc-url')?.value ?? gc.url ?? '').trim();
-    gc.url = url; gc.result = null; gc.done = null; gc.busy = 'check';
+    let req = from;
+    if (!req) { const url = ($('#gc-url')?.value ?? gc.url ?? '').trim(); gc.url = url; req = { url }; }
+    gc.result = null; gc.done = null; gc.busy = from ? null : 'check';
     this.renderSurvey();
-    try { gc.result = await api('/api/groupconfig/check', { url }); } catch { /* the error is shown as a toast */ }
+    try { gc.result = await api('/api/groupconfig/check', req); } catch { /* the error is shown as a toast */ }
     gc.busy = null;
     this.renderSurvey();
     $('#gc-result')?.scrollIntoView({ block: 'nearest' });
@@ -1453,20 +1533,22 @@ class App {
     const gc = this.gc, r = gc?.result;
     if (!r) return;
     const todo = r.files.filter((f) => f.status !== 'same');
-    const backup = $('#gc-backup')?.checked ?? true;
+    const backup = todo.length ? ($('#gc-backup')?.checked ?? true) : false;
     const backupDir = ($('#gc-backup-dir')?.value ?? '').trim();
-    let text = `${todo.length} config file${todo.length > 1 ? 's' : ''} on this computer will be overwritten or removed: ${todo.map((f) => f.file).join(', ')}.`;
-    text += backup ? ' A backup is saved first.' : ' No backup will be saved, so changes made here to these files will be lost.';
-    if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and Quality Control will flag values that are no longer in a list. Pulling during a survey is unusual: are you sure?';
-    if (!await confirmBox('Overwrite config files?', text, 'Pull and overwrite', true)) return;
+    if (todo.length) {
+      let text = `${todo.length} config file${todo.length > 1 ? 's' : ''} on this computer will be overwritten or removed: ${todo.map((f) => f.file).join(', ')}.`;
+      text += backup ? ' A backup is saved first.' : ' No backup will be saved, so changes made here to these files will be lost.';
+      if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and Quality Control will flag values that are no longer in a list. Changing the config during a survey is unusual: are you sure?';
+      if (!await confirmBox('Overwrite config files?', text, 'Overwrite', true)) return;
+    }
     gc.busy = 'pull'; this.renderSurvey();
     try {
       const res = await api('/api/groupconfig/pull', { token: r.token, backup, backup_dir: backupDir });
-      gc.done = { changed: res.changed, backup: res.backup }; gc.result = null;
-      toast('Group config pulled');
+      gc.done = { changed: res.changed, backup: res.backup, copy: res.copy }; gc.result = null;
+      toast(r.kind === 'backup' ? 'Backup restored' : 'Config pack used');
     } catch { /* toast shown */ }
     gc.busy = null;
-    this.renderSurvey();
+    await this.loadConfigPacks();
   }
 
   async backupGroupConfig() {
@@ -1475,7 +1557,8 @@ class App {
     try {
       const r = await api('/api/groupconfig/backup', { dir });
       toast(`Backup saved: ${r.path}`);
-    } catch { /* toast shown */ }
+    } catch { return; }
+    await this.loadConfigPacks();
   }
 
   // ---------------------------------------------------------------- settings
