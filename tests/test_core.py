@@ -1714,6 +1714,11 @@ def test_style_layer_proxy_cache_and_download(tmp_path):
         assert ts.offline_style_tile("Cape Cod Bay.mbtiles", dem_set, 5, 0, 0) is None
         assert ts.offline_glyphs("Cape Cod Bay.mbtiles", "Noto Sans Regular", "0-255") == b"glyphs"
         assert ts.offline_style("Raster test.mbtiles", local) is None
+        ts.delete_chart("Raster test.mbtiles")                       # Settings → Basemap → Delete
+        assert not (cfg.charts_dir / "Raster test.mbtiles").exists() and "Raster test.mbtiles" not in cfg.mbtiles
+        assert await ts.get_online(1, 2, 1, 1) is None                # gone, and no internet
+        with pytest.raises(ValueError, match="no chart file"):
+            ts.delete_chart("../settings.json")
         await ts.close()
     asyncio.run(offline())
     assert ts.cache_stats()["tiles"] == 0

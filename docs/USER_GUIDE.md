@@ -34,7 +34,7 @@ The route is drawn on the map with numbered waypoints and kept between sessions.
 
 - **Start a route from the map:** right-click and choose **Start route here**. The Route tab opens with that point as the start (the first waypoint in manual mode, carrying on with Add points; the start point in systematic mode).
 - **Survey speed** (kn) sets the times.
-- **Start position:** the vessel's current position (the route follows the vessel until it's activated), or the first point (manual) or a chosen point (systematic).
+- **Start position** is chosen in the *Manual trackline* or *Systematic trackline* section: the vessel's current position (the route follows the vessel until it's activated), or the first point you click (manual) or a fixed point you pick on the map, type or take from the vessel now (systematic).
 - **Manual:** press **Add points on the map** and click where each waypoint should go. Drag a waypoint to move it. Use **Undo last point** or the ✕ in the waypoint list to take points off.
 - **Systematic:** parallel legs ("lawnmower"). Choose:
   - the **start point** (pick it on the map, type it, or use the vessel position); drag waypoint 1 to move the whole pattern
@@ -62,7 +62,7 @@ The route is drawn on the map with numbered waypoints and kept between sessions.
   - a **View the route** link
 
   Everything except the name and position is kept up to date as the vessel moves.
-- **Save as map overlay** saves the route, under its name, as a GeoJSON overlay. It's drawn under *Imported overlays* in the map's layers menu and listed in Tools → Waypoints, where you can remove it.
+- **Save as map overlay** saves the route, under its name, as a GeoJSON overlay. It's drawn under *Imported overlays* in the map's layers menu and listed in Tools → Overlays, where you can remove it.
 - **Export GPX…** downloads the waypoints and a route for a chart plotter or OpenCPN, and keeps a copy in `exports/`.
 - **Import GPX…** loads a route back. A GPX exported by Spyhop holds the whole design (mode, legs, speed, appearance), so it comes back exactly; from any other GPX, the route (or else the waypoints, or a track) becomes a manual route.
 
@@ -113,21 +113,23 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
     - ⌖ follow the vessel
     - 📏 measure: click to add points, double-click or Esc to finish, click again to clear. Each leg shows true and magnetic bearing plus distance, and the total.
     - ◎ range rings
-    - ⤢ zoom to the whole survey (overlays are imported in Tools → Waypoints)
-  - **layers menu** (top right): base maps, offline charts, and overlays you can switch on and off, including a **graticule** (lat/lon grid; spacing adapts to the zoom, longitude labels run vertically so they don't collide)
+    - ⤢ zoom to the whole survey (overlays are imported in Tools → Overlays)
+  - **layers menu** (top right): base maps in two sections, **Online map tiles** and **Offline map tiles** (the files in the charts folder, and the built-in coastline), and overlays you can switch on and off, including a **graticule** (lat/lon grid; spacing adapts to the zoom, longitude labels run vertically so they don't collide)
   - **labels:** sightings show the species code plus the FieldID if there is one, e.g. `RIWH Eg-3720` (or SightNo if there's no species yet); events show their event code and ID, e.g. `CTD C-07` (or E1, E2… if both are blank)
   - **right-click menu:** add a sighting, event or waypoint at that point; measure from here; copy the position
   - **readout (bottom-left):** cursor position, bearing and distance from the vessel, and a nautical-mile scale
 - **Tabs:** **Sightings**, **Effort**, **Events**, **Survey**, **Tools** and **Settings**. Each data tab has **Add row**, **Delete row**, **Undo** and **Redo**. With no survey open, Spyhop opens on **Survey** (see *Surveys* below).
   - **Survey:** start, end, close, open, export and clear surveys; survey details; the surveys in the data folder; the folders.
   - **Tools** has a second row of tabs:
-    - **Waypoints:** the waypoints table, and the **map overlays**: import or remove GeoJSON/GPX/KML files, and add **past surveys** in the data folder as overlays (their trackline, solid on effort and dashed off effort, sightings and events; press **Update** after changing one).
+    - **Waypoints:** the waypoints table.
+    - **Overlays:** the **map overlays**: import GeoJSON/GPX/KML files, **show or hide** each one (or all), zoom to one, or remove it; and add **past surveys** in the data folder as overlays (their trackline, solid on effort and dashed off effort, sightings and events; press **Update** after changing one). Hidden overlays stay hidden next time. *Imported overlays* in the map's layers menu switches them all on or off.
     - **Route:** plan and activate a route (see *Planning a route* below).
     - **Instruments:** instrument readings (click one to plot it) and the raw NMEA log.
     - **Quality Control**
     - **Reports:** the Summary and the other reports (below).
   - **Settings** has a second row of tabs:
-    - **General:** map display, text size, offline maps, tracking and reminders, bearings, distances and the clock, and sleep.
+    - **General:** map display, text size, tracking and reminders, bearings, distances and the clock, and sleep.
+    - **Basemap:** downloading areas for offline use, and the charts folder (see *Maps offline* below).
     - **Inputs:** the GPS / NMEA inputs.
     - **Shortcuts:** every keyboard shortcut and what it does.
     - **Dropdowns:** the species, event, behaviour and observer lists.
@@ -235,7 +237,7 @@ The **Species**, **Events**, **Behaviors** and **Observers** tabs edit the drop-
   - **Seascape depths (feet)**, the default: Open Waters' Seascape bathymetry, with depth shading and labelled contours in feet (Spyhop leaves out its spot soundings). While it's shown, the readout at the bottom left gives the **depth at the cursor** (below chart datum), next to the scale bar; it works offline wherever the map has been viewed or downloaded, on an OpenStreetMap base. It's drawn with MapLibre GL (bundled), which loads the first time the layer is shown. Seascape is not an official chart and **not for navigation**.
   - Esri Ocean, Esri Imagery, NOAA charts (NOAA's chart display service), and OpenStreetMap.
 - **Browsing cache:** everything an online layer shows is also saved on this computer as you view it (unless "Save tiles as you view them" is off), so areas you've looked at stay available offline.
-- **Downloading an area for offline use** (Settings → General → Map and offline charts): move the map to cover the survey area, choose the layer, the zoom range and a name (e.g. *Cape Cod Bay*), and press **Download** while you have internet.
+- **Downloading an area for offline use** (Settings → Basemap): move the map to cover the survey area, choose the layer, the zoom range and a name (e.g. *Cape Cod Bay*), and press **Download** while you have internet.
   - The area is saved as **one file in the charts folder**, `<name>.mbtiles`. Downloading again with the same name adds to that file (a bigger area or more zooms); a file is only ever added to from the layer it was made from.
   - Spyhop shows roughly how many tiles that is before you start, and a progress bar while it runs.
   - Each zoom level has four times the tiles of the one before, so keep the highest zoom modest for a big area: 12–13 suits a day's survey area, 14–15 a harbour.
@@ -243,9 +245,10 @@ The **Species**, **Events**, **Behaviors** and **Observers** tabs edit the drop-
   - For Seascape, the file holds its depth tiles, contours, label fonts and the map style itself. Its OpenStreetMap base isn't saved, because OpenStreetMap's tile policy forbids bulk downloading, so download that area in **Esri Ocean** too if you want land detail offline. OpenStreetMap on its own can't be downloaded either.
   - When it finishes, Spyhop says how many tiles were saved and in which file, how many had no data (open ocean or land, which is normal), and how many failed and why. Press **Download** again to retry the ones that failed.
   - With no internet, Spyhop stops trying a server for a few seconds after repeated failures, so the map stays quick and draws from the saved tiles.
-- **In the charts folder** (the same section): a table of every `.mbtiles` file there, downloads and charts you added yourself, with what it was made from, its zooms, number of tiles, size and date, and the totals.
-  - **Preview** shows that file on its own, zoomed to its area with a dashed outline: only what is saved in it, as you'll have it at sea. Choose another map in the layers menu to go back.
-  - Each file is also its own layer, "*name* (offline)", in the map's layers menu. When you use the online layer it was made from (e.g. Seascape), Spyhop takes the tiles from the file before going online, so the map is quick and saves bandwidth.
+- **In the charts folder** (Settings → Basemap): a table of every `.mbtiles` file there, downloads and charts you added yourself, with what it was made from, its zooms, number of tiles, size and date, and the totals.
+  - **Select** puts that file on the map on its own (zooming to its area if the map is elsewhere): only what is saved in it, as you'll have it at sea. The chart on the map is marked *On the map*; choose another map in the layers menu to go back.
+  - **Delete** removes the file from the charts folder, after asking.
+  - Each file is also listed under **Offline map tiles** in the map's layers menu. When you use the online layer it was made from (e.g. Seascape), Spyhop takes the tiles from the file before going online, so the map is quick and saves bandwidth.
   - A downloaded file works on any computer with Spyhop: copy it into that computer's charts folder and press **Look for new files**.
 - **MBTiles charts of your own:** put `.mbtiles` files (raster PNG/JPEG tiles) in the charts folder and press **Look for new files** (or restart). Free, weekly-updated **NOAA nautical charts** for US waters are available at <https://distribution.charts.noaa.gov/ncds/>: click a region and download the MBTiles file. Downloads of Esri and NOAA layers are ordinary MBTiles files, so other map programs can open them too.
 - The online map layers are built into Spyhop, so fixes arrive with updates. To add one of your own, create `tile_sources.csv` in the Spyhop folder with the columns `name,url,attribution,overlay,max_zoom,kind`: its layers are added after the built-in ones. The URL is an XYZ tile server, or an ArcGIS `export` URL using `{bbox}`, with kind `raster`. A MapLibre `style.json` URL uses kind `style`.

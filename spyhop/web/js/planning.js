@@ -313,18 +313,21 @@ export class Planner {
         radio('plan-mode', 'manual', 'Manual — click points on the map', s.mode, (v) => { s.mode = v; this.adding = false; this.picking = false; this.updateClickMode(); this.changed(true); }),
         radio('plan-mode', 'systematic', 'Systematic — parallel legs', s.mode, (v) => { s.mode = v; this.adding = false; this.picking = false; this.updateClickMode(); this.changed(true); })),
       el('div', { class: 'grid2' },
-        num('Survey speed', () => s.speed, (v) => { s.speed = Math.max(0.1, +v || 10); }, { step: 0.5, min: 0.1, unit: 'kn' }),
-        el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Start position'),
-          el('select', { onchange: (e) => { s.start = e.target.value; this.changed(true); } },
-            el('option', { value: 'vessel', selected: s.start === 'vessel' }, 'Current vessel position'),
-            el('option', { value: 'first', selected: s.start !== 'vessel' }, s.mode === 'manual' ? 'First point clicked' : 'A chosen point')))));
+        num('Survey speed', () => s.speed, (v) => { s.speed = Math.max(0.1, +v || 10); }, { step: 0.5, min: 0.1, unit: 'kn' })));
+
+    // where the route starts: the vessel (the route follows it until activated) or a fixed point
+    const startRow = (fixedLabel) => el('div', { class: 'route-start' }, el('b', {}, 'Start position: '),
+      radio('plan-start', 'vessel', 'The vessel’s current position', s.start === 'vessel' ? 'vessel' : 'first', () => { s.start = 'vessel'; this.picking = false; this.updateClickMode(); this.changed(true); }),
+      radio('plan-start', 'first', fixedLabel, s.start === 'vessel' ? 'vessel' : 'first', () => { s.start = 'first'; this.changed(true); }));
 
     let modeBox;
     if (s.mode === 'manual') {
       const toggle = el('button', { class: this.adding ? 'primary' : '', onclick: () => { this.adding = !this.adding; this.updateClickMode(); this.render(); } },
         this.adding ? 'Stop adding points' : 'Add points on the map');
       modeBox = sec('Manual trackline',
-        el('p', { class: 'hint' }, this.adding ? 'Click the map to add waypoints in order. Drag a waypoint to move it.' : 'Press Add points, then click the map where each waypoint should go. Drag a waypoint to move it.'),
+        startRow('The first point I click'),
+        el('p', { class: 'hint' }, s.start === 'vessel' ? 'The route runs from the vessel to the points you click, and moves with the vessel until you activate it. ' : '',
+          this.adding ? 'Click the map to add waypoints in order. Drag a waypoint to move it.' : 'Press Add points, then click the map where each waypoint should go. Drag a waypoint to move it.'),
         el('div', { class: 'btnrow' }, toggle,
           el('button', { disabled: !s.manual.points.length, onclick: () => { s.manual.points.pop(); this.changed(true); } }, 'Undo last point')));
     } else {
@@ -336,12 +339,16 @@ export class Planner {
         s.sys.start = [a, b]; s.start = 'first'; this.changed(true);
       };
       latIn.onchange = lonIn.onchange = () => { if (latIn.value && lonIn.value) setTyped(); };
+      const fixed = s.start !== 'vessel';
+      if (!fixed) { latIn.disabled = true; lonIn.disabled = true; }
       modeBox = sec('Systematic trackline',
-        el('div', { class: 'grid2' },
+        startRow('A fixed point'),
+        el('div', { class: `route-fixed${fixed ? '' : ' off'}` },
           el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Start point'), latIn, lonIn),
           el('div', { class: 'btnrow' },
-            el('button', { class: this.picking ? 'primary' : '', onclick: () => { this.picking = !this.picking; this.updateClickMode(); this.render(); } }, this.picking ? 'Click the map…' : 'Pick on the map'),
-            el('button', { disabled: !this.vesselLL(), onclick: () => { const v = this.vesselLL(); if (v) { s.sys.start = v.map((x) => +x.toFixed(6)); s.start = 'first'; this.changed(true); } } }, 'Use the vessel position now')),
+            el('button', { disabled: !fixed, class: this.picking ? 'primary' : '', onclick: () => { this.picking = !this.picking; this.updateClickMode(); this.render(); } }, this.picking ? 'Click the map…' : 'Pick on the map'),
+            el('button', { disabled: !fixed || !this.vesselLL(), onclick: () => { const v = this.vesselLL(); if (v) { s.sys.start = v.map((x) => +x.toFixed(6)); s.start = 'first'; this.changed(true); } } }, 'Use the vessel position now'))),
+        el('div', { class: 'grid2' },
           num('Survey direction', () => s.sys.bearing, (v) => { s.sys.bearing = ((+v || 0) % 360 + 360) % 360; }, { step: 1, min: -360, max: 360, unit: '°T (bearing of leg 1)' }),
           num('Number of legs', () => s.sys.legs, (v) => { s.sys.legs = Math.max(1, Math.min(200, Math.round(+v || 1))); }, { step: 1, min: 1, max: 200 }),
           num('Leg length', () => s.sys.legNm, (v) => { s.sys.legNm = Math.max(0, +v || 0); }, { step: 0.5, unit: 'nm' }),
@@ -390,7 +397,7 @@ export class Planner {
         el('button', { class: 'primary', onclick: () => this.saveOverlay() }, 'Save as map overlay'),
         el('button', { onclick: () => this.exportGpx() }, 'Export GPX…'),
         el('button', { onclick: () => this.importGpx() }, 'Import GPX…')),
-      el('p', { class: 'hint' }, 'A saved overlay is drawn under “Imported overlays” in the map’s layers menu and listed in Tools → Waypoints (remove it there). The GPX file holds the waypoints and the route, for a chart plotter or OpenCPN; it is also kept in the exports folder. Import GPX… loads a route back: one exported by Spyhop comes back exactly as designed (mode, legs, speed and appearance); from any other GPX file, the route (or else the waypoints, or a track) becomes a manual route.'));
+      el('p', { class: 'hint' }, 'A saved overlay is drawn under “Imported overlays” in the map’s layers menu and listed in Tools → Overlays (hide or remove it there). The GPX file holds the waypoints and the route, for a chart plotter or OpenCPN; it is also kept in the exports folder. Import GPX… loads a route back: one exported by Spyhop comes back exactly as designed (mode, legs, speed and appearance); from any other GPX file, the route (or else the waypoints, or a track) becomes a manual route.'));
 
     if (s.active) {
       for (const box of [design, modeBox]) {

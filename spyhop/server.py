@@ -635,6 +635,17 @@ class App:
         self._broadcast_soon({"type": "charts", "mbtiles": info})
         return json_ok(mbtiles=info)
 
+    async def charts_delete(self, request):
+        b = await request.json() if request.can_read_body else {}
+        try:
+            self.tiles.delete_chart(str(b.get("file") or ""))
+        except ValueError as e:
+            raise ValueErrorMsg(str(e))
+        log.info("chart deleted: %s", b.get("file"))
+        info = self.tiles.mbtiles_info()
+        self._broadcast_soon({"type": "charts", "mbtiles": info})
+        return json_ok(mbtiles=info)
+
     # ---- a downloaded style area on its own (charts folder), for previews and as an offline layer
     async def off_style(self, request):
         style = self.tiles.offline_style(request.match_info["name"], self._origin(request))
@@ -1027,6 +1038,7 @@ class App:
         r.add_get("/api/tiles", self.tiles_info)
         r.add_post("/api/tiles/prefetch", self.tiles_prefetch)
         r.add_post("/api/tiles/rescan", self.charts_rescan)
+        r.add_post("/api/tiles/delete", self.charts_delete)
         r.add_get("/tiles/off/{name}/style.json", self.off_style)
         r.add_get("/tiles/off/{name}/t/{set}/{z}/{x}/{y}", self.off_tile)
         r.add_get("/tiles/off/{name}/glyphs/{fontstack}/{range}", self.off_glyphs)

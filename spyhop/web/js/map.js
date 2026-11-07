@@ -52,7 +52,7 @@ export class MapView {
     this.map.on('baselayerchange', (e) => {
       try { localStorage.setItem('wsr.base', e.name); } catch {}
       this.baseLayer = e.layer; this.showDepth('');
-      if (this.previewBox && !Object.values(this.chartLayers || {}).includes(e.layer)) { this.previewBox.remove(); this.previewBox = null; }
+      this.app.renderChartList?.();
     });
     this.map.on('mouseout', () => this.showDepth(''));
     this.map.on('overlayadd overlayremove', () => this.saveOverlayState());
@@ -105,7 +105,8 @@ export class MapView {
   // the layers-menu name; two files with the same name are told apart by their file names
   chartLabel(m) {
     const same = (this.app.S.mbtiles || []).filter((x) => x.name === m.name).length > 1;
-    return same ? `${m.name} (${m.file}, offline)` : `${m.name} (offline)`;
+    if (same) return `${m.name} (${m.file})`;
+    return this.app.S.config.tile_sources.some((t) => t.name === m.name) ? `${m.name} (offline)` : m.name;
   }
 
   buildLayers() {
@@ -116,15 +117,19 @@ export class MapView {
         : L.tileLayer(`/tiles/s/${i}/{z}/{x}/{y}`, {
           attribution: esc(t.attribution || ''), maxZoom: 20, maxNativeZoom: +t.max_zoom || 18,
           crossOrigin: false, errorTileUrl: '' });
+      layer._group = 'online';
       if (t.overlay === '1') overlays[t.name] = layer; else bases[t.name] = layer;
     });
     this.chartLayers = {};
     for (const m of S.mbtiles || []) {
       if (m.error) continue;
       const layer = this.chartLayers[m.file] = this.chartLayer(m);
+      layer._group = 'offline';
+      layer._info = { tiles: m.tiles, created: m.created };
       if (m.overlay) overlays[this.chartLabel(m)] = layer; else bases[this.chartLabel(m)] = layer;
     }
     bases['Coastline only (offline)'] = L.layerGroup();
+    bases['Coastline only (offline)']._group = 'builtin';
     this.bases = bases;
 
     this.layers.land = L.layerGroup();
@@ -159,7 +164,7 @@ export class MapView {
       const on = ov ? ov.includes(name) : defaultsOn.includes(name);
       if (on) layer.addTo(this.map);
     }
-    this.layerControl = L.control.layers(bases, overlays, { position: 'topright', collapsed: true }).addTo(this.map);
+    this.layerControl = new GroupedLayers(bases, overlays, { position: 'topright', collapsed: true }).addTo(this.map);
   }
 
   // the charts folder changed (a download finished, or Rescan): update the layers menu
@@ -178,6 +183,7 @@ export class MapView {
       if (this.chartLayers[m.file]) continue;
       const layer = this.chartLayers[m.file] = this.chartLayer(m);
       layer._info = { tiles: m.tiles, created: m.created };
+      layer._group = 'offline';
       if (m.overlay) { this.overlays[this.chartLabel(m)] = layer; this.layerControl.addOverlay(layer, this.chartLabel(m)); }
       else { this.bases[this.chartLabel(m)] = layer; this.layerControl.addBaseLayer(layer, this.chartLabel(m)); }
       if (this._restoreBase === m.file) { this.setBase(layer, this.chartLabel(m)); this._restoreBase = null; }
@@ -198,11 +204,9 @@ export class MapView {
     if (!layer) return false;
     if (this.app.S.config.settings.follow_vessel) this.setFollow(false);
     if (m.overlay) layer.addTo(this.map); else this.setBase(layer, this.chartLabel(m));
-    this.previewBox?.remove();
     if (m.bounds) {
-      const b = [[m.bounds[1], m.bounds[0]], [m.bounds[3], m.bounds[2]]];
-      this.previewBox = L.rectangle(b, { color: '#0b5f86', weight: 2, dashArray: '6 6', fill: false, interactive: false }).addTo(this.map);
-      this.map.fitBounds(b, { padding: [20, 20], maxZoom: Math.max(m.minzoom, Math.min(m.maxzoom, 14)) });
+      const b = L.latLngBounds([[m.bounds[1], m.bounds[0]], [m.bounds[3], m.bounds[2]]]);
+      if (!b.contains(this.map.getCenter())) this.map.fitBounds(b, { padding: [20, 20], maxZoom: Math.max(m.minzoom, Math.min(m.maxzoom, 14)) });
     }
     return true;
   }
@@ -846,14 +850,36 @@ export class MapView {
   hideContext() { this.ctx?.remove(); this.ctx = null; }
 
   // ---------------------------------------------------------------- imported overlays
+  // Each overlay file can be shown or hidden (Tools → Overlays); hidden ones are remembered.
+  hiddenOverlays() { try { return new Set(JSON.parse(localStorage.getItem('wsr.overlayHidden') || '[]')); } catch { return new Set(); } }
+  overlayVisible(name) { return !this.hiddenOverlays().has(name); }
+  overlayColor(name) { return colorFor(name); }
+  setOverlayVisible(name, on) {
+    const hidden = this.hiddenOverlays();
+    if (on) hidden.delete(name); else hidden.add(name);
+    try { localStorage.setItem('wsr.overlayHidden', JSON.stringify([...hidden])); } catch {}
+    const layer = this.overlayLayers?.[name];
+    if (!layer) return;
+    if (on) this.layers.imported.addLayer(layer); else this.layers.imported.removeLayer(layer);
+  }
+  zoomToOverlay(name) {
+    const b = this.overlayLayers?.[name]?.getBounds?.();
+    if (!b?.isValid()) return;
+    if (!this.map.hasLayer(this.layers.imported)) { this.layers.imported.addTo(this.map); this.saveOverlayState(); }
+    if (this.app.S.config.settings.follow_vessel) this.setFollow(false);
+    this.map.fitBounds(b, { padding: [24, 24], maxZoom: 14 });
+  }
+
   async loadOverlays(names) {
     this.layers.imported.clearLayers();
+    this.overlayLayers = {};
+    const hidden = this.hiddenOverlays();
     for (const name of names) {
       try {
         const txt = await (await fetch(`/overlays/${encodeURIComponent(name)}`)).text();
         const gj = toGeoJSON(name, txt);
         const color = colorFor(name);
-        L.geoJSON(gj, {
+        const gl = L.geoJSON(gj, {
           style: (f) => ({ color: f?.properties?.stroke || color, weight: +f?.properties?.['stroke-width'] || 2.5, opacity: 0.9,
             fillOpacity: 0.1, dashArray: f?.properties?.dash || null }),
           pointToLayer: (f, ll) => {
@@ -865,7 +891,9 @@ export class MapView {
             layer.bindPopup(`<b>${esc(f.properties?.name || name)}</b><table class="pop">${props.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table><div class="hint">${esc(name)}</div>`);
             if (f.properties?.name) layer.bindTooltip(esc(f.properties.name), { permanent: false });
           },
-        }).addTo(this.layers.imported);
+        });
+        this.overlayLayers[name] = gl;
+        if (!hidden.has(name)) gl.addTo(this.layers.imported);
       } catch (e) { toast(`Couldn't load overlay ${name}: ${e.message}`, 'error'); }
     }
   }
@@ -919,3 +947,38 @@ export function toGeoJSON(name, txt) {
   }
   return { type: 'FeatureCollection', features: feats };
 }
+
+// The layers menu with base layers in sections: online map tiles, then offline ones (files in the
+// charts folder, and the built-in coastline). Each layer carries _group: 'online' | 'offline' | 'builtin'.
+const GROUP_RANK = { online: 0, offline: 1, builtin: 2 };
+const GroupedLayers = L.Control.Layers.extend({
+  initialize(bases, overlays, options) {
+    let n = 0;
+    for (const l of [...Object.values(bases || {}), ...Object.values(overlays || {})]) l._order ??= n++;
+    L.Control.Layers.prototype.initialize.call(this, bases, overlays, {
+      ...options, sortLayers: true,
+      sortFunction: (a, b) => (GROUP_RANK[a._group] ?? 0) - (GROUP_RANK[b._group] ?? 0) || (a._order ?? 1e9) - (b._order ?? 1e9),
+    });
+  },
+  _addLayer(layer, name, overlay) {
+    layer._order ??= (this._nextOrder = (this._nextOrder || 1000) + 1);
+    return L.Control.Layers.prototype._addLayer.call(this, layer, name, overlay);
+  },
+  _update() {
+    L.Control.Layers.prototype._update.call(this);
+    if (!this._baseLayersList) return this;
+    const labels = [...this._baseLayersList.children];
+    let last = null;
+    labels.forEach((lab, i) => {
+      const obj = this._layers.filter((x) => !x.overlay)[i];
+      const g = obj?.layer?._group === 'online' ? 'online' : 'offline';
+      if (g !== last) {
+        const h = L.DomUtil.create('div', 'layers-heading');
+        h.textContent = g === 'online' ? 'Online map tiles' : 'Offline map tiles';
+        this._baseLayersList.insertBefore(h, lab);
+        last = g;
+      }
+    });
+    return this;
+  },
+});

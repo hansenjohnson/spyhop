@@ -137,8 +137,8 @@ class App {
   topTabs() { return ['sightings', 'effort', 'events']; }
   tabGroups() {
     return [
-      ['tools', 'Tools', [['marks', 'Waypoints'], ['route', 'Route'], ['nmea', 'Instruments'], ['qc', 'Quality Control'], ['reports', 'Reports']]],
-      ['config', 'Settings', [['settings', 'General'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'],
+      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Route'], ['nmea', 'Instruments'], ['qc', 'Quality Control'], ['reports', 'Reports']]],
+      ['config', 'Settings', [['settings', 'General'], ['basemap', 'Basemap'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'],
         ['templates', 'Templates'], ['about', 'About']]]];
   }
   groupTabs() { return this.tabGroups().flatMap(([g, , tabs]) => tabs.map(([k, l]) => [k, l, g])); }
@@ -222,9 +222,6 @@ class App {
       this.grids[t] = new Grid(this, t, pane);
     }
     body.append(...['survey', ...this.groupTabs().map(([k]) => k)].filter((k) => !this.grids[k]).map((k) => el('div', { class: 'tab-pane scroll', id: `pane-${k}` })));
-    // map overlays live with the waypoints
-    $('#pane-marks').append(el('section', { id: 'overlay-panel', class: 'overlay-panel' }));
-    this.renderOverlayPanel();
   }
 
   toolbar(tab) {
@@ -367,7 +364,7 @@ class App {
   // draw one of the panes that aren't data tables
   renderPane(tab) {
     const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, dropdowns: this.renderDropdowns, nmea: this.renderNmea,
-      inputs: this.renderInputs, templates: this.renderTemplates,
+      inputs: this.renderInputs, templates: this.renderTemplates, overlays: this.renderOverlays, basemap: this.renderBasemap,
       qc: this.renderQc, reports: this.renderReports, about: this.renderAbout,
       route: () => this.planner.render() }[tab];
     if (f) f.call(this);
@@ -473,6 +470,8 @@ class App {
         if (this.tab === 'settings' && !document.activeElement?.closest('#pane-settings')) this.renderSettings();
         if (this.tab === 'nmea' && !document.activeElement?.closest('#pane-nmea')) this.renderNmea();
         if (this.tab === 'inputs' && !document.activeElement?.closest('#pane-inputs input[type=text], #pane-inputs input[type=number], #pane-inputs select')) this.renderInputs();
+        if (this.tab === 'basemap' && !document.activeElement?.closest('#pane-basemap input, #pane-basemap select')) this.renderBasemap();
+        if (this.tab === 'overlays') this.renderOverlays();
         if (this.tab === 'templates' && !document.activeElement?.closest('#pane-templates input[type=text], #pane-templates textarea')) this.renderTemplates();
         if (this.tab === 'shortcuts') this.renderShortcuts();
         break;
@@ -498,7 +497,7 @@ class App {
         this.map.syncCharts(m.mbtiles);
         this.renderChartList();
         break;
-      case 'overlays': api('/api/bootstrap').then((d) => { this.S.overlays = d.overlays; this.S.surveys = d.surveys; this.map.loadOverlays(d.overlays); this.renderOverlayPanel(); }); break;
+      case 'overlays': api('/api/bootstrap').then((d) => { this.S.overlays = d.overlays; this.S.surveys = d.surveys; this.map.loadOverlays(d.overlays); this.renderOverlays(); }); break;
       case 'reload': this.reload(); break;
       default: break;
     }
@@ -1688,12 +1687,20 @@ class App {
         el('h4', {}, 'Fading'),
         el('div', { class: 'grid2' }, dnum('fade_hours', 'Fade after (hours)', 0.25, 72, 0.25)),
         el('div', { class: 'grid2 checks' }, dchk('fade_enabled', 'Fade the trackline, sightings and events older than this (waypoints never fade)'))),
-      this.mapSection(),
+      sec('Basemap and offline charts', el('p', {}, 'The map’s layers, downloads for offline use and the charts folder are in ',
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('basemap'); } }, 'Settings → Basemap'), '.')),
       );
     for (const row of pane.querySelectorAll('label.row')) {
       const first = row.firstChild;
       if (first && first.nodeType === 3) row.replaceChild(el('span', { class: 'lbl' }, first.textContent), first);
-    }    this.renderChartList();
+    }  }
+
+  // Settings → Basemap: map layers, downloads for offline use and the charts folder
+  renderBasemap() {
+    const pane = $('#pane-basemap');
+    if (!pane) return;
+    pane.replaceChildren(this.mapSection());
+    this.renderChartList();
   }
 
   // ---------------------------------------------------------------- shortcuts tab
@@ -2170,18 +2177,32 @@ class App {
     if (withRaw && n.raw) $('#nmea-raw').textContent = n.raw.join('\n');
   }
 
-  renderOverlayPanel() {
-    const box = $('#overlay-panel');
-    if (!box) return;
+  // Tools → Overlays: imported GeoJSON/GPX/KML files and past surveys, each shown or hidden
+  renderOverlays() {
+    const pane = $('#pane-overlays');
+    if (!pane) return;
     const list = this.S.overlays || [];
-    box.replaceChildren(
-      el('div', { class: 'overlay-head' }, el('b', {}, 'Map overlays'),
-        el('button', { onclick: () => this.importOverlay() }, 'Import…'),
-        el('span', { class: 'hint' }, 'GeoJSON, GPX or KML files (planned transects, management areas, other surveys). They are kept in Spyhop’s overlays folder and drawn under “Imported overlays” in the map’s layers menu.')),
-      list.length ? el('ul', { class: 'overlay-list' }, list.map((n) => el('li', {}, n, ' ',
-        el('button', { class: 'icon', title: 'Remove overlay', onclick: async () => { if (await confirmBox('Remove overlay?', `Remove ${n}?`, 'Remove', true)) api(`/api/overlays/${encodeURIComponent(n)}`, undefined, 'DELETE'); } }, '✕'))))
-        : el('p', { class: 'hint' }, 'No overlays yet.'),
-      this.pastSurveyOverlays());
+    const m = this.map;
+    const allOn = m.map.hasLayer(m.layers.imported);
+    const remove = async (n) => { if (await confirmBox('Remove overlay?', `Remove ${n} from Spyhop’s overlays folder? It can be imported again.`, 'Remove', true)) api(`/api/overlays/${encodeURIComponent(n)}`, undefined, 'DELETE').catch(() => {}); };
+    pane.replaceChildren(el('div', { id: 'overlay-panel' }, el('section', { class: 'settings-sec' }, el('h3', {}, 'Map overlays'),
+      el('p', { class: 'hint' }, 'GeoJSON, GPX or KML files: planned transects, management areas, other surveys. They are kept in Spyhop’s overlays folder.'),
+      el('div', { class: 'btnrow' }, el('button', { class: 'primary', onclick: () => this.importOverlay() }, 'Import…'),
+        list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, true)); this.renderOverlays(); } }, 'Show all') : null,
+        list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, false)); this.renderOverlays(); } }, 'Hide all') : null),
+      !allOn && list.length ? el('p', { class: 'warnbox' }, 'Overlays are switched off in the map’s layers menu (“Imported overlays”), so none are drawn. ',
+        el('button', { onclick: () => { m.layers.imported.addTo(m.map); m.saveOverlayState(); this.renderOverlays(); } }, 'Switch them on')) : null,
+      list.length ? el('table', { class: 'summary overlay-table', id: 'overlay-table' },
+        el('thead', {}, el('tr', {}, ['Show', 'Overlay', ''].map((h) => el('th', {}, h)))),
+        el('tbody', {}, list.map((n) => el('tr', { 'data-overlay': n },
+          el('td', {}, el('input', { type: 'checkbox', class: 'ov-show', checked: m.overlayVisible(n), 'aria-label': `Show ${n}`,
+            onchange: (e) => { m.setOverlayVisible(n, e.target.checked); } })),
+          el('td', {}, el('span', { class: 'ov-swatch', style: { background: m.overlayColor(n) } }), n),
+          el('td', { class: 'nowrap' },
+            el('button', { title: 'Zoom the map to this overlay', onclick: () => { m.setOverlayVisible(n, true); m.zoomToOverlay(n); this.renderOverlays(); } }, 'Zoom to'),
+            el('button', { class: 'ov-remove', title: 'Remove this overlay', onclick: () => remove(n) }, 'Remove'))))))
+        : el('p', { class: 'hint', id: 'overlay-none' }, 'No overlays yet.')),
+      el('section', { class: 'settings-sec' }, this.pastSurveyOverlays())));
   }
 
   // Other surveys in the data folder, each of which can be drawn as an overlay
@@ -2195,7 +2216,7 @@ class App {
       try {
         const r = await api('/api/overlays/survey', { prefix: sv.prefix });
         const m = this.map;
-        if (!m.map.hasLayer(m.layers.imported)) m.layers.imported.addTo(m.map);
+        if (!m.map.hasLayer(m.layers.imported)) { m.layers.imported.addTo(m.map); m.saveOverlayState(); }
         toast(`“${sv.prefix}” added as the overlay ${r.name}`);
       } catch {}
     };
@@ -2255,10 +2276,10 @@ class App {
         } catch { est.textContent = ''; }
       }, 400);
     };
-    if (!this._dlMoveHook) { this._dlMoveHook = true; this.map.map.on('moveend', () => { if (this.tab === 'settings' && $('#dl-estimate')) this.renderSettingsMapEstimate?.(); }); }
+    if (!this._dlMoveHook) { this._dlMoveHook = true; this.map.map.on('moveend', () => { if (this.tab === 'basemap' && $('#dl-estimate')) this.renderSettingsMapEstimate?.(); }); }
     this.renderSettingsMapEstimate = estimate;
     estimate();
-    return el('section', { class: 'settings-sec', id: 'map-offline' }, el('h3', {}, 'Map and offline charts'),
+    return el('section', { class: 'settings-sec', id: 'map-offline' }, el('h3', {}, 'Download an area for offline use'),
       el('p', {}, 'To get ready for a survey, move the map to cover the survey area, then download it here while you have internet. ',
         'Each download is saved as one file in the charts folder (below), so you can preview it, keep several areas, and copy one to another computer’s charts folder.'),
       el('div', { class: 'btnrow' }, el('label', { class: 'inline' }, 'Download the area on the map of', prefetchSrc),
@@ -2285,13 +2306,23 @@ class App {
         el('button', { title: 'Look again for .mbtiles files copied into the charts folder', onclick: () => api('/api/tiles/rescan', {}).then((r) => {
           this.S.mbtiles = r.mbtiles; this.map.syncCharts(r.mbtiles); this.renderChartList(); toast('Charts folder checked');
         }).catch(() => {}) }, 'Look for new files')),
-      el('p', { class: 'hint' }, 'Spyhop uses a downloaded area automatically when that map layer is chosen, before going online. Each file is also its own layer, “… (offline)”, in the map’s layers menu: Preview shows it alone, so you can see what you’ll have at sea. NOAA ENC charts (.mbtiles from charts.noaa.gov) can be put in the folder too.'),
+      el('p', { class: 'hint' }, 'Spyhop uses a downloaded area automatically when the map layer it came from is chosen, before going online. Each file is also listed under “Offline map tiles” in the map’s layers menu; Select puts it on the map on its own, so you can see what you’ll have at sea. NOAA ENC charts (.mbtiles from charts.noaa.gov) can be put in the folder too.'),
       el('p', {}, cacheInfo),
       el('p', { class: 'hint' }, 'Map overlays (transects, management areas…) are in Tools → ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('marks'); } }, 'Waypoints'), '.'));
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('overlays'); } }, 'Overlays'), '.'));
   }
 
-  // Settings → General → Map and offline charts: the files in the charts folder
+  async deleteChart(m) {
+    const what = m.kind === 'chart' ? 'chart' : 'downloaded area';
+    if (!await confirmBox('Delete this chart?', `Delete ${m.file} (${m.tiles?.toLocaleString() ?? '?'} tiles) from the charts folder? The ${what} can’t be used offline after this, and this can’t be undone.`, 'Delete', true)) return;
+    try {
+      const r = await api('/api/tiles/delete', { file: m.file });
+      this.S.mbtiles = r.mbtiles; this.map.syncCharts(r.mbtiles); this.renderChartList();
+      toast(`Deleted ${m.file}`);
+    } catch { /* shown */ }
+  }
+
+  // Settings → Basemap: the files in the charts folder
   renderChartList() {
     const box = $('#chart-list');
     if (!box) return;
@@ -2311,10 +2342,11 @@ class App {
         el('td', { class: 'num' }, m.tiles != null ? m.tiles.toLocaleString() : ''),
         el('td', { class: 'num nowrap' }, size(m.bytes)),
         el('td', { class: 'nowrap' }, when(m.created)),
-        el('td', {}, el('button', { class: 'chart-preview', disabled: !!m.error, title: 'Show only what is saved in this file, zoomed to its area',
-          onclick: () => {
-            if (this.map.previewChart(m)) toast(`Showing ${m.name} on its own: only what is saved in the file. Choose another map in the layers menu to go back.`, 'info', 7000);
-          } }, 'Preview'))))),
+        el('td', { class: 'nowrap' }, this.map.chartLayers?.[m.file] && this.map.baseLayer === this.map.chartLayers[m.file]
+          ? el('span', { class: 'pill on chart-current' }, 'On the map')
+          : el('button', { class: 'chart-select', disabled: !!m.error, title: 'Show this chart on the map (only what is saved in it), zoomed to its area',
+            onclick: () => { if (this.map.previewChart(m)) { this.renderChartList(); toast(`The map now shows ${m.name}: only what is saved in the file.`, 'info', 5000); } } }, 'Select'),
+          el('button', { class: 'chart-delete', title: 'Delete this file from the charts folder', onclick: () => this.deleteChart(m) }, 'Delete'))))),
       el('tfoot', {}, el('tr', {}, el('td', {}, `${list.length} file${list.length === 1 ? '' : 's'}`), el('td', {}), el('td', {}),
         el('td', { class: 'num' }, tot[0].toLocaleString()), el('td', { class: 'num nowrap' }, size(tot[1])), el('td', {}), el('td', {})))));
   }

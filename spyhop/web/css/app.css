@@ -408,3 +408,12 @@ table.dd-edit input[data-col=name], table.dd-edit input[data-col=full_name] { mi
 
 table.charts-table td { vertical-align: top; }
 table.charts-table tfoot td { font-weight: 600; border-top: 1px solid var(--line); }
+
+.route-start { display: flex; flex-wrap: wrap; gap: 0.4em 1.2em; align-items: center; margin: 0.2em 0 0.6em; }
+.route-fixed { margin: 0 0 0.6em 1.2em; }
+.route-fixed.off { opacity: 0.5; }
+
+.leaflet-control-layers .layers-heading { font-weight: 600; font-size: 0.85em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0.5em 0 0.15em; }
+.leaflet-control-layers .layers-heading:first-child { margin-top: 0; }
+table.overlay-table td { vertical-align: middle; }
+.ov-swatch { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 2px; margin-right: 0.5em; vertical-align: -0.1em; }

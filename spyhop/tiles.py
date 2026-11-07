@@ -652,6 +652,23 @@ class TileService:
             self._mb.pop(name).close()
         self._chart_meta.clear()
 
+    def delete_chart(self, name: str):
+        """Delete a file from the charts folder (only a .mbtiles file listed there)."""
+        if name not in self.cfg.mbtiles or "/" in name or "\\" in name:
+            raise ValueError("There's no chart file of that name in the charts folder.")
+        if self.prefetch_state.get("running") and self.prefetch_state.get("file") == name:
+            raise ValueError("That file is being downloaded into. Stop the download first.")
+        c = self._mb.pop(name, None)
+        if c is not None:
+            c.close()
+        try:
+            (self.cfg.charts_dir / name).unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            raise ValueError(f"Couldn't delete {name}: {e}")
+        self.rescan_charts()
+
     def chart_meta(self, name: str) -> dict:
         """A chart file's metadata table, with its tile count and size ({} if unreadable)."""
         if name not in self._chart_meta:

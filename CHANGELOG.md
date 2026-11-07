@@ -6,6 +6,14 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.17.0 — 2026-11-07
+
+- **Settings → Basemap** (new tab after General) holds the downloads for offline use and the charts folder, moved from General.
+- The map's layers menu lists base maps under **Online map tiles** and **Offline map tiles** (the files in the charts folder, and the built-in coastline). Downloaded areas no longer need "(offline)" in their names.
+- Charts folder: **Select** (was Preview) puts a chart on the map, without the dashed outline; the chart on the map is marked *On the map*. **Delete** removes a file from the folder, after asking.
+- **Tools → Overlays** (new tab after Waypoints) holds the map overlays and past surveys, moved from Waypoints. Each overlay can be **shown or hidden** (remembered), zoomed to or removed; Show all / Hide all.
+- Route: the start position is chosen in the Manual trackline and Systematic trackline sections (the vessel's position, or the first point clicked / a fixed point), no longer in Design.
+
 ## 0.16.0 — 2026-11-07
 
 - **Downloaded map areas are saved in the charts folder**, one `.mbtiles` file per area, named when you download (Settings → General → Map and offline charts). Downloading again with the same name adds to the file. Esri and NOAA downloads are standard MBTiles files; a Seascape download also holds its style and label fonts, so it draws from the file alone. Copy a file to another computer's charts folder to use it there.
