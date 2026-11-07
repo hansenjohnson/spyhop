@@ -227,9 +227,19 @@ The **Species**, **Events**, **Behaviors** and **Observers** tabs edit the drop-
 ## Maps offline
 
 - **Bundled coastline:** a world coastline from Natural Earth (1:10 m scale) always draws under the map, so you have a coastline even with no internet. Only the part in view is drawn, simplified to the zoom, so it stays quick. It is coarse, so don't navigate by it.
-- **Tile cache:** online layers (Esri Ocean, NOAA charts, OpenSeaMap seamarks, etc.) are saved to disk as you view them. In port, use **Settings → Map → Download visible area** to fetch a survey area ahead of time. OpenStreetMap's tile policy forbids bulk downloading, so that layer can't be pre-fetched.
+- **Online layers** (the map's layers button):
+  - **Seascape depths (feet)**, the default: Open Waters' Seascape bathymetry, with depth shading and labelled contours in feet (Spyhop leaves out its spot soundings). While it's shown, the readout at the bottom left gives the **depth at the cursor** (below chart datum), next to the scale bar; it works offline wherever the map has been viewed or downloaded, on an OpenStreetMap base. It's drawn with MapLibre GL (bundled), which loads the first time the layer is shown. Seascape is not an official chart and **not for navigation**.
+  - Esri Ocean, Esri Imagery, NOAA charts (NOAA's chart display service), and OpenStreetMap.
+- **Tile cache:** everything an online layer shows is saved on this computer as you view it, so areas you've looked at stay available offline.
+- **Downloading an area for offline use** (Survey → Settings → Map and offline charts): move the map to cover the survey area, choose the layer and the zoom range, and press **Download** while you have internet.
+  - Spyhop shows roughly how many tiles that is before you start, and a progress bar while it runs.
+  - Each zoom level has four times the tiles of the one before, so keep the highest zoom modest for a big area: 12–13 suits a day's survey area, 14–15 a harbour.
+  - A layer's own top zoom is respected (Esri Ocean stops at 13), and zooming in past what was downloaded shows the saved tiles enlarged.
+  - For Seascape, its depth tiles, contours and label fonts are downloaded. Its OpenStreetMap base isn't, because OpenStreetMap's tile policy forbids bulk downloading, so download that area in **Esri Ocean** too if you want land detail offline. OpenStreetMap on its own can't be downloaded either.
+  - Downloads are kept even if "Save tiles as you view them" is off. When it finishes, Spyhop says how many tiles were saved, how many had no data (open ocean or land, which is normal), and how many failed and why. Press **Download** again to retry the ones that failed.
+  - With no internet, Spyhop stops trying the network for a few seconds after repeated failures, so the map stays quick and draws from the saved tiles.
 - **MBTiles:** put `.mbtiles` files in the `charts` folder and restart. Free, weekly-updated **NOAA nautical charts** for US waters are available at <https://distribution.charts.noaa.gov/ncds/>: click a region and download the MBTiles file.
-- The online map layers are built into Spyhop, so fixes arrive with updates. To add one of your own (any XYZ tile server, or an ArcGIS `export` URL using `{bbox}`), create `tile_sources.csv` in the Spyhop folder with the columns `name,url,attribution,overlay,max_zoom`: its layers are added after the built-in ones.
+- The online map layers are built into Spyhop, so fixes arrive with updates. To add one of your own, create `tile_sources.csv` in the Spyhop folder with the columns `name,url,attribution,overlay,max_zoom,kind`: its layers are added after the built-in ones. The URL is an XYZ tile server, or an ArcGIS `export` URL using `{bbox}`, with kind `raster`. A MapLibre `style.json` URL uses kind `style`.
 
 The online layers could not be tested from the machine this was built on, which had no internet. Check them once on a connected laptop before you sail.
 

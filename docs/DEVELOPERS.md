@@ -39,12 +39,13 @@ spyhop/
   diag.py         diagnostic logs, crash capture, performance snapshots, the diagnostics bundle
   shortcut.py     makes the Spyhop icon (Mac app, Windows shortcuts, Linux menu entry)
   geo.py          lat/lon parsing and formatting, bearings, destinations, magnetic variation
-  tiles.py        tile cache proxy, area pre-fetch, MBTiles reader
+  tiles.py        tile cache proxy (raster and MapLibre styles), area downloads, MBTiles reader
   web/
     index.html  css/app.css
     js/app.js            the application: tabs, panes, dialogs, websocket handling
     js/grid.js           the data tables
     js/map.js            the Leaflet map, markers, track, tools
+    js/depth.js          the water depth at the cursor, read from Seascape's depth tiles
     js/planning.js       Survey → Route
     js/plot.js           instrument time-series plots
     js/summary_html.js   the self-contained Summary page (HTML export)

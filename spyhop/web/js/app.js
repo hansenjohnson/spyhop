@@ -2090,32 +2090,81 @@ class App {
   }
 
   mapSection() {
-    const S = this.S;
-    const prefetchSrc = el('select', {}, S.config.tile_sources.map((t, i) => el('option', { value: i, selected: t.name === 'Esri Ocean' }, t.name)));
-    const zmax = el('input', { type: 'number', min: 1, max: 16, value: 12, size: 4 });
+    const S = this.S, srcs = S.config.tile_sources;
+    const dl = (this.dl ||= {});
+    const z = Math.round(this.map.map.getZoom());
+    const pick = srcs.findIndex((t) => t.name === dl.source) >= 0 ? srcs.findIndex((t) => t.name === dl.source)
+      : Math.max(0, srcs.findIndex((t) => t.kind === 'style'));
+    const prefetchSrc = el('select', { id: 'dl-source', onchange: () => { dl.source = srcs[+prefetchSrc.value].name; estimate(); } },
+      srcs.map((t, i) => el('option', { value: i, selected: i === pick, disabled: /openstreetmap\.org/.test(t.url) && t.kind !== 'style' },
+        t.name + (/openstreetmap\.org/.test(t.url) && t.kind !== 'style' ? ' (not allowed)' : ''))));
+    const zmin = el('input', { type: 'number', id: 'dl-zmin', min: 0, max: 18, value: dl.zmin ?? Math.max(0, z - 2), size: 3, onchange: () => { dl.zmin = +zmin.value; estimate(); } });
+    const zmax = el('input', { type: 'number', id: 'dl-zmax', min: 0, max: 18, value: dl.zmax ?? Math.min(14, z + 2), size: 3, onchange: () => { dl.zmax = +zmax.value; estimate(); } });
+    const est = el('span', { class: 'hint', id: 'dl-estimate' });
     const cacheInfo = el('span', { class: 'hint', id: 'cache-info' });
-    api('/api/tiles').then((r) => { cacheInfo.textContent = `Cache: ${r.cache.tiles} tiles, ${r.cache.mb} MB`; }).catch(() => {});
-    return el('section', { class: 'settings-sec' }, el('h3', {}, 'Map and offline charts'),
-      el('p', {}, 'Online map tiles are saved to disk as you view them, so areas you have looked at stay available offline. ',
-        'For proper offline charts, put .mbtiles files in the ', el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('charts'); } }, 'charts folder'), ' and reload.'),
-      el('div', { class: 'btnrow' }, el('label', { class: 'inline' }, 'Download visible area of', prefetchSrc),
-        el('label', { class: 'inline' }, 'up to zoom', zmax),
-        el('button', { onclick: () => {
-          const b = this.map.map.getBounds();
-          api('/api/tiles/prefetch', { source: +prefetchSrc.value, bounds: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()],
-            zmin: Math.max(1, Math.floor(this.map.map.getZoom()) - 3), zmax: +zmax.value })
-            .then((r) => toast(`Downloading ${r.total} tiles…`)).catch(() => {});
+    api('/api/tiles').then((r) => { cacheInfo.textContent = `Saved for offline use: ${r.cache.tiles.toLocaleString()} tiles, ${r.cache.mb} MB`; if (r.prefetch) this.updatePrefetch(r.prefetch); }).catch(() => {});
+    const body = () => {
+      const b = this.map.map.getBounds();
+      return { source: +prefetchSrc.value, bounds: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()], zmin: +zmin.value, zmax: +zmax.value };
+    };
+    let timer;
+    const estimate = () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        est.textContent = 'Counting tiles…';
+        try {
+          const r = await fetch('/api/tiles/prefetch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body(), dry_run: true }) }).then((x) => x.json());
+          if (r.ok === false || r.error) { est.textContent = r.error || 'Can’t count the tiles.'; return; }
+          est.textContent = `About ${r.total.toLocaleString()} tiles${r.note ? ` · ${r.note}` : ''}${r.skipped?.length ? ` · not downloaded: ${r.skipped.join(', ')}` : ''}`;
+        } catch { est.textContent = ''; }
+      }, 400);
+    };
+    if (!this._dlMoveHook) { this._dlMoveHook = true; this.map.map.on('moveend', () => { if (this.tab === 'settings' && $('#dl-estimate')) this.renderSettingsMapEstimate?.(); }); }
+    this.renderSettingsMapEstimate = estimate;
+    estimate();
+    return el('section', { class: 'settings-sec', id: 'map-offline' }, el('h3', {}, 'Map and offline charts'),
+      el('p', {}, 'Online map tiles are saved on this computer as you view them, so areas you have looked at stay available offline. ',
+        'To get ready for a survey, move the map to cover the survey area, then download it here while you have internet.'),
+      el('div', { class: 'btnrow' }, el('label', { class: 'inline' }, 'Download the area on the map of', prefetchSrc),
+        el('label', { class: 'inline' }, 'from zoom', zmin), el('label', { class: 'inline' }, 'to', zmax)),
+      el('div', { class: 'btnrow' },
+        el('button', { id: 'btn-dl', class: 'primary', onclick: async () => {
+          try {
+            const r = await api('/api/tiles/prefetch', body());
+            toast(`Downloading ${r.total.toLocaleString()} tiles of ${srcs[+prefetchSrc.value].name}…`);
+            this.updatePrefetch({ running: true, done: 0, total: r.total, failed: 0, source: srcs[+prefetchSrc.value].name });
+          } catch { /* shown */ }
         } }, 'Download'),
-        el('button', { onclick: () => api('/api/tiles/prefetch', { cancel: true }).catch(() => {}) }, 'Stop'), cacheInfo),
-      el('div', { id: 'prefetch-status', class: 'hint' }),
-      el('p', {}, el('b', {}, 'Offline charts: '), (S.mbtiles || []).length ? S.mbtiles.map((m) => `${m.name}${m.error ? ` (error: ${m.error})` : ''}`).join(', ') : el('span', { class: 'hint' }, 'none found')),
+        el('button', { onclick: () => api('/api/tiles/prefetch', { cancel: true }).catch(() => {}) }, 'Stop'), est),
+      el('div', { id: 'prefetch-status' }),
+      el('p', {}, cacheInfo),
+      el('p', { class: 'hint' }, 'Each zoom level has four times the tiles of the one before, so keep the highest zoom modest for a big area (12–13 suits a day’s survey area; 14–15 a harbour). ',
+        'Zooming in past what was downloaded shows the nearest saved tiles enlarged. OpenStreetMap doesn’t allow bulk downloads.'),
+      el('p', {}, el('b', {}, 'Offline charts (MBTiles): '), (S.mbtiles || []).length ? S.mbtiles.map((m) => `${m.name}${m.error ? ` (error: ${m.error})` : ''}`).join(', ') : el('span', { class: 'hint' }, 'none found'),
+        ' · put .mbtiles files in the ', el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('charts'); } }, 'charts folder'), ' and restart.'),
       el('p', { class: 'hint' }, 'Map overlays (transects, management areas…) are in Survey → ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('marks'); } }, 'Waypoints'), '.'));
   }
 
   updatePrefetch(p) {
     const box = $('#prefetch-status');
-    if (box) box.textContent = p.running ? `Downloading ${p.source}: ${p.done}/${p.total} (${p.failed} failed)` : (p.total ? `Last download: ${p.done}/${p.total} tiles of ${p.source}, ${p.failed} failed` : '');
+    if (!box) return;
+    const was = this._dlRunning;
+    this._dlRunning = !!p.running;
+    if (p.running) {
+      const pct = p.total ? Math.round((100 * p.done) / p.total) : 0;
+      box.replaceChildren(el('div', { class: 'progress' }, el('div', { class: 'bar', style: { width: `${pct}%` } })),
+        el('span', { class: 'hint' }, `Downloading ${p.source}: ${p.done.toLocaleString()} of ${p.total.toLocaleString()} (${pct}%)${p.failed ? `, ${p.failed} failed` : ''}`));
+    } else if (p.total) {
+      const ok = p.done - p.failed - (p.empty || 0);
+      box.replaceChildren(el('p', { class: p.failed ? (ok > 0 ? 'warnbox' : 'errbox') : 'okbox' },
+        `${p.source}: ${ok.toLocaleString()} of ${p.total.toLocaleString()} tiles saved for offline use`,
+        p.cached ? ` (${p.cached.toLocaleString()} were already saved)` : '',
+        p.empty ? `; ${p.empty.toLocaleString()} had no map data (open ocean or land), which is normal` : '', '. ',
+        p.failed ? `${p.failed.toLocaleString()} failed${p.error ? ` — last problem: ${p.error}` : ''}. ${ok > 0 ? 'Press Download again to retry them.' : 'Check the internet connection.'}` : '',
+        p.skipped ? ` Not downloaded (the server doesn’t allow it): ${p.skipped}.` : ''));
+      if (was) api('/api/tiles').then((r) => { const c = $('#cache-info'); if (c) c.textContent = `Saved for offline use: ${r.cache.tiles.toLocaleString()} tiles, ${r.cache.mb} MB`; }).catch(() => {});
+    }
   }
 }
 

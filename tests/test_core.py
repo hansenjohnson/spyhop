@@ -283,7 +283,9 @@ def test_config_files_created(tmp_path):
         assert (tmp_path / f"{n}.csv").exists()
     # the online map layers come from the code, not a file (0.12.0)
     assert not (tmp_path / "tile_sources.csv").exists()
-    assert [s["name"] for s in rec.cfg.tile_sources][:2] == ["OpenStreetMap", "Esri Ocean"]
+    names = [s["name"] for s in rec.cfg.tile_sources]
+    assert names[:2] == ["Seascape depths (feet)", "Esri Ocean"] and rec.cfg.tile_sources[0]["kind"] == "style"
+    assert not any("OpenSeaMap" in n or "tiled" in n for n in names)
 
 
 def test_source_priority():
@@ -1404,7 +1406,9 @@ def test_tile_sources_from_code_keep_extras(tmp_path):
     from spyhop.config import Config
     (tmp_path / "tile_sources.csv").write_text(
         "name,url,attribution,overlay,max_zoom\nEsri Ocean,https://old.example/{z}/{x}/{y},,0,10\n"
-        "Team charts,https://charts.example/{z}/{x}/{y}.png,Team,0,14\n")
+        "Team charts,https://charts.example/{z}/{x}/{y}.png,Team,0,14\n"
+        "NOAA charts (tiled),https://gis.charttools.noaa.gov/x/{z}/{y}/{x},NOAA,0,18\n"
+        "OpenSeaMap seamarks,https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png,OSM,1,18\n")
     cfg = Config(tmp_path)
     names = [s["name"] for s in cfg.tile_sources]
     assert names.count("Esri Ocean") == 1 and names[-1] == "Team charts"
@@ -1506,3 +1510,107 @@ def test_make_pack_logs_the_change(tmp_path):
         assert "JM" in z.read("observers.csv").decode()
     assert [x["notes"] for x in log] == ["New observer JM", "First version"] and log[0]["files"] == "observers.csv"
     assert configpack.safe_pack_name('a/b:c') == "a_b_c.zip" and configpack.safe_pack_name("  ") == ""
+
+
+def _png_bytes():
+    import struct, zlib as _z
+    raw = b"\x00" + bytes([10, 120, 200]) * 4
+    raw = raw * 4
+    ch = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", _z.crc32(t + d) & 0xffffffff)  # noqa: E731
+    return b"\x89PNG\r\n\x1a\n" + ch(b"IHDR", struct.pack(">IIBBBBB", 4, 4, 8, 2, 0, 0, 0)) + ch(b"IDAT", _z.compress(raw)) + ch(b"IEND", b"")
+
+
+def test_style_layer_proxy_cache_and_download(tmp_path):
+    """A MapLibre style (like Seascape) goes through the tile cache, downloads for offline use, and works offline."""
+    import asyncio
+    from spyhop.config import Config
+    from spyhop.tiles import TileService
+    png, pbf = _png_bytes(), b"\x1a\x05fake-mvt"
+    routes = {}
+    base, stop = None, None
+
+    def build(b):
+        style = {"version": 8, "glyphs": b + "/fonts/{fontstack}/{range}.pbf",
+                 "sources": {"bathy": {"type": "vector", "url": b + "/vector.json"},
+                             "dem": {"type": "raster-dem", "url": b + "/raster.json"},
+                             "osm": {"type": "raster", "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"]}},
+                 "layers": [{"id": "bg", "type": "background"},
+                            {"id": "lbl", "type": "symbol", "source": "bathy", "layout": {"text-font": ["Noto Sans Regular"]}},
+                            {"id": "depth-points", "type": "symbol", "source": "bathy", "source-layer": "soundings"},
+                            {"id": "contour-labels", "type": "symbol", "source": "bathy", "source-layer": "contours",
+                             "layout": {"text-padding": 50}},
+                            {"id": "soundings-shallow", "type": "symbol", "source": "bathy", "source-layer": "spot"}]}
+        routes["/style.json"] = (200, "application/json", json.dumps(style).encode())
+        routes["/vector.json"] = (200, "application/json", json.dumps({"tiles": [b + "/v/{z}/{x}/{y}.pbf"], "minzoom": 0, "maxzoom": 3}).encode())
+        routes["/raster.json"] = (200, "application/json", json.dumps({"tiles": [b + "/r/{z}/{x}/{y}.webp"], "maxzoom": 2}).encode())
+        for z in range(4):
+            for x in range(2 ** z):
+                for y in range(2 ** z):
+                    routes[f"/v/{z}/{x}/{y}.pbf"] = (200, "application/x-protobuf", pbf)
+                    if z <= 2:
+                        routes[f"/r/{z}/{x}/{y}.webp"] = (200, "image/png", png)
+        for r in ("0-255", "256-511", "8192-8447"):
+            routes[f"/fonts/Noto%20Sans%20Regular/{r}.pbf"] = (200, "application/x-protobuf", b"glyphs")
+    base, stop = _serve(routes)
+    build(base)
+    cfg = Config(tmp_path)
+    cfg.settings["tile_cache_enabled"] = False         # downloads are kept anyway
+    cfg.tile_sources = [{"name": "Test style", "url": base + "/style.json", "kind": "style", "max_zoom": "22"},
+                        {"name": "Test raster", "url": base + "/r/{z}/{x}/{y}.webp", "kind": "raster", "max_zoom": "2"}]
+    ts = TileService(cfg)
+
+    async def go():
+        local = "http://127.0.0.1:8765"
+        st = await ts.gl_style(0, local)
+        assert [l["id"] for l in st["layers"]] == ["bg", "lbl", "contour-labels"]   # depth soundings dropped
+        assert st["layers"][2]["layout"]["text-padding"] == 2                     # more contour labels
+        assert st["sources"]["bathy"]["url"].startswith(local + "/tiles/gl/0/tilejson?u=")
+        assert st["sources"]["osm"]["tiles"][0].startswith(local + "/tiles/gl/0/t/{z}/{x}/{y}?u=")
+        assert st["glyphs"].startswith(local + "/tiles/gl/0/glyphs/{fontstack}/{range}?u=")
+        from urllib.parse import parse_qs, urlsplit
+        up = lambda u: parse_qs(urlsplit(u).query)["u"][0]        # noqa: E731
+        tj = await ts.gl_tilejson(0, up(st["sources"]["bathy"]["url"]), local)
+        assert tj["tiles"][0].startswith(local + "/tiles/gl/0/t/{z}/{x}/{y}?u=")
+        data, ctype, status = await ts.gl_tile(0, up(tj["tiles"][0]), 1, 0, 1)
+        assert data == pbf and status == 200
+        assert (await ts.gl_tile(0, "https://evil.example/{z}/{x}/{y}", 1, 0, 0))[2] == 403   # not an open proxy
+        g = await ts.gl_file(0, ts.fill_glyphs(up(st["glyphs"]), "Noto Sans Regular", "0-255"), "_glyphs")
+        assert g == b"glyphs"
+
+        world = [-85, -180, 85, 180]
+        plan = await ts.plan_prefetch(0, world, 0, 5)
+        # vector z0–3 (85 tiles) + DEM z0–2 (21) + 3 font ranges; OpenStreetMap left out
+        assert plan["total"] == 85 + 21 + 3 and plan["skipped"] and "tile.openstreetmap.org" in plan["skipped"][0]
+        r = await ts.start_prefetch(0, world, 0, 5)
+        assert r["total"] == 109
+        await ts._prefetch_task
+        s = ts.prefetch_state
+        assert s["done"] == 109 and s["failed"] == 0 and not s["running"]
+
+        rp = await ts.plan_prefetch(1, world, 0, 6)
+        assert rp["zmax"] == 2 and "only goes up to zoom 2" in rp["note"] and rp["total"] == 21
+        await ts.start_prefetch(1, world, 0, 6)
+        await ts._prefetch_task
+        assert ts.prefetch_state["failed"] == 0
+        with pytest.raises(ValueError, match="lowest zoom"):
+            await ts.plan_prefetch(1, world, 4, 2)
+        with pytest.raises(ValueError, match="limit"):
+            await ts.start_prefetch(1, world, 0, 2, limit=10)
+
+    asyncio.run(go())
+    stop()                                            # the internet is gone: everything comes from the cache
+
+    async def offline():
+        local = "http://127.0.0.1:8765"
+        st = await ts.gl_style(0, local)
+        assert st and st["sources"]["dem"]["url"].startswith(local)
+        from urllib.parse import parse_qs, urlsplit
+        up = lambda u: parse_qs(urlsplit(u).query)["u"][0]        # noqa: E731
+        tj = await ts.gl_tilejson(0, up(st["sources"]["dem"]["url"]), local)
+        data, ctype, status = await ts.gl_tile(0, up(tj["tiles"][0]), 2, 3, 1)
+        assert status == 200 and ctype == "image/png"
+        assert (await ts.get_online(1, 2, 1, 1))[1] == "image/png"
+        assert (await ts.gl_tile(0, up(tj["tiles"][0]), 2, 9, 9))[0] is None   # not saved, and no internet
+        await ts.close()
+    asyncio.run(offline())
+    assert ts.cache_stats()["tiles"] >= 85 + 21 + 21

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import json
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -19,6 +20,8 @@ from . import awake, configpack, __version__, diag, reports, schema, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports
 from .store import safe_name
+mimetypes.add_type("text/javascript", ".mjs")   # the MapLibre modules
+from . import tiles as tiles_mod
 from .tiles import TileService
 
 log = logging.getLogger(__name__)
@@ -563,6 +566,60 @@ class App:
         return web.Response(body=r[0], content_type=r[1],
                             headers={"Cache-Control": "max-age=86400"})
 
+    # ---- MapLibre styles (Seascape) through the tile cache
+    def _origin(self, request) -> str:
+        return f"{request.scheme}://{request.host}"
+
+    async def gl_style(self, request):
+        style = await self.tiles.gl_style(int(request.match_info["i"]), self._origin(request))
+        if style is None:
+            raise web.HTTPNotFound(text="This map's style couldn't be loaded (no internet, and no saved copy).")
+        return web.json_response(style, headers={"Cache-Control": "no-cache"})
+
+    async def gl_tilejson(self, request):
+        doc = await self.tiles.gl_tilejson(int(request.match_info["i"]), request.query.get("u", ""), self._origin(request))
+        if doc is None:
+            raise web.HTTPNotFound()
+        return web.json_response(doc, headers={"Cache-Control": "no-cache"})
+
+    async def gl_tile(self, request):
+        m = request.match_info
+        data, ctype, status = await self.tiles.gl_tile(int(m["i"]), request.query.get("u", ""), int(m["z"]), int(m["x"]), int(m["y"]))
+        if data is None:
+            # an empty or missing tile: MapLibre draws nothing there; 204 keeps its console quiet
+            return web.Response(status=204 if status in (404, 204) else (403 if status == 403 else 504))
+        headers = {"Cache-Control": "max-age=86400"}
+        if ctype == "application/octet-stream":
+            ctype = "application/x-protobuf"
+            if data[:2] == b"\x1f\x8b":
+                headers["Content-Encoding"] = "gzip"
+        return web.Response(body=data, content_type=ctype, headers=headers)
+
+    async def gl_glyphs(self, request):
+        m = request.match_info
+        url = self.tiles.fill_glyphs(request.query.get("u", ""), m["fontstack"], m["range"])
+        data = await self.tiles.gl_file(int(m["i"]), url, "_glyphs")
+        if data is None:
+            raise web.HTTPNotFound()
+        headers = {"Cache-Control": "max-age=604800"}
+        if data[:2] == b"\x1f\x8b":
+            headers["Content-Encoding"] = "gzip"
+        return web.Response(body=data, content_type="application/x-protobuf", headers=headers)
+
+    async def gl_sprite(self, request):
+        m = request.match_info
+        rest = m["rest"]
+        cut = min([i for i in (rest.find("@"), rest.find(".")) if i >= 0] or [len(rest)])
+        try:
+            base = tiles_mod._unb64(rest[:cut])
+        except ValueError:
+            raise web.HTTPNotFound()
+        data = await self.tiles.gl_file(int(m["i"]), base + rest[cut:], "_sprite")
+        if data is None:
+            raise web.HTTPNotFound()
+        ctype = "application/json" if rest.endswith(".json") else "image/png"
+        return web.Response(body=data, content_type=ctype, headers={"Cache-Control": "max-age=86400"})
+
     async def tile_mb(self, request):
         m = request.match_info
         r = self.tiles.get_mbtile(m["name"], int(m["z"]), int(m["x"]), int(m["y"]))
@@ -580,8 +637,15 @@ class App:
         if b.get("cancel"):
             self.tiles.cancel_prefetch()
             return json_ok()
-        n = self.tiles.start_prefetch(int(b["source"]), b["bounds"], int(b["zmin"]), int(b["zmax"]))
-        return json_ok(total=n)
+        try:
+            if b.get("dry_run"):
+                plan = await self.tiles.plan_prefetch(int(b["source"]), b["bounds"], int(b["zmin"]), int(b["zmax"]))
+                plan.pop("jobs")
+                return json_ok(**plan)
+            plan = await self.tiles.start_prefetch(int(b["source"]), b["bounds"], int(b["zmin"]), int(b["zmax"]))
+        except ValueError as e:
+            raise ValueErrorMsg(str(e))
+        return json_ok(**plan)
 
     # -- overlays ---------------------------------------------------------------------
     async def overlay_get(self, request):
@@ -855,6 +919,11 @@ class App:
         r.add_post("/api/nmea/log", self.nmea_log)
         r.add_get("/tiles/s/{i}/{z}/{x}/{y}", self.tile_online)
         r.add_get("/tiles/mb/{name}/{z}/{x}/{y}", self.tile_mb)
+        r.add_get("/tiles/gl/{i}/style.json", self.gl_style)
+        r.add_get("/tiles/gl/{i}/tilejson", self.gl_tilejson)
+        r.add_get("/tiles/gl/{i}/t/{z}/{x}/{y}", self.gl_tile)
+        r.add_get("/tiles/gl/{i}/glyphs/{fontstack}/{range}", self.gl_glyphs)
+        r.add_get("/tiles/gl/{i}/sprite/{rest}", self.gl_sprite)
         r.add_get("/api/tiles", self.tiles_info)
         r.add_post("/api/tiles/prefetch", self.tiles_prefetch)
         r.add_get("/overlays/{name}", self.overlay_get)

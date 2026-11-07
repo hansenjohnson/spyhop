@@ -194,6 +194,7 @@ pre.raw { max-height: 240px; overflow: auto; background: var(--panel2); padding:
 #map.measuring .leaflet-interactive { cursor: crosshair; }
 .map-readout { background: rgba(255,255,255,.85); padding: 3px 7px; border-radius: 4px; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; color: #111; }
 .nmscale { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+#cursor-depth { margin-left: 10px; font-weight: 600; }
 #nmscale-bar { height: 6px; border: 2px solid #222; border-top: none; }
 .vessel-icon, .data-marker { background: none; border: none; }
 /* note: never set position on .data-marker — Leaflet positions marker icons absolutely */
@@ -395,3 +396,5 @@ table.dd-edit input[data-col=name], table.dd-edit input[data-col=full_name] { mi
 .stack-form textarea { font: inherit; }
 .filebox { margin-top: 1.2em; padding: 0.7em 0.9em; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 .filebox .btnrow { margin-top: 0.5em; }
+.progress { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 0.4em 0 0.2em; max-width: 30em; }
+.progress .bar { height: 100%; background: var(--accent); transition: width 0.4s; }

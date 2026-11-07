@@ -6,6 +6,26 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.13.2 — 2026-11-06
+
+- The map readout shows the water depth at the cursor, next to the scale bar, when the Seascape layer is shown. It reads Seascape's depth tiles, so it works offline wherever the map has been viewed or downloaded.
+- More contour lines on the Seascape layer get their depth labels.
+
+## 0.13.1 — 2026-11-06
+
+- The Seascape layer no longer shows spot depth soundings; depth shading and contours stay.
+
+## 0.13.0 — 2026-11-06
+
+- **New default map: Seascape depths (feet)**, Open Waters' Seascape bathymetry with depth shading, contours and soundings in feet. It's drawn with MapLibre GL (bundled, BSD licence). Its style, tiles and fonts go through Spyhop's tile cache, so they work offline once viewed or downloaded. Not for navigation.
+- Removed **NOAA charts (tiled)**, which no longer works, and **OpenSeaMap seamarks**. "NOAA charts (dynamic)" is now called **NOAA charts**.
+- **Downloading map areas for offline use was fixed and reworked** (Survey → Settings → Map and offline charts):
+  - **What was wrong:** a download kept nothing when "save tiles as you view them" was off. Zoomed in past the default highest zoom, it got no tiles at all. And it gave no reason when tiles failed.
+  - **What you can set:** choose the zoom range. Spyhop shows how many tiles that is before you start, and respects each layer's top zoom.
+  - **While and after it runs:** a progress bar, then a summary of what was saved, what had no data, and what failed and why. Dropped connections are retried.
+  - **Seascape** can be downloaded too.
+- **With no internet, the map stays quick.** After repeated failed connections, Spyhop answers from the saved tiles at once for a short while, rather than waiting on each tile.
+
 ## 0.12.0 — 2026-11-06
 
 - **Survey → Shortcuts** is now an editor.

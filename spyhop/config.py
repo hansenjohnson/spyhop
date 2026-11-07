@@ -259,19 +259,20 @@ DEFAULT_SETTINGS = {
     "last_meta": {},         # survey details used last time, offered for the next survey
 }
 
-DEFAULT_TILE_SOURCES = ["name", "url", "attribution", "overlay", "max_zoom"], [
-    ["OpenStreetMap", "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-     "© OpenStreetMap contributors", "0", "19"],
+# layers that used to be built in (0.12.0 and before): an old tile_sources.csv mustn't bring them back
+OLD_TILE_SOURCE_NAMES = {"noaa charts (tiled)", "noaa charts (dynamic)", "openseamap seamarks"}
+DEFAULT_TILE_SOURCES = ["name", "url", "attribution", "overlay", "max_zoom", "kind"], [
+    # kind "style": a MapLibre style (vector tiles), drawn with MapLibre GL and cached like the rest
+    ["Seascape depths (feet)", "https://tiles.openwaters.io/seascape/style.json?unit=ft",
+     "Seascape by Open Waters (CC BY 4.0), © OpenStreetMap contributors — not for navigation", "0", "22", "style"],
     ["Esri Ocean", "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
-     "Esri, GEBCO, NOAA, Garmin, HERE", "0", "13"],
+     "Esri, GEBCO, NOAA, Garmin, HERE", "0", "13", "raster"],
     ["Esri Imagery", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-     "Esri, Maxar, Earthstar Geographics", "0", "18"],
-    ["NOAA charts (tiled)", "https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/tile/{z}/{y}/{x}",
-     "NOAA Office of Coast Survey", "0", "18"],
-    ["NOAA charts (dynamic)", "https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/MapServer/export?bbox={bbox}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image",
-     "NOAA Office of Coast Survey", "0", "18"],
-    ["OpenSeaMap seamarks", "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png",
-     "© OpenSeaMap contributors", "1", "18"],
+     "Esri, Maxar, Earthstar Geographics", "0", "18", "raster"],
+    ["NOAA charts", "https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/MapServer/export?bbox={bbox}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image",
+     "NOAA Office of Coast Survey", "0", "18", "raster"],
+    ["OpenStreetMap", "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+     "© OpenStreetMap contributors", "0", "19", "raster"],
 ]
 
 
@@ -550,7 +551,7 @@ class Config:
         # extra layers in an old tile_sources.csv (names not built in) are still added after them
         hdr = DEFAULT_TILE_SOURCES[0]
         self.tile_sources = [dict(zip(hdr, r)) for r in DEFAULT_TILE_SOURCES[1]]
-        builtin = {r["name"].lower() for r in self.tile_sources}
+        builtin = {r["name"].lower() for r in self.tile_sources} | OLD_TILE_SOURCE_NAMES
         try:
             self.tile_sources += [r for r in _read_csv(self.root / "tile_sources.csv")
                                   if r.get("name") and r.get("url") and r["name"].lower() not in builtin]

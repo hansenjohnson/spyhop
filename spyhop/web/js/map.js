@@ -1,6 +1,7 @@
 // Interactive chart: base layers, vessel, track, data markers, popups, measure tool.
 /* global L, topojson */
 import { el, esc, fmtCoord, fmtPos, distM, bearing, destination, fmtDist, fmtBrg, timeParts, toast, api, isTrackBreak, trackStates, dashFor } from './util.js';
+import { DepthProbe } from './depth.js';
 
 const SHAPES = ['Diamond', 'Square', 'Triangle', 'Circle', 'Star'];
 export { SHAPES };
@@ -48,7 +49,11 @@ export class MapView {
     this.map.on('contextmenu', (e) => this.contextMenu(e));
     this.map.on('click', (e) => this.onClick(e));
     this.map.on('dblclick', (e) => { if (this.measure?.active) { L.DomEvent.stop(e); this.endMeasure(); } });
-    this.map.on('baselayerchange', (e) => { try { localStorage.setItem('wsr.base', e.name); } catch {} });
+    this.map.on('baselayerchange', (e) => {
+      try { localStorage.setItem('wsr.base', e.name); } catch {}
+      this.baseLayer = e.layer; this.showDepth('');
+    });
+    this.map.on('mouseout', () => this.showDepth(''));
     this.map.on('overlayadd overlayremove', () => this.saveOverlayState());
     this.buildLayers();
     this.buildControls();
@@ -57,11 +62,37 @@ export class MapView {
   }
 
   // ---------------------------------------------------------------- layers
+  // A MapLibre style (Seascape): drawn by MapLibre GL inside Leaflet. MapLibre (about 1.6 MB) is
+  // loaded the first time the layer is shown; everything it fetches goes through Spyhop's tile cache.
+  glLayer(i, t) {
+    const grp = L.layerGroup([], { attribution: esc(t.attribution || '') });
+    let unit = 'm';
+    try { unit = new URL(t.url).searchParams.get('unit') || 'm'; } catch {}
+    grp._depth = new DepthProbe(i, unit);
+    grp.on('add', async () => {
+      if (grp._gl || grp._loading) return;
+      grp._loading = true;
+      try {
+        if (!document.querySelector('link[data-maplibre]')) {
+          document.head.append(el('link', { rel: 'stylesheet', href: '/static/vendor/maplibre/maplibre-gl.css', 'data-maplibre': '1' }));
+        }
+        const mod = await import('/static/vendor/maplibre/leaflet-maplibre-gl.mjs');
+        grp._gl = mod.maplibreGL({ style: `${location.origin}/tiles/gl/${i}/style.json`, interactive: false, attributionControl: false });
+        grp.addLayer(grp._gl);
+        const gl = grp._gl.getMaplibreMap?.();
+        gl?.on('error', (e) => { const m = e?.error?.message || ''; if (m && !/204|Failed to fetch|AbortError/.test(m)) console.warn('Seascape:', m); });
+      } catch (e) {
+        toast(`Couldn’t show ${t.name}: ${e.message}`, 'error', 8000);
+      } finally { grp._loading = false; }
+    });
+    return grp;
+  }
+
   buildLayers() {
     const S = this.app.S;
     const bases = {}, overlays = {};
     S.config.tile_sources.forEach((t, i) => {
-      const layer = L.tileLayer(`/tiles/s/${i}/{z}/{x}/{y}`, {
+      const layer = t.kind === 'style' ? this.glLayer(i, t) : L.tileLayer(`/tiles/s/${i}/{z}/{x}/{y}`, {
         attribution: esc(t.attribution || ''), maxZoom: 20, maxNativeZoom: +t.max_zoom || 18,
         crossOrigin: false, errorTileUrl: '' });
       if (t.overlay === '1') overlays[t.name] = layer; else bases[t.name] = layer;
@@ -97,8 +128,9 @@ export class MapView {
 
     let saved = null, ov = null;
     try { saved = localStorage.getItem('wsr.base'); ov = JSON.parse(localStorage.getItem('wsr.overlays') || 'null'); } catch {}
-    const base = bases[saved] || bases['Esri Ocean'] || Object.values(bases)[0];
+    const base = bases[saved] || bases['Seascape depths (feet)'] || bases['Esri Ocean'] || Object.values(bases)[0];
     base.addTo(this.map);
+    this.baseLayer = base;
     // track and sighting/FieldID lines are always on the map; Settings decides what they draw
     for (const k of ['track', 'lines', 'fidlines']) this.layers[k].addTo(this.map);
     const defaultsOn = ['Coastline (offline)', 'Sightings', 'Events', 'Waypoints', 'Imported overlays'];
@@ -267,7 +299,7 @@ export class MapView {
       options: { position: 'bottomleft' },
       onAdd() {
         const d = L.DomUtil.create('div', 'map-readout');
-        d.innerHTML = '<div id="cursor-pos">—</div><div id="cursor-rel"></div><div class="nmscale"><div id="nmscale-bar"></div><span id="nmscale-label"></span></div>';
+        d.innerHTML = '<div id="cursor-pos">—</div><div id="cursor-rel"></div><div class="nmscale"><div id="nmscale-bar"></div><span id="nmscale-label"></span><span id="cursor-depth" title="Seascape depth below chart datum at the cursor. Not for navigation."></span></div>';
         L.DomEvent.disableClickPropagation(d);
         return d;
       },
@@ -345,6 +377,33 @@ export class MapView {
       rel.textContent = `From vessel: ${fmtBrg(b)}T ${this.magText(b)} · ${fmtDist(d, this.app.unit())}`;
     } else rel.textContent = '';
     if (this.measure?.active && this.measure.pts.length) this.drawMeasure(ll);
+    this.probeDepth(ll);
+  }
+
+  // Depth at the cursor, when the base map is a style with a depth model (Seascape).
+  // One lookup at a time; the latest position is looked up when the previous one finishes.
+  probeDepth(ll) {
+    const probe = this.baseLayer?._depth;
+    if (!probe) { this.showDepth(''); return; }
+    this._depthNext = [ll.lat, ll.lng, this.map.getZoom(), probe];
+    if (this._depthBusy) return;
+    this._depthBusy = true;
+    (async () => {
+      while (this._depthNext) {
+        const [lat, lon, z, p] = this._depthNext;
+        this._depthNext = null;
+        const r = await p.at(lat, lon, z).catch(() => null);
+        if (this.baseLayer?._depth === p) this.showDepth(p.text(r));
+      }
+    })().finally(() => {
+      this._depthBusy = false;
+      if (this._depthNext) { const [lat, lng] = this._depthNext; this.probeDepth({ lat, lng }); }
+    });
+  }
+
+  showDepth(text) {
+    const d = document.getElementById('cursor-depth');
+    if (d) { d.textContent = text; d.hidden = !text; }
   }
 
   magText(trueB) {
