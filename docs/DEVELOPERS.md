@@ -39,21 +39,21 @@ spyhop/
   diag.py         diagnostic logs, crash capture, performance snapshots, the diagnostics bundle
   shortcut.py     makes the Spyhop icon (Mac app, Windows shortcuts, Linux menu entry)
   geo.py          lat/lon parsing and formatting, bearings, destinations, magnetic variation
-  tiles.py        tile cache proxy (raster and MapLibre styles), area downloads, MBTiles reader
+  tiles.py        tile cache proxy (raster and MapLibre styles), area downloads into charts-folder MBTiles files (ChartWriter), MBTiles reader
   web/
     index.html  css/app.css
     js/app.js            the application: tabs, panes, dialogs, websocket handling
     js/grid.js           the data tables
     js/map.js            the Leaflet map, markers, track, tools
     js/depth.js          the water depth at the cursor, read from Seascape's depth tiles
-    js/planning.js       Survey → Route
+    js/planning.js       Tools → Route
     js/plot.js           instrument time-series plots
     js/summary_html.js   the self-contained Summary page (HTML export)
     js/util.js           formatting, geodesy and small helpers
     vendor/              Leaflet, the Natural Earth coastline
-docs/            TUTORIAL.md (also shown in Survey → About), USER_GUIDE.md, this file
+docs/            TUTORIAL.md (also shown in Settings → About), USER_GUIDE.md, this file
 tests/test_core.py   pytest
-CHANGELOG.md     changes in each version (shown in Survey → About)
+CHANGELOG.md     changes in each version (shown in Settings → About)
 ```
 
 ## Conventions
@@ -71,7 +71,7 @@ CHANGELOG.md     changes in each version (shown in Survey → About)
 
 ## Publishing an update
 
-Spyhop's **Survey → About → Updates** (`spyhop/updater.py`) installs from `github.com/hansenjohnson/spyhop`:
+Spyhop's **Settings → About → Updates** (`spyhop/updater.py`) installs from `github.com/hansenjohnson/spyhop`:
 
 - **The latest release** (preferred). To publish one:
   1. bump `__version__` in `spyhop/__init__.py`

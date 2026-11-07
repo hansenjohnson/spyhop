@@ -1,4 +1,4 @@
-// Time-series plot of one NMEA reading since the start of the survey (Survey → NMEA → click a tile).
+// Time-series plot of one NMEA reading since the start of the survey (Tools → Instruments → click a tile).
 import { el, modal, timeParts, clockOffsetMin } from './util.js';
 
 const GAP_MS = 60000;           // break the line where readings stopped for longer than this
@@ -123,7 +123,7 @@ export function openInstrumentPlot(app, key) {
   canvas.addEventListener('mousemove', (e) => { hoverX = e.offsetX; draw(); });
   canvas.addEventListener('mouseleave', () => { hoverX = null; readout.textContent = 'Move the mouse over the plot to read values.'; draw(); });
   const label = app.S.inst?.[key]?.label || key;
-  const done = modal({ title: `${label} since the start of the survey`, width: '52em',
+  const done = modal({ title: `${label} since the start of the survey`, width: '52em', closeOnOutside: true,
     body: el('div', { class: 'plot-box' }, stats, canvas, readout,
       el('p', { class: 'hint' }, 'Updates every 5 seconds while open. The dashed line is the survey’s Start. Readings are saved in the survey’s _instruments.csv file and included in the separate-CSV export.')),
     onOpen: () => { load(); timer = setInterval(load, 5000); return false; },

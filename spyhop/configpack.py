@@ -7,7 +7,7 @@ A pack is a zip (or a folder) holding any of the files in PACK_CSV, report templ
     2026-11-06,Hansen Johnson,species.csv,Added Dead bird
 
 Packs are kept in `<survey data folder>/config_packs` as `<name>.spyhop.zip` (plain zips; .zip
-and .spyhop are read too) and listed in Survey → File → Config packs, where one can be used,
+and .spyhop are read too) and listed in Settings → Templates, where one can be used,
 overwritten with this computer's config, or saved new. A team also puts its pack on the web (a
 GitHub repository, a Dropbox or Google Drive link, any website); pulling it keeps a copy in the
 folder. Using a pack replaces this computer's copy of each file the pack has; it

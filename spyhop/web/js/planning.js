@@ -1,4 +1,4 @@
-// Survey → Route: design a trackline (manual clicks or a systematic parallel-leg
+// Tools → Route: design a trackline (manual clicks or a systematic parallel-leg
 // pattern), see each leg's distance and time, activate it (locked and shown on the map
 // from every tab), style it, save it as a map overlay and/or export GPX.
 import { el, esc, api, toast, confirmBox, fmtCoord, fmtPos, fmtDist, fmtBrg, distM, bearing, destination, timeParts, dashFor, LINE_STYLES } from './util.js';
@@ -390,7 +390,7 @@ export class Planner {
         el('button', { class: 'primary', onclick: () => this.saveOverlay() }, 'Save as map overlay'),
         el('button', { onclick: () => this.exportGpx() }, 'Export GPX…'),
         el('button', { onclick: () => this.importGpx() }, 'Import GPX…')),
-      el('p', { class: 'hint' }, 'A saved overlay is drawn under “Imported overlays” in the map’s layers menu and listed in Survey → Waypoints (remove it there). The GPX file holds the waypoints and the route, for a chart plotter or OpenCPN; it is also kept in the exports folder. Import GPX… loads a route back: one exported by Spyhop comes back exactly as designed (mode, legs, speed and appearance); from any other GPX file, the route (or else the waypoints, or a track) becomes a manual route.'));
+      el('p', { class: 'hint' }, 'A saved overlay is drawn under “Imported overlays” in the map’s layers menu and listed in Tools → Waypoints (remove it there). The GPX file holds the waypoints and the route, for a chart plotter or OpenCPN; it is also kept in the exports folder. Import GPX… loads a route back: one exported by Spyhop comes back exactly as designed (mode, legs, speed and appearance); from any other GPX file, the route (or else the waypoints, or a track) becomes a manual route.'));
 
     if (s.active) {
       for (const box of [design, modeBox]) {

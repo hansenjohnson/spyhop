@@ -1636,24 +1636,57 @@ def test_style_layer_proxy_cache_and_download(tmp_path):
         plan = await ts.plan_prefetch(0, world, 0, 5)
         # vector z0–3 (85 tiles) + DEM z0–2 (21) + 3 font ranges; OpenStreetMap left out
         assert plan["total"] == 85 + 21 + 3 and plan["skipped"] and "tile.openstreetmap.org" in plan["skipped"][0]
-        r = await ts.start_prefetch(0, world, 0, 5)
-        assert r["total"] == 109
+        r = await ts.start_prefetch(0, world, 0, 5, name="Cape Cod Bay")
+        assert r["total"] == 109 and r["file"] == "Cape Cod Bay.mbtiles"
         await ts._prefetch_task
         s = ts.prefetch_state
-        assert s["done"] == 109 and s["failed"] == 0 and not s["running"]
+        assert s["done"] == 109 and s["failed"] == 0 and not s["running"] and s["saved"] == 85 + 21
+
+        # the download is a file in the charts folder, listed with what's in it
+        import sqlite3 as _sq
+        chart = cfg.charts_dir / "Cape Cod Bay.mbtiles"
+        con = _sq.connect(chart)
+        meta = dict(con.execute("SELECT name, value FROM metadata"))
+        assert meta["spyhop_kind"] == "style" and meta["spyhop_source"] == "Test style" and meta["maxzoom"] == "5"
+        assert con.execute("SELECT COUNT(*) FROM spyhop_tiles").fetchone()[0] == 106
+        keys = {k for (k,) in con.execute("SELECT key FROM spyhop_files")}
+        assert "style" in keys and sum(k.startswith("tilejson:") for k in keys) == 2 and sum(k.startswith("file:") for k in keys) == 3
+        con.close()
+        assert "Cape Cod Bay.mbtiles" in cfg.mbtiles
+        info = {m["file"]: m for m in ts.mbtiles_info()}["Cape Cod Bay.mbtiles"]
+        assert info["kind"] == "style" and info["source"] == "Test style" and info["tiles"] == 106 and info["mb"] is not None
+
+        # again: nothing new to download; another layer can't add to this file
+        await ts.start_prefetch(0, world, 0, 5, name="Cape Cod Bay")
+        await ts._prefetch_task
+        assert ts.prefetch_state["saved"] == 0 and ts.prefetch_state["cached"] == 106
+        with pytest.raises(ValueError, match="already a chart"):
+            await ts.start_prefetch(1, world, 0, 2, name="Cape Cod Bay")
+        with pytest.raises(ValueError, match="name"):
+            await ts.start_prefetch(1, world, 0, 2, name="   ")
 
         rp = await ts.plan_prefetch(1, world, 0, 6)
         assert rp["zmax"] == 2 and "only goes up to zoom 2" in rp["note"] and rp["total"] == 21
-        await ts.start_prefetch(1, world, 0, 6)
+        await ts.start_prefetch(1, world, 0, 6, name="Raster test")
         await ts._prefetch_task
-        assert ts.prefetch_state["failed"] == 0
+        assert ts.prefetch_state["failed"] == 0 and ts.prefetch_state["saved"] == 21
+        con = _sq.connect(cfg.charts_dir / "Raster test.mbtiles")     # a plain MBTiles file
+        assert con.execute("SELECT COUNT(*) FROM tiles").fetchone()[0] == 21
+        assert dict(con.execute("SELECT name, value FROM metadata"))["format"] == "png"
+        con.close()
         with pytest.raises(ValueError, match="lowest zoom"):
             await ts.plan_prefetch(1, world, 4, 2)
         with pytest.raises(ValueError, match="limit"):
             await ts.start_prefetch(1, world, 0, 2, limit=10)
 
     asyncio.run(go())
-    stop()                                            # the internet is gone: everything comes from the cache
+    asyncio.run(ts.close())
+    stop()                                            # the internet is gone, and so is the browsing cache:
+    import shutil as _sh                              # everything comes from the chart files
+    _sh.rmtree(cfg.tile_cache_dir, ignore_errors=True)
+    ts = TileService(cfg)                             # as after a restart
+    import time as _t
+    ts._offline_until = _t.monotonic() + 3600          # known to be offline (the stopped test server would only time out)
 
     async def offline():
         local = "http://127.0.0.1:8765"
@@ -1666,6 +1699,44 @@ def test_style_layer_proxy_cache_and_download(tmp_path):
         assert status == 200 and ctype == "image/png"
         assert (await ts.get_online(1, 2, 1, 1))[1] == "image/png"
         assert (await ts.gl_tile(0, up(tj["tiles"][0]), 2, 9, 9))[0] is None   # not saved, and no internet
+        g = await ts.gl_file(0, ts.fill_glyphs(up(st["glyphs"]), "Noto Sans Regular", "0-255"), "_glyphs")
+        assert g == b"glyphs"
+
+        # the downloaded area on its own (preview): only the file's tiles and fonts
+        off = ts.offline_style("Cape Cod Bay.mbtiles", local)
+        here = local + "/tiles/off/Cape%20Cod%20Bay.mbtiles"
+        assert [l["id"] for l in off["layers"]] == ["bg", "lbl", "contour-labels"]
+        assert off["sources"]["dem"]["tiles"][0].startswith(here + "/t/") and off["sources"]["dem"]["maxzoom"] == 2
+        assert "url" not in off["sources"]["bathy"] and off["glyphs"] == here + "/glyphs/{fontstack}/{range}"
+        assert off["sources"]["osm"]["tiles"][0].startswith(here + "/t/")          # not downloaded: blank, not online
+        dem_set = off["sources"]["dem"]["tiles"][0].split("/t/")[1].split("/")[0]
+        assert ts.offline_style_tile("Cape Cod Bay.mbtiles", dem_set, 2, 3, 1) == png
+        assert ts.offline_style_tile("Cape Cod Bay.mbtiles", dem_set, 5, 0, 0) is None
+        assert ts.offline_glyphs("Cape Cod Bay.mbtiles", "Noto Sans Regular", "0-255") == b"glyphs"
+        assert ts.offline_style("Raster test.mbtiles", local) is None
         await ts.close()
     asyncio.run(offline())
-    assert ts.cache_stats()["tiles"] >= 85 + 21 + 21
+    assert ts.cache_stats()["tiles"] == 0
+
+
+def test_offline_backoff_is_per_server(tmp_path):
+    """A map server that can't be reached is skipped for a while, without blocking the others."""
+    import asyncio, socket
+    from spyhop.config import Config
+    from spyhop.tiles import TileService, OFFLINE_AFTER
+    png = _png_bytes()
+    base, stop = _serve({"/t/1/0/0.png": (200, "image/png", png)})
+    s = socket.socket(); s.bind(("127.0.0.1", 0)); dead = s.getsockname()[1]; s.close()   # nothing listens here
+    ts = TileService(Config(tmp_path))
+
+    async def go():
+        for _ in range(OFFLINE_AFTER):
+            assert (await ts._download(f"http://127.0.0.1:{dead}/x"))[0] == 0
+        assert (await ts._download(f"http://127.0.0.1:{dead}/x"))[2] == "no internet connection"   # skipped now
+        st, body, _ = await ts._download(base + "/t/1/0/0.png")                                     # others still work
+        assert st == 200 and body == png
+        await ts.close()
+    try:
+        asyncio.run(go())
+    finally:
+        stop()

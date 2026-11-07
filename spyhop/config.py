@@ -22,7 +22,7 @@ def _base_dir() -> Path:
 
 
 def clean_timezone(v) -> str:
-    """Settings → Clock: 'local' (the computer's), 'UTC', 'auto' (from the platform's position)
+    """Settings → General → Clock: 'local' (the computer's), 'UTC', 'auto' (from the platform's position)
     or a fixed offset such as 'UTC-04:00'. Anything else (older IANA names) becomes 'local'."""
     from .tzguess import parse_offset, offset_name
     v = str(v or "").strip()
@@ -152,7 +152,7 @@ DEFAULT_SHORTCUTS = ["combo", "action", "prefill"], [
     ["Mod+Shift+M", "toggle-log", ""],
 ]
 
-# what each list's columns are called in Survey → Dropdowns, and which must be unique
+# what each list's columns are called in Settings → Dropdowns, and which must be unique
 LIST_COLUMNS = {
     "species": {"name": "Name", "species_code": "Code", "color": "Colour"},
     "event_types": {"name": "Name", "event_code": "Code", "color": "Colour"},
@@ -382,8 +382,11 @@ class Config:
         readme = self.charts_dir / "README.txt"
         if not readme.exists():
             readme.write_text(
-                "Put offline chart or basemap tiles here as .mbtiles files (raster PNG/JPEG tiles).\n"
-                "Each file appears in the map's layer menu after restarting Spyhop.\n\n"
+                "Offline charts and maps, as .mbtiles files. Areas downloaded in Spyhop (Settings -> General ->\n"
+                "Map and offline charts) are saved here, one file per area; you can also add MBTiles files of\n"
+                "raster PNG/JPEG tiles. Each file appears in the map's layers menu as \"... (offline)\" (after\n"
+                "\"Look for new files\" in that section, or a restart). Copy a file to another computer's charts\n"
+                "folder to use it there.\n\n"
                 "Free NOAA nautical charts for US waters (updated weekly):\n"
                 "  https://distribution.charts.noaa.gov/ncds/  -> click a region -> download the MBTiles file.\n")
 
@@ -459,7 +462,7 @@ class Config:
         return known + [h for h in have if h not in known]
 
     def save_list(self, name: str, rows: list[dict]) -> list[dict]:
-        """Replace a drop-down list (Survey → Dropdowns). Raises ValueError listing the problems."""
+        """Replace a drop-down list (Settings → Dropdowns). Raises ValueError listing the problems."""
         if name not in DEFAULT_LISTS:
             raise ValueError("Unknown list")
         hdr = self.list_header(name)
@@ -489,7 +492,7 @@ class Config:
         return out
 
     def save_shortcuts(self, rows: list[dict], tabs: dict | None = None) -> list[dict]:
-        """Replace the keyboard shortcuts (Survey → Shortcuts). `tabs` maps data tabs to their column keys,
+        """Replace the keyboard shortcuts (Settings → Shortcuts). `tabs` maps data tabs to their column keys,
         to check pre-fills. Raises ValueError listing the problems."""
         out, problems, seen = [], [], {}
         for i, r in enumerate(rows or [], 1):

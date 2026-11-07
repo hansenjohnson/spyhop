@@ -7,8 +7,9 @@
 const MAX_TILES = 24;
 
 export class DepthProbe {
-  constructor(idx, unit) {
-    this.idx = idx;
+  // styleUrl: the layer's style.json (/tiles/gl/<i>/style.json, or /tiles/off/<file>/style.json for a saved area)
+  constructor(styleUrl, unit) {
+    this.styleUrl = styleUrl;
     this.unit = ['m', 'ft', 'fm'].includes(unit) ? unit : 'm';
     this.tiles = new Map();          // url -> Promise<ImageData|null>
     this.info = null;
@@ -17,7 +18,7 @@ export class DepthProbe {
   async init() {
     if (this.info) return this.info;
     try {
-      const style = await (await fetch(`/tiles/gl/${this.idx}/style.json`)).json();
+      const style = await (await fetch(this.styleUrl)).json();
       const src = Object.values(style.sources || {}).find((s) => s.type === 'raster-dem');
       if (!src) return (this.info = { none: true });
       let { tiles, minzoom = 0, maxzoom = 14 } = src;

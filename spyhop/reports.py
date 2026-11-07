@@ -1,4 +1,4 @@
-"""Reports (Survey → Reports): simple tables of selected records, defined in JSON files.
+"""Reports (Tools → Reports): simple tables of selected records, defined in JSON files.
 
 Spyhop ships the definitions in `spyhop/report_defs/`. A group adds its own, or changes
 one of these, by putting a .json file in the `reports` folder inside Spyhop's own folder:

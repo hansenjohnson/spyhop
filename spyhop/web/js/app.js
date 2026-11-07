@@ -27,7 +27,13 @@ class App {
     try { this.logSize = localStorage.getItem('wsr.logsize') || 'normal'; } catch { this.logSize = 'normal'; }
     this.setView(this.S.config.settings.view || 'split-v', false);
     this.updateLogButtons();
-    try { this.lastSurveyTab = this.tabAlias(localStorage.getItem('wsr.surveytab') || 'survey'); } catch { this.lastSurveyTab = 'survey'; }
+    // the sub-tab last used in each group (Tools, Settings); before 0.15 one Survey group (wsr.surveytab)
+    this.lastSub = { tools: 'marks', config: 'settings' };
+    try {
+      const saved = JSON.parse(localStorage.getItem('wsr.subtabs') || 'null');
+      if (saved) Object.assign(this.lastSub, saved);
+      else { const old = this.tabAlias(localStorage.getItem('wsr.surveytab') || ''); const g = this.groupOf(old); if (g) this.lastSub[g] = old; }
+    } catch {}
     this.connect();
     setInterval(() => {
       this.updateStatus();
@@ -37,7 +43,7 @@ class App {
     this.watchSlowness();
     this.watchErrors();
     const ab = this.S.about || {};
-    if (ab.updated_from) toast(`Spyhop has been updated from ${ab.updated_from} to ${ab.spyhop}. See what's new in Survey → About.`, 'info', 12000);
+    if (ab.updated_from) toast(`Spyhop has been updated from ${ab.updated_from} to ${ab.spyhop}. See what's new in Settings → About.`, 'info', 12000);
     window.addEventListener('resize', () => this.map.invalidate());
     (this.S.notices || []).forEach((n) => toast(n, 'warn', 15000));
     this.showTab(this.S.survey ? (localStorage.getItem('wsr.tab') || 'sightings') : 'survey');
@@ -125,17 +131,27 @@ class App {
   dataTabs() {
     return ['sightings', 'effort', 'events', 'marks'];
   }
-  // The Survey tab holds a second row of tabs. Its first one ("File") is the pane called 'survey'.
-  // data tabs shown in the top row (Waypoints, the 'marks' table, lives inside Survey)
+  // Top row: the data tabs, Survey (the pane called 'survey'), then two groups with a second row of tabs.
+  // Pane keys stay as they were (so tab: shortcuts and saved tabs keep working): 'settings' is General,
+  // 'nmea' is Instruments, 'marks' is the Waypoints table.
   topTabs() { return ['sightings', 'effort', 'events']; }
-  surveyTabs() {
-    return [['survey', 'File'], ['settings', 'Settings'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'], ['marks', 'Waypoints'], ['route', 'Route'],
-      ['nmea', 'NMEA'], ['qc', 'Quality Control'], ['reports', 'Reports'], ['about', 'About']];
+  tabGroups() {
+    return [
+      ['tools', 'Tools', [['marks', 'Waypoints'], ['route', 'Route'], ['nmea', 'Instruments'], ['qc', 'Quality Control'], ['reports', 'Reports']]],
+      ['config', 'Settings', [['settings', 'General'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'],
+        ['templates', 'Templates'], ['about', 'About']]]];
+  }
+  groupTabs() { return this.tabGroups().flatMap(([g, , tabs]) => tabs.map(([k, l]) => [k, l, g])); }
+  groupOf(tab) { return this.groupTabs().find(([k]) => k === tab)?.[2] || null; }
+  // "Settings → General", "Tools → Instruments", "Survey"
+  tabPath(tab) {
+    const t = this.groupTabs().find(([k]) => k === tab);
+    if (!t) return tab === 'survey' ? 'Survey' : (this.S.schema.tabs[tab]?.title || tab);
+    return `${this.tabGroups().find(([g]) => g === t[2])[1]} → ${t[1]}`;
   }
   // tabs that were renamed or merged: Planning → Route and Summary → Reports (0.7.0)
   tabAlias(tab) { return { planning: 'route', summary: 'reports' }[tab] || tab; }
-  inSurveyGroup(tab) { return this.surveyTabs().some(([k]) => k === tab); }
-  allTabs() { return [...this.topTabs(), ...this.surveyTabs().map(([k]) => k)]; }
+  allTabs() { return [...this.topTabs(), 'survey', ...this.groupTabs().map(([k]) => k)]; }
 
   // ---------------------------------------------------------------- layout
   buildLayout() {
@@ -171,7 +187,7 @@ class App {
       f('sf-track', 'Internal trackline (switch on/off in Settings)'),
       f('sf-effort', 'Latest effort state'),
       el('div', { class: 'sf grow' }),
-      f('sf-version', 'Spyhop version — click for details (Survey → About)', `Spyhop ${this.S.about?.spyhop || ''}`),
+      f('sf-version', 'Spyhop version — click for details (Settings → About)', `Spyhop ${this.S.about?.spyhop || ''}`),
       f('sf-conn', 'Connection to Spyhop'));
     $('#sf-version').addEventListener('click', () => this.showTab('about'));
     $('#sf-remind').addEventListener('click', () => this.setReminder());
@@ -185,15 +201,17 @@ class App {
     nav.replaceChildren(...this.topTabs().map((t) => el('button', {
       role: 'tab', 'data-tab': t, onclick: () => { restore(); this.showTab(t); }, title: combo(t) },
       this.S.schema.tabs[t].title, el('span', { class: 'count', id: `count-${t}` }))),
-      // "Survey" opens the survey tab you used last (File the first time)
-      el('button', { role: 'tab', 'data-tab': 'survey', class: 'group-tab', title: this.surveyTabs().map(([, l]) => l).join(', '),
-        onclick: () => { restore(); this.showTab(this.inSurveyGroup(this.lastSurveyTab) ? this.lastSurveyTab : 'survey'); } }, 'Survey'),
+      el('button', { role: 'tab', 'data-tab': 'survey', title: 'Start, end, open and export surveys' + (combo('survey') ? ` (${combo('survey')})` : ''),
+        onclick: () => { restore(); this.showTab('survey'); } }, 'Survey'),
+      // Tools and Settings open the tab of theirs you used last
+      ...this.tabGroups().map(([g, label, tabs]) => el('button', { role: 'tab', 'data-group': g, class: 'group-tab', title: tabs.map(([, l]) => l).join(', '),
+        onclick: () => { restore(); const last = this.lastSub[g]; this.showTab(tabs.some(([k]) => k === last) ? last : tabs[0][0]); } }, label)),
       el('span', { class: 'tabs-spacer' }),
       el('button', { id: 'log-btn-min', class: 'winbtn', onclick: () => this.setLogSize(this.logSize === 'min' ? 'normal' : 'min') }),
       el('button', { id: 'log-btn-max', class: 'winbtn', onclick: () => this.setLogSize(this.logSize === 'max' ? 'normal' : 'max') }));
     this.updateLogButtons();
-    $('#subtabs').replaceChildren(...this.surveyTabs().map(([k, label]) => el('button', {
-      role: 'tab', 'data-tab': k, title: combo(k), onclick: () => this.showTab(k) }, label,
+    $('#subtabs').replaceChildren(...this.groupTabs().map(([k, label, g]) => el('button', {
+      role: 'tab', 'data-tab': k, 'data-group': g, title: combo(k), onclick: () => this.showTab(k) }, label,
       this.S.schema.tabs[k] ? el('span', { class: 'count', id: `count-${k}` }) : null)));
     const body = $('#tab-body');
     body.replaceChildren();
@@ -203,7 +221,7 @@ class App {
       body.append(pane);
       this.grids[t] = new Grid(this, t, pane);
     }
-    body.append(...this.surveyTabs().filter(([k]) => !this.grids[k]).map(([k]) => el('div', { class: 'tab-pane scroll', id: `pane-${k}` })));
+    body.append(...['survey', ...this.groupTabs().map(([k]) => k)].filter((k) => !this.grids[k]).map((k) => el('div', { class: 'tab-pane scroll', id: `pane-${k}` })));
     // map overlays live with the waypoints
     $('#pane-marks').append(el('section', { id: 'overlay-panel', class: 'overlay-panel' }));
     this.renderOverlayPanel();
@@ -346,9 +364,10 @@ class App {
     this.renderPane(this.tab);
   }
 
-  // draw one of the Survey tab's panes
+  // draw one of the panes that aren't data tables
   renderPane(tab) {
     const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, dropdowns: this.renderDropdowns, nmea: this.renderNmea,
+      inputs: this.renderInputs, templates: this.renderTemplates,
       qc: this.renderQc, reports: this.renderReports, about: this.renderAbout,
       route: () => this.planner.render() }[tab];
     if (f) f.call(this);
@@ -370,12 +389,12 @@ class App {
     if (!this.allTabs().includes(tab)) tab = 'sightings';
     if (this.tab === 'route' && tab !== 'route') this.planner.hide();
     this.tab = tab;
-    const group = this.inSurveyGroup(tab);
-    if (group) this.lastSurveyTab = tab;
-    try { localStorage.setItem('wsr.tab', tab); if (group) localStorage.setItem('wsr.surveytab', tab); } catch {}
-    $$('#tabs button[data-tab]').forEach((b) => b.classList.toggle('active', group ? b.dataset.tab === 'survey' : b.dataset.tab === tab));
-    $$('#subtabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-    $('#log-pane')?.classList.toggle('survey-group', group);
+    const group = this.groupOf(tab);
+    if (group) this.lastSub[group] = tab;
+    try { localStorage.setItem('wsr.tab', tab); if (group) localStorage.setItem('wsr.subtabs', JSON.stringify(this.lastSub)); } catch {}
+    $$('#tabs button[data-tab], #tabs button[data-group]').forEach((b) => b.classList.toggle('active', group ? b.dataset.group === group : b.dataset.tab === tab));
+    $$('#subtabs button').forEach((b) => { b.classList.toggle('active', b.dataset.tab === tab); b.hidden = b.dataset.group !== group; });
+    $('#log-pane')?.classList.toggle('survey-group', !!group);
     $$('.tab-pane').forEach((p) => p.classList.toggle('active', p.id === `pane-${tab}`));
     this.renderPane(tab);
     if (tab === 'route') this.planner.show();
@@ -452,7 +471,9 @@ class App {
         this.updateStatus();
         if (this.tab === 'survey' && !document.activeElement?.closest('#pane-survey input[type=text], #pane-survey textarea')) this.renderSurvey();
         if (this.tab === 'settings' && !document.activeElement?.closest('#pane-settings')) this.renderSettings();
-        if (this.tab === 'nmea' && !document.activeElement?.closest('#pane-nmea input[type=text], #pane-nmea input[type=number], #pane-nmea select')) this.renderNmea();
+        if (this.tab === 'nmea' && !document.activeElement?.closest('#pane-nmea')) this.renderNmea();
+        if (this.tab === 'inputs' && !document.activeElement?.closest('#pane-inputs input[type=text], #pane-inputs input[type=number], #pane-inputs select')) this.renderInputs();
+        if (this.tab === 'templates' && !document.activeElement?.closest('#pane-templates input[type=text], #pane-templates textarea')) this.renderTemplates();
         if (this.tab === 'shortcuts') this.renderShortcuts();
         break;
       }
@@ -469,8 +490,13 @@ class App {
         break;
       case 'update':
         this.updateInfo = m.info;
-        toast(`Spyhop ${m.info.latest} is available: see Survey → About → Updates.`, 'info', 10000);
+        toast(`Spyhop ${m.info.latest} is available: see Settings → About → Updates.`, 'info', 10000);
         if (this.tab === 'about') this.renderAbout();
+        break;
+      case 'charts':
+        this.S.mbtiles = m.mbtiles;
+        this.map.syncCharts(m.mbtiles);
+        this.renderChartList();
         break;
       case 'overlays': api('/api/bootstrap').then((d) => { this.S.overlays = d.overlays; this.S.surveys = d.surveys; this.map.loadOverlays(d.overlays); this.renderOverlayPanel(); }); break;
       case 'reload': this.reload(); break;
@@ -809,8 +835,8 @@ class App {
       el('h4', {}, 'Spyhop folder'),
       el('p', {}, 'Spyhop’s own files are in ', el('span', { class: 'mono' }, S.config.root), '. ',
         el('a', { href: '#', id: 'open-app-folder', onclick: (e) => { e.preventDefault(); this.open('app'); } }, 'Open folder')),
-      el('p', { class: 'hint' }, 'It holds the config files (lists and shortcuts, edited in Survey → Dropdowns and Shortcuts; map display), report templates, settings, offline charts, map overlays and the tile cache, logs, and config backups. Spyhop always uses this folder.'));
-    pane.replaceChildren(...[current, list, folder, this.groupConfigSection()].filter(Boolean));
+      el('p', { class: 'hint' }, 'It holds the config files (lists and shortcuts, edited in Settings → Dropdowns and Shortcuts; map display), report templates, settings, offline charts, map overlays and the tile cache, logs, and config backups. Spyhop always uses this folder.'));
+    pane.replaceChildren(...[current, list, folder].filter(Boolean));
   }
 
   async exportData() {
@@ -892,7 +918,7 @@ class App {
     if (!pane) return;
     const sv = this.S.survey;
     pane.replaceChildren(sv ? this.qcSection(sv) : el('section', { class: 'settings-sec' }, el('h3', {}, 'Quality control check'),
-      el('p', {}, 'Open a survey (in Survey → File) to check it.')));
+      el('p', {}, 'Open a survey (in Survey) to check it.')));
   }
 
   qcSection(sv) {
@@ -985,7 +1011,7 @@ class App {
     pane.replaceChildren(this.aboutSection(), el('section', { class: 'settings-sec', id: 'tutorial-section' }, tut));
     fetch('/api/tutorial').then((r) => r.text()).then((md) => {
       // the first heading is the section title; drop the line that points back to this tab
-      const nodes = renderMarkdown(md.replace(/^.*It's also in Spyhop itself.*$/m, (l) => l.replace(/ It's also in Spyhop itself, under \*\*Survey → About\*\*\./, '')));
+      const nodes = renderMarkdown(md.replace(/^.*It's also in Spyhop itself.*$/m, (l) => l.replace(/ It's also in Spyhop itself, under \*\*(?:Survey|Settings) → About\*\*\./, '')));
       tut.replaceChildren(...(nodes.length ? nodes : [el('p', { class: 'hint' }, 'The tutorial (docs/TUTORIAL.md) is missing.')]));
     }).catch(() => {});
   }
@@ -1110,7 +1136,7 @@ class App {
   }
 
   onShortcut(e) {
-    if (this.comboCapture && this.comboCapture(e) !== false) return;     // Survey → Shortcuts is recording new keys
+    if (this.comboCapture && this.comboCapture(e) !== false) return;     // Settings → Shortcuts is recording new keys
     if (isModalOpen()) return;
     if (e.key === 'Escape' && this.map?.measure?.active) { this.map.endMeasure(); return; }
     for (const s of this.S.config.shortcuts) {
@@ -1136,7 +1162,7 @@ class App {
       case 'add': this.addRow(arg, prefill); break;
       case 'add-current':
         if (this.grids[this.tab]) this.addRow(this.tab, prefill);
-        else toast('Go to Sightings, Effort, Events or Survey → Waypoints to add a row.', 'info', 2500);
+        else toast('Go to Sightings, Effort, Events or Tools → Waypoints to add a row.', 'info', 2500);
         break;
       case 'toggle-effort': this.toggleEffort(); break;
       case 'undo': this.undo(); break;
@@ -1177,7 +1203,7 @@ class App {
     });
     const effortNow = eff.at(-1)?.Effort === 'ON';
     // distances from the internal track, plus the live stretch since the last track point
-    // trackline breaks (GPS jumps or losses, Settings → Tracking) and ERROR stretches don't count
+    // trackline breaks (GPS jumps or losses, Settings → General → Tracking) and ERROR stretches don't count
     let total = 0, onDist = 0;
     const tr = S.track, tst = trackStates(tr, S.tables.effort.rows);
     for (let i = 1; i < tr.length; i++) {
@@ -1324,6 +1350,13 @@ class App {
   }
 
   // ---------------------------------------------------------------- config packs (configpack.py)
+  // Settings → Templates: config packs (configpack.py)
+  renderTemplates() {
+    const pane = $('#pane-templates');
+    if (!pane) return;
+    pane.replaceChildren(this.groupConfigSection());
+  }
+
   groupConfigSection() {
     const S = this.S, st = S.config.settings, gc = (this.gc ||= {});
     const sec = (title, ...kids) => el('section', { class: 'settings-sec', id: 'group-config' }, el('h3', {}, title), ...kids);
@@ -1337,7 +1370,7 @@ class App {
 
     // ---- this computer's config and the packs in the folder
     const kids = [
-      el('p', {}, 'A config pack holds the team’s config files in one file: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates. Packs are kept in the config packs folder in the survey data folder; share one by uploading it (or copying it to a USB stick) and use it on another computer.'),
+      el('p', {}, 'A template (config pack) holds the team’s config files in one file: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates. Packs are kept in the config packs folder in the survey data folder; share one by uploading it (or copying it to a USB stick) and use it on another computer.'),
     ];
     if (!L) kids.push(el('p', { class: 'hint' }, gc.loading ? 'Reading the config packs folder…' : ''));
     else {
@@ -1385,7 +1418,7 @@ class App {
         ? `Done: ${gc.done.changed.join(', ')} ${gc.done.changed.length > 1 ? 'were' : 'was'} replaced.` : 'Done; nothing needed changing.',
         gc.done.copy ? el('span', {}, ' A copy was kept in the config packs folder as ', el('span', { class: 'mono' }, gc.done.copy), '.') : '',
         gc.done.backup ? el('span', {}, ' Backup saved as ', el('span', { class: 'mono' }, gc.done.backup), '. ') : ' ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); gc.done = null; this.renderSurvey(); } }, 'OK')));
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); gc.done = null; this.renderTemplates(); } }, 'OK')));
     }
     const r = gc.result;
     if (r) kids.push(this.configPackResult(r));
@@ -1417,7 +1450,7 @@ class App {
       el('details', { class: 'hint' }, el('summary', {}, 'How to share a pack with the team'),
         el('p', {}, 'Save this computer’s config as a pack (or overwrite the team’s pack with it), giving your name and what you changed: that’s added to the pack’s record of changes (spyhop-config.csv inside it). Then upload the file in place of the old one, keeping the same link (in Google Drive: Manage versions → Upload new version). Others press Check with that link.'),
         el('p', {}, 'Packs are ordinary zip files named .spyhop.zip, so they open in any zip tool; Spyhop also reads packs named .zip or .spyhop. To leave a file out of a pack (e.g. display.csv, so each person keeps their own marker and text sizes), unzip it, delete the file and zip it again. SharePoint and OneDrive links usually need a sign-in, so they don’t work. See docs/CONFIG_PACKS.md.')));
-    return sec('Config packs', ...kids);
+    return sec('Templates', ...kids);
   }
 
   configPackResult(r) {
@@ -1427,7 +1460,7 @@ class App {
     const title = r.kind === 'backup' ? `Restoring the backup ${r.name}` : r.kind === 'folder' ? `Using the pack ${r.name}` : 'The pack from the web';
     const box = [el('h4', {}, `${title}: what would change`), el('p', { class: 'hint' }, `From ${r.source}`)];
     box.push(el('p', { class: 'warnbox' }, el('b', {}, 'This overwrites this computer’s config files. '),
-      'Every file in the pack replaces the one here; nothing is merged. If the pack has report templates, they replace all of this computer’s templates. Survey data, waypoints and your own settings (data folder, GPS inputs, clock and the rest of Survey → Settings) are never changed.'));
+      'Every file in the pack replaces the one here; nothing is merged. If the pack has report templates, they replace all of this computer’s templates. Survey data, waypoints and your own settings (data folder, GPS inputs, clock and the rest of Settings → General) are never changed.'));
     if (r.problems.length) {
       box.push(el('div', { class: 'errbox' }, el('b', {}, 'The pack has problems, so it can’t be used. Ask whoever looks after it to fix:'),
         el('ul', {}, r.problems.map((p) => el('li', {}, p)))));
@@ -1444,7 +1477,7 @@ class App {
         el('tbody', {}, r.manifest.map((m) => el('tr', {}, el('td', {}, m.date), el('td', {}, m.by), el('td', {}, m.files), el('td', {}, m.notes))))));
     } else box.push(el('p', { class: 'hint' }, 'The pack has no spyhop-config.csv, so there’s no record of its changes.'));
     if (r.ignored.length) box.push(el('p', { class: 'hint' }, `Not config files, so left alone: ${r.ignored.join(', ')}`));
-    const cancel = el('button', { onclick: () => { gc.result = null; this.renderSurvey(); } }, 'Cancel');
+    const cancel = el('button', { onclick: () => { gc.result = null; this.renderTemplates(); } }, 'Cancel');
     if (!r.problems.length) {
       if (!todo.length) {
         box.push(el('p', { id: 'gc-uptodate' }, el('b', {}, 'This computer already has this config.')),
@@ -1473,7 +1506,7 @@ class App {
     gc.loading = true;
     try { gc.list = await api('/api/configpacks'); gc.listDir = this.S.config.data_dir; } catch { gc.list = gc.list || null; gc.listDir = this.S.config.data_dir; }
     gc.loading = false;
-    if (this.tab === 'survey') this.renderSurvey();
+    if (this.tab === 'templates') this.renderTemplates();
   }
 
   // name: overwrite that pack in the folder; null: save a new one
@@ -1522,10 +1555,10 @@ class App {
     let req = from;
     if (!req) { const url = ($('#gc-url')?.value ?? gc.url ?? '').trim(); gc.url = url; req = { url }; }
     gc.result = null; gc.done = null; gc.busy = from ? null : 'check';
-    this.renderSurvey();
+    this.renderTemplates();
     try { gc.result = await api('/api/groupconfig/check', req); } catch { /* the error is shown as a toast */ }
     gc.busy = null;
-    this.renderSurvey();
+    this.renderTemplates();
     $('#gc-result')?.scrollIntoView({ block: 'nearest' });
   }
 
@@ -1541,7 +1574,7 @@ class App {
       if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and Quality Control will flag values that are no longer in a list. Changing the config during a survey is unusual: are you sure?';
       if (!await confirmBox('Overwrite config files?', text, 'Overwrite', true)) return;
     }
-    gc.busy = 'pull'; this.renderSurvey();
+    gc.busy = 'pull'; this.renderTemplates();
     try {
       const res = await api('/api/groupconfig/pull', { token: r.token, backup, backup_dir: backupDir });
       gc.done = { changed: res.changed, backup: res.backup, copy: res.copy }; gc.result = null;
@@ -1614,8 +1647,10 @@ class App {
           el('label', { class: 'row' }, 'Lat/lon format', sel('latlon_format', [['DDM', 'Deg + decimal min'], ['DD', 'Decimal degrees'], ['DMS', 'Deg min sec']])),
           el('label', { class: 'row' }, 'Clock', sel('timezone', this.clockOptions()), this.clockHint())),
         el('p', { class: 'hint' }, 'Each sighting row stores its own bearing reference and distance unit, so changing these defaults never changes old rows. “auto” variation uses the World Magnetic Model if installed, otherwise the GPS. The clock setting changes how all times are shown; the files always store the UTC offset with each time.')),
-      sec('GPS / NMEA inputs', el('p', {}, 'GPS and instrument inputs, live readings and raw NMEA logging are in Survey → ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('nmea'); } }, 'NMEA'), '.')),
+      sec('GPS / NMEA inputs', el('p', {}, 'GPS and instrument inputs are in ',
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('inputs'); } }, 'Settings → Inputs'),
+        '; live readings and raw NMEA logging in ',
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('nmea'); } }, 'Tools → Instruments'), '.')),
       sec('Text size',
         el('div', { class: 'grid2' },
           dnum('grid_font_size', 'Table font size', 9, 28), dnum('ui_font_size', 'Interface font size', 9, 24))),
@@ -1658,14 +1693,14 @@ class App {
     for (const row of pane.querySelectorAll('label.row')) {
       const first = row.firstChild;
       if (first && first.nodeType === 3) row.replaceChild(el('span', { class: 'lbl' }, first.textContent), first);
-    }
+    }    this.renderChartList();
   }
 
   // ---------------------------------------------------------------- shortcuts tab
-  // Survey → Shortcuts: an editable table of keyboard shortcuts (shortcuts.csv)
+  // Settings → Shortcuts: an editable table of keyboard shortcuts (shortcuts.csv)
   shortcutActions() {
     const tabName = Object.fromEntries([...this.dataTabs().map((t) => [t, this.S.schema.tabs[t].title]),
-      ...this.surveyTabs().map(([k, l]) => [k, `Survey → ${l}`])]);
+      ['survey', 'Survey'], ...this.groupTabs().map(([k]) => [k, this.tabPath(k)])]);
     return [
       ['add:sightings', 'Add a sighting'], ['add:effort', 'Add a conditions (effort) row'], ['add:events', 'Add an event'],
       ['add:marks', 'Add a waypoint'], ['add-current', 'Add a row to the table you’re in'],
@@ -1798,7 +1833,7 @@ class App {
     toast('Shortcuts saved');
   }
 
-  // ---------------------------------------------------------------- Survey → Dropdowns: the drop-down lists
+  // ---------------------------------------------------------------- Settings → Dropdowns: the drop-down lists
   dropdownLists() { return [['species', 'Species'], ['event_types', 'Events'], ['behaviors', 'Behaviors'], ['observers', 'Observers']]; }
 
   renderDropdowns() {
@@ -1855,7 +1890,7 @@ class App {
       observers: 'The observer drop-downs (Obs in Sightings; Port, Recorder and Stbd in Effort). The initials are what’s recorded; NA means nobody in that position.' }[cur];
     pane.replaceChildren(pills, el('section', { class: `settings-sec dd-sec${locked ? ' dd-locked' : ''}` },
       locked ? el('p', { class: 'warnbox', id: 'dd-locked' }, el('b', {}, 'A survey is under way, so the drop-down lists can’t be changed. '),
-        'End the survey (Survey → File) to edit them.') : null,
+        'End the survey (in Survey) to edit them.') : null,
       el('p', {}, what),
       el('table', { class: 'summary edit-table dd-edit', 'data-list': cur },
         el('thead', {}, el('tr', {}, ...cols.map((c) => el('th', {}, labels[c] || c)), el('th', {}, ''))),
@@ -1886,7 +1921,7 @@ class App {
     toast(`${Object.fromEntries(this.dropdownLists())[list]} list saved`);
   }
 
-  // Settings → Clock choices: the computer's zone, the platform's position, UTC, and every UTC offset
+  // Settings → General → Clock choices: the computer's zone, the platform's position, UTC, and every UTC offset
   clockOptions() {
     const hrs = [-12, -11, -10, -9.5, -9, -8, -7, -6, -5, -4, -3.5, -3, -2, -1, 1, 2, 3, 3.5, 4, 4.5, 5, 5.5,
       5.75, 6, 6.5, 7, 8, 8.75, 9, 9.5, 10, 10.5, 11, 12, 12.75, 13, 14];
@@ -1947,7 +1982,7 @@ class App {
     if (!box) return;
     const d = this.reportDefs.reports.find((x) => x.id === id);
     if (!d) { box.replaceChildren(el('p', { class: 'hint' }, 'Loading…')); return; }
-    if (!this.S.survey) { box.replaceChildren(el('section', { class: 'settings-sec' }, el('h3', {}, d.title), el('p', { class: 'hint' }, 'Open a survey (in Survey → File) to see this report.'))); return; }
+    if (!this.S.survey) { box.replaceChildren(el('section', { class: 'settings-sec' }, el('h3', {}, d.title), el('p', { class: 'hint' }, 'Open a survey (in Survey) to see this report.'))); return; }
     let r;
     try { r = (await api(`/api/reports/${encodeURIComponent(id)}`)).report; } catch { return; }
     if (this.reportTab !== id) return;
@@ -2012,7 +2047,7 @@ class App {
         this.S.nmea = { ...(this.S.nmea || {}), all_sources: r.sources };
         this.nmeaDraft = null;
         toast('GPS inputs applied');
-        this.renderNmea();
+        this.renderInputs();
       } catch {}
     };
     const draw = () => {
@@ -2045,18 +2080,18 @@ class App {
       }
     }).catch(() => {});
     return el('section', { class: 'settings-sec' }, el('h3', {}, 'GPS / NMEA inputs'),
-      el('p', { class: 'hint' }, 'Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS; the readings above from the other sentences, from any talker. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
+      el('p', { class: 'hint' }, 'Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS; the readings in Tools → Instruments from the other sentences, from any talker. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
       list, ports,
       el('div', { class: 'btnrow' },
         el('button', { onclick: () => { sources.push({ type: 'serial', enabled: true, ...defaults.serial }); markDirty(); draw(); } }, '+ Add input'),
         applyBtn,
-        el('button', { onclick: () => { this.nmeaDraft = null; this.renderNmea(); }, title: 'Discard unapplied changes' }, 'Revert')),
+        el('button', { onclick: () => { this.nmeaDraft = null; this.renderInputs(); }, title: 'Discard unapplied changes' }, 'Revert')),
       el('div', { id: 'nmea-status', class: 'nmea-status' }),
       el('details', {}, el('summary', {}, 'Raw NMEA monitor'), el('pre', { id: 'nmea-raw', class: 'raw' }),
         el('button', { onclick: () => api('/api/nmea').then((r) => { this.S.nmea = r; this.updateNmeaStatus(true); }) }, 'Refresh')));
   }
 
-  // ---------------------------------------------------------------- NMEA tab
+  // ---------------------------------------------------------------- Tools → Instruments
   renderNmea() {
     const pane = $('#pane-nmea');
     if (!pane) return;
@@ -2075,11 +2110,20 @@ class App {
         el('label', { class: 'check' }, logChk, el('span', {}, el('b', {}, 'Record raw NMEA to a file'), ' — every sentence from every input, as received')),
         el('label', { class: 'check' }, tsChk, el('span', {}, 'Start each line with the UTC time and the input name (untick for plain NMEA)'))),
       el('p', { id: 'rawlog-status', class: 'hint' }),
-      el('p', { class: 'hint' }, 'Logs are saved in the nmea_logs folder inside the survey data folder, one file per survey (a new file starts when you start, open or close a survey). Recording carries on after a restart until you switch it off. A log can be played back as a “file” input below. ',
+      el('p', { class: 'hint' }, 'Logs are saved in the nmea_logs folder inside the survey data folder, one file per survey (a new file starts when you start, open or close a survey). Recording carries on after a restart until you switch it off. A log can be played back as a “file” input (Settings → Inputs). ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('nmealogs'); } }, 'Open the log folder')));
-    pane.replaceChildren(inst, raw, this.nmeaSection());
+    pane.replaceChildren(inst, raw);
     this.updateInstruments();
     this.updateRawLog();
+  }
+
+  // Settings → Inputs: the GPS / NMEA inputs
+  renderInputs() {
+    const pane = $('#pane-inputs');
+    if (!pane) return;
+    pane.replaceChildren(this.nmeaSection(), el('p', { class: 'hint' }, 'Live readings from these inputs and the raw NMEA log are in ',
+      el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('nmea'); } }, 'Tools → Instruments'), '.'));
+    this.updateNmeaStatus();
   }
 
   updateInstruments() {
@@ -2088,7 +2132,7 @@ class App {
     const inst = this.S.inst || {};
     const groups = ['Navigation', 'Depth', 'Wind', 'Weather', 'Engine', 'Other transducers'];
     const keys = Object.keys(inst).sort((a, b) => inst[a].order - inst[b].order);
-    if (!keys.length) { box.replaceChildren(el('p', { class: 'hint' }, 'No instrument data yet. Add or check the inputs below.')); return; }
+    if (!keys.length) { box.replaceChildren(el('p', { class: 'hint' }, 'No instrument data yet. Add or check the inputs in Settings → Inputs.')); return; }
     const digits = (u) => (u.startsWith('°') && u !== '°C' ? 0 : u === 'rpm' || u === '%' ? 0 : u === '' ? 1 : 1);
     box.replaceChildren(...groups.filter((g) => keys.some((k) => inst[k].group === g)).map((g) => el('div', { class: 'inst-group' },
       el('h4', {}, g),
@@ -2185,10 +2229,19 @@ class App {
     const zmax = el('input', { type: 'number', id: 'dl-zmax', min: 0, max: 18, value: dl.zmax ?? Math.min(14, z + 2), size: 3, onchange: () => { dl.zmax = +zmax.value; estimate(); } });
     const est = el('span', { class: 'hint', id: 'dl-estimate' });
     const cacheInfo = el('span', { class: 'hint', id: 'cache-info' });
-    api('/api/tiles').then((r) => { cacheInfo.textContent = `Saved for offline use: ${r.cache.tiles.toLocaleString()} tiles, ${r.cache.mb} MB`; if (r.prefetch) this.updatePrefetch(r.prefetch); }).catch(() => {});
+    const today = new Date().toISOString().slice(0, 10);
+    const defName = () => `${srcs[+prefetchSrc.value]?.name || 'Map'} ${today}`;
+    const nameBox = el('input', { type: 'text', id: 'dl-name', value: dl.name || defName(), style: { minWidth: '18em' },
+      oninput: () => { dl.name = nameBox.value; } });
+    prefetchSrc.addEventListener('change', () => { if (!dl.name) nameBox.value = defName(); });
+    api('/api/tiles').then((r) => {
+      cacheInfo.textContent = `Also kept as you view the map (the browsing cache): ${r.cache.tiles.toLocaleString()} tiles, ${r.cache.mb} MB.`;
+      if (r.prefetch) this.updatePrefetch(r.prefetch);
+    }).catch(() => {});
     const body = () => {
       const b = this.map.map.getBounds();
-      return { source: +prefetchSrc.value, bounds: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()], zmin: +zmin.value, zmax: +zmax.value };
+      return { source: +prefetchSrc.value, bounds: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()], zmin: +zmin.value, zmax: +zmax.value,
+        name: nameBox.value.trim() || defName() };
     };
     let timer;
     const estimate = () => {
@@ -2206,27 +2259,64 @@ class App {
     this.renderSettingsMapEstimate = estimate;
     estimate();
     return el('section', { class: 'settings-sec', id: 'map-offline' }, el('h3', {}, 'Map and offline charts'),
-      el('p', {}, 'Online map tiles are saved on this computer as you view them, so areas you have looked at stay available offline. ',
-        'To get ready for a survey, move the map to cover the survey area, then download it here while you have internet.'),
+      el('p', {}, 'To get ready for a survey, move the map to cover the survey area, then download it here while you have internet. ',
+        'Each download is saved as one file in the charts folder (below), so you can preview it, keep several areas, and copy one to another computer’s charts folder.'),
       el('div', { class: 'btnrow' }, el('label', { class: 'inline' }, 'Download the area on the map of', prefetchSrc),
         el('label', { class: 'inline' }, 'from zoom', zmin), el('label', { class: 'inline' }, 'to', zmax)),
+      el('div', { class: 'btnrow' }, el('label', { class: 'inline' }, 'Save it as', nameBox),
+        el('span', { class: 'hint' }, 'A file of that name in the charts folder; the same name again adds to it.')),
       el('div', { class: 'btnrow' },
         el('button', { id: 'btn-dl', class: 'primary', onclick: async () => {
           try {
             const r = await api('/api/tiles/prefetch', body());
-            toast(`Downloading ${r.total.toLocaleString()} tiles of ${srcs[+prefetchSrc.value].name}…`);
-            this.updatePrefetch({ running: true, done: 0, total: r.total, failed: 0, source: srcs[+prefetchSrc.value].name });
+            toast(`Downloading ${r.total.toLocaleString()} tiles of ${srcs[+prefetchSrc.value].name} to ${r.file}…`);
+            this.updatePrefetch({ running: true, done: 0, total: r.total, failed: 0, source: srcs[+prefetchSrc.value].name, file: r.file });
+            dl.name = '';
           } catch { /* shown */ }
         } }, 'Download'),
         el('button', { onclick: () => api('/api/tiles/prefetch', { cancel: true }).catch(() => {}) }, 'Stop'), est),
       el('div', { id: 'prefetch-status' }),
-      el('p', {}, cacheInfo),
       el('p', { class: 'hint' }, 'Each zoom level has four times the tiles of the one before, so keep the highest zoom modest for a big area (12–13 suits a day’s survey area; 14–15 a harbour). ',
-        'Zooming in past what was downloaded shows the nearest saved tiles enlarged. OpenStreetMap doesn’t allow bulk downloads.'),
-      el('p', {}, el('b', {}, 'Offline charts (MBTiles): '), (S.mbtiles || []).length ? S.mbtiles.map((m) => `${m.name}${m.error ? ` (error: ${m.error})` : ''}`).join(', ') : el('span', { class: 'hint' }, 'none found'),
-        ' · put .mbtiles files in the ', el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('charts'); } }, 'charts folder'), ' and restart.'),
-      el('p', { class: 'hint' }, 'Map overlays (transects, management areas…) are in Survey → ',
+        'Zooming in past what was downloaded shows the nearest saved tiles enlarged. OpenStreetMap doesn’t allow bulk downloads (for Seascape, its land background isn’t saved).'),
+      el('h4', {}, 'In the charts folder'),
+      el('div', { id: 'chart-list' }),
+      el('div', { class: 'btnrow' },
+        el('button', { onclick: () => this.open('charts') }, 'Open the charts folder'),
+        el('button', { title: 'Look again for .mbtiles files copied into the charts folder', onclick: () => api('/api/tiles/rescan', {}).then((r) => {
+          this.S.mbtiles = r.mbtiles; this.map.syncCharts(r.mbtiles); this.renderChartList(); toast('Charts folder checked');
+        }).catch(() => {}) }, 'Look for new files')),
+      el('p', { class: 'hint' }, 'Spyhop uses a downloaded area automatically when that map layer is chosen, before going online. Each file is also its own layer, “… (offline)”, in the map’s layers menu: Preview shows it alone, so you can see what you’ll have at sea. NOAA ENC charts (.mbtiles from charts.noaa.gov) can be put in the folder too.'),
+      el('p', {}, cacheInfo),
+      el('p', { class: 'hint' }, 'Map overlays (transects, management areas…) are in Tools → ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('marks'); } }, 'Waypoints'), '.'));
+  }
+
+  // Settings → General → Map and offline charts: the files in the charts folder
+  renderChartList() {
+    const box = $('#chart-list');
+    if (!box) return;
+    const list = this.S.mbtiles || [];
+    if (!list.length) { box.replaceChildren(el('p', { class: 'hint', id: 'chart-none' }, 'No charts yet. Downloads appear here.')); return; }
+    const when = (iso) => { const t = iso && timeParts(iso, this.clock()); return t ? t.date : ''; };
+    const zooms = (m) => (m.minzoom === m.maxzoom ? `${m.minzoom}` : `${m.minzoom}–${m.maxzoom}`);
+    const tot = list.reduce((a, m) => [a[0] + (m.tiles || 0), a[1] + (m.bytes || 0)], [0, 0]);
+    const size = (b) => (b == null ? '' : b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`);
+    box.replaceChildren(el('table', { class: 'summary charts-table', id: 'charts-table' },
+      el('thead', {}, el('tr', {}, ['Chart', 'Made from', 'Zooms', 'Tiles', 'Size', 'Saved', ''].map((h) => el('th', {}, h)))),
+      el('tbody', {}, list.map((m) => el('tr', { 'data-file': m.file },
+        el('td', {}, el('b', {}, m.name), m.name !== m.file.replace(/\.mbtiles$/, '') ? el('div', { class: 'hint mono' }, m.file) : null,
+          m.error ? el('div', { class: 'err' }, m.error) : null),
+        el('td', {}, m.kind === 'chart' ? 'MBTiles chart' : `Download of ${m.source}`),
+        el('td', { class: 'num' }, zooms(m)),
+        el('td', { class: 'num' }, m.tiles != null ? m.tiles.toLocaleString() : ''),
+        el('td', { class: 'num nowrap' }, size(m.bytes)),
+        el('td', { class: 'nowrap' }, when(m.created)),
+        el('td', {}, el('button', { class: 'chart-preview', disabled: !!m.error, title: 'Show only what is saved in this file, zoomed to its area',
+          onclick: () => {
+            if (this.map.previewChart(m)) toast(`Showing ${m.name} on its own: only what is saved in the file. Choose another map in the layers menu to go back.`, 'info', 7000);
+          } }, 'Preview'))))),
+      el('tfoot', {}, el('tr', {}, el('td', {}, `${list.length} file${list.length === 1 ? '' : 's'}`), el('td', {}), el('td', {}),
+        el('td', { class: 'num' }, tot[0].toLocaleString()), el('td', { class: 'num nowrap' }, size(tot[1])), el('td', {}), el('td', {})))));
   }
 
   updatePrefetch(p) {
@@ -2241,12 +2331,12 @@ class App {
     } else if (p.total) {
       const ok = p.done - p.failed - (p.empty || 0);
       box.replaceChildren(el('p', { class: p.failed ? (ok > 0 ? 'warnbox' : 'errbox') : 'okbox' },
-        `${p.source}: ${ok.toLocaleString()} of ${p.total.toLocaleString()} tiles saved for offline use`,
+        `${p.source}: ${ok.toLocaleString()} of ${p.total.toLocaleString()} tiles saved${p.file ? ` in ${p.file} (charts folder)` : ' for offline use'}`,
         p.cached ? ` (${p.cached.toLocaleString()} were already saved)` : '',
         p.empty ? `; ${p.empty.toLocaleString()} had no map data (open ocean or land), which is normal` : '', '. ',
         p.failed ? `${p.failed.toLocaleString()} failed${p.error ? ` — last problem: ${p.error}` : ''}. ${ok > 0 ? 'Press Download again to retry them.' : 'Check the internet connection.'}` : '',
         p.skipped ? ` Not downloaded (the server doesn’t allow it): ${p.skipped}.` : ''));
-      if (was) api('/api/tiles').then((r) => { const c = $('#cache-info'); if (c) c.textContent = `Saved for offline use: ${r.cache.tiles.toLocaleString()} tiles, ${r.cache.mb} MB`; }).catch(() => {});
+      if (was) api('/api/tiles').then((r) => { this.S.mbtiles = r.mbtiles; this.renderChartList(); }).catch(() => {});
     }
   }
 }

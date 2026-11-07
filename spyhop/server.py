@@ -145,6 +145,7 @@ class App:
         self.rec = Recorder(data_dir)
         self.sources = SourceManager(self.rec.decoder)
         self.tiles = TileService(self.rec.cfg)
+        self.tiles.on_charts_changed = lambda: self._broadcast_soon({"type": "charts", "mbtiles": self.tiles.mbtiles_info()})
         self.clients: set[web.WebSocketResponse] = set()
         self.extra_sources = extra_sources or []
         self.rec.listeners.append(self._broadcast_soon)
@@ -479,7 +480,7 @@ class App:
             self.rec.cfg.save_list(str(b.get("list", "")), b.get("rows") or [])
         except ValueError as e:
             raise ValueErrorMsg(str(e))
-        log.info("list %s saved from Survey → Dropdowns (%d rows)", b.get("list"), len(self.rec.cfg.lists.get(b.get("list"), [])))
+        log.info("list %s saved from Settings → Dropdowns (%d rows)", b.get("list"), len(self.rec.cfg.lists.get(b.get("list"), [])))
         self._broadcast_soon({"type": "reload"})
         return json_ok()
 
@@ -628,6 +629,41 @@ class App:
         return web.Response(body=r[0], content_type=r[1],
                             headers={"Cache-Control": "max-age=86400"})
 
+    async def charts_rescan(self, request):
+        self.tiles.rescan_charts()
+        info = self.tiles.mbtiles_info()
+        self._broadcast_soon({"type": "charts", "mbtiles": info})
+        return json_ok(mbtiles=info)
+
+    # ---- a downloaded style area on its own (charts folder), for previews and as an offline layer
+    async def off_style(self, request):
+        style = self.tiles.offline_style(request.match_info["name"], self._origin(request))
+        if style is None:
+            raise web.HTTPNotFound()
+        return web.json_response(style, headers={"Cache-Control": "no-cache"})
+
+    async def off_tile(self, request):
+        m = request.match_info
+        data = self.tiles.offline_style_tile(m["name"], m["set"], int(m["z"]), int(m["x"]), int(m["y"]))
+        if data is None:
+            return web.Response(status=204)
+        ctype, headers = tiles_mod.sniff_type(data), {"Cache-Control": "max-age=86400"}
+        if ctype == "application/octet-stream":
+            ctype = "application/x-protobuf"
+            if data[:2] == b"\x1f\x8b":
+                headers["Content-Encoding"] = "gzip"
+        return web.Response(body=data, content_type=ctype, headers=headers)
+
+    async def off_glyphs(self, request):
+        m = request.match_info
+        data = self.tiles.offline_glyphs(m["name"], m["fontstack"], m["range"])
+        if data is None:
+            raise web.HTTPNotFound()
+        headers = {"Cache-Control": "max-age=604800"}
+        if data[:2] == b"\x1f\x8b":
+            headers["Content-Encoding"] = "gzip"
+        return web.Response(body=data, content_type="application/x-protobuf", headers=headers)
+
     async def tiles_info(self, request):
         return json_ok(cache=self.tiles.cache_stats(), prefetch=self.tiles.prefetch_state,
                        mbtiles=self.tiles.mbtiles_info())
@@ -642,7 +678,8 @@ class App:
                 plan = await self.tiles.plan_prefetch(int(b["source"]), b["bounds"], int(b["zmin"]), int(b["zmax"]))
                 plan.pop("jobs")
                 return json_ok(**plan)
-            plan = await self.tiles.start_prefetch(int(b["source"]), b["bounds"], int(b["zmin"]), int(b["zmax"]))
+            plan = await self.tiles.start_prefetch(int(b["source"]), b["bounds"], int(b["zmin"]), int(b["zmax"]),
+                                                   name=str(b.get("name") or ""))
         except ValueError as e:
             raise ValueErrorMsg(str(e))
         return json_ok(**plan)
@@ -682,7 +719,7 @@ class App:
         dest.write_text(gpx, encoding="utf-8")
         return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}")
 
-    # ---- reports (Survey → Reports; definitions in reports.py / report_defs/)
+    # ---- reports (Tools → Reports; definitions in reports.py / report_defs/)
     async def reports_list(self, request):
         defs, errors = reports.load_definitions(self.rec.cfg)
         return json_ok(reports=[{k: d.get(k) for k in ("id", "title", "description", "order", "table", "source", "file")}
@@ -725,7 +762,7 @@ class App:
             os.replace(tmp, dest)
         return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}")
 
-    # ---- config packs (Survey → File → Config packs; configpack.py)
+    # ---- config packs (Settings → Templates; configpack.py)
     async def groupconfig_check(self, request):
         """Check a pack before pulling it: from a web address ({url}), a pack in the config packs
         folder ({pack: file name}) or a backup ({backup: file name})."""
@@ -866,7 +903,7 @@ class App:
             raise web.HTTPNotFound()
         return web.FileResponse(p, headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(p.name)}"})
 
-    # ---- updates (Survey → About; updater.py)
+    # ---- updates (Settings → About; updater.py)
     async def update_check(self, request):
         try:
             info = await asyncio.get_running_loop().run_in_executor(None, updater.check)
@@ -989,6 +1026,10 @@ class App:
         r.add_get("/tiles/gl/{i}/sprite/{rest}", self.gl_sprite)
         r.add_get("/api/tiles", self.tiles_info)
         r.add_post("/api/tiles/prefetch", self.tiles_prefetch)
+        r.add_post("/api/tiles/rescan", self.charts_rescan)
+        r.add_get("/tiles/off/{name}/style.json", self.off_style)
+        r.add_get("/tiles/off/{name}/t/{set}/{z}/{x}/{y}", self.off_tile)
+        r.add_get("/tiles/off/{name}/glyphs/{fontstack}/{range}", self.off_glyphs)
         r.add_get("/overlays/{name}", self.overlay_get)
         r.add_post("/api/overlays", self.overlay_upload)
         r.add_delete("/api/overlays/{name}", self.overlay_delete)

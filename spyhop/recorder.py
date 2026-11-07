@@ -106,7 +106,7 @@ class Recorder:
 
     # -- time ----------------------------------------------------------------
     def tz(self):
-        """Survey clock (Settings → Clock): the computer's local time zone, UTC, a fixed UTC
+        """Survey clock (Settings → General → Clock): the computer's local time zone, UTC, a fixed UTC
         offset, or the zone guessed from the platform's position."""
         v = self.cfg.settings.get("timezone") or "local"
         if v == "UTC":
@@ -492,7 +492,7 @@ class Recorder:
             mp.unlink()
         self.close_survey()
 
-    # -- instrument history (Survey → NMEA plots) ---------------------------------
+    # -- instrument history (Tools → Instruments plots) ---------------------------------
     INST_SAMPLE_S = 5            # one value per reading every this many seconds
     INST_COLUMNS = ["DateTime", "Key", "Label", "Unit", "Value"]
 
@@ -1114,7 +1114,7 @@ class Recorder:
 
         One file comes back as itself; several files come back as one zip.
         formats: any of EXPORT_FORMATS (default: all but the summary, which the browser builds),
-        plus "report:<id>" for each report in Survey → Reports.
+        plus "report:<id>" for each report in Tools → Reports.
         report_as: how the summary and the reports are saved: "html", "pdf" or both.
         html_pdf: the summary page made for printing (map fitted to the survey, a legend);
         the PDF of the summary uses it when given.

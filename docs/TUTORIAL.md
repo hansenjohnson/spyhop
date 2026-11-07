@@ -1,6 +1,6 @@
 # Spyhop tutorial
 
-Spyhop records a vessel-based whale survey: sightings, effort and conditions, events, the trackline and instrument data, all against a live chart. This tour covers the basics. It's also in Spyhop itself, under **Survey → About**.
+Spyhop records a vessel-based whale survey: sightings, effort and conditions, events, the trackline and instrument data, all against a live chart. This tour covers the basics. It's also in Spyhop itself, under **Settings → About**.
 
 ## Find your way around
 
@@ -19,7 +19,7 @@ Spyhop records a vessel-based whale survey: sightings, effort and conditions, ev
 
 You don't need a GPS to try Spyhop.
 
-1. Open **Survey → NMEA** and press **+ Add input**.
+1. Open **Tools → Instruments** and press **+ Add input**.
 2. Change the new input's type to **SIMULATOR**, and set a heading, speed and start position.
 3. Press **Apply**. A simulated vessel appears on the map and moves at that speed.
 4. Untick or delete the simulator input when you connect a real GPS. While one is ticked, its fake positions go into the data like real ones.
@@ -28,26 +28,26 @@ From a terminal you can also run `python -m spyhop --sim`, which adds the simula
 
 ## Set up your lists (config files)
 
-Edit the drop-down lists in **Survey → Dropdowns** (Species, Events, Behaviors, Observers) and the keyboard shortcuts in **Survey → Shortcuts**, then press **Save**. The lists can't be changed while a survey is under way.
+Edit the drop-down lists in **Settings → Dropdowns** (Species, Events, Behaviors, Observers) and the keyboard shortcuts in **Settings → Shortcuts**, then press **Save**. The lists can't be changed while a survey is under way.
 
 Behind the scenes they are plain CSV files, which you can also edit in Excel, Numbers or a text editor for big changes. Each editor has an **Open** button for its file and a **Reload from the file** button:
 
 - **species.csv:** species names, map colours and codes (e.g. `RIWH`). The code labels sightings on the map, and the reports use it.
 - **observers.csv:** observer codes and full names. `NA` (None) is a placeholder for an empty watch position, and can fill several positions at once.
 - **event_types.csv:** event names, colours and codes (e.g. `GRPT` for Gear Reported).
-- **behaviors.csv**, and **display.csv** (the map's look, also set in Survey → Settings).
+- **behaviors.csv**, and **display.csv** (the map's look, also set in Settings → General).
 - **shortcuts.csv:** keyboard shortcuts.
   - Each row has a key (e.g. `Mod+Shift+R`; Mod is Ctrl on Windows and ⌘ on a Mac), an action, and optional prefills.
   - For example, `Species=North Atlantic right whale` makes the shortcut start a right whale sighting.
-  - **Survey → Shortcuts** lists them all.
+  - **Settings → Shortcuts** lists them all.
 
 After editing a file, save it and press **Reload config files**. Keep the header row as it is. Spyhop adds new columns and entries itself when it is updated.
 
-If your team shares its config files, use **Survey → File → Config packs** instead. Paste the address of the team's pack under **Get a pack from the web** and press **Check** to see what would change, then **Pull and overwrite**; or press **Use this pack…** on a pack already in the list. This overwrites this computer's copies of the pack's files, so keep the backup option ticked. To save your own setup as a pack, press **Save this computer's config as a new pack…**. See docs/CONFIG_PACKS.md.
+If your team shares its config files, use **Settings → Templates** instead. Paste the address of the team's pack under **Get a pack from the web** and press **Check** to see what would change, then **Pull and overwrite**; or press **Use this pack…** on a pack already in the list. This overwrites this computer's copies of the pack's files, so keep the backup option ticked. To save your own setup as a pack, press **Save this computer's config as a new pack…**. See docs/CONFIG_PACKS.md.
 
 ## Plan a route
 
-1. Open **Survey → Route**, or right-click the map and choose **Start route here**.
+1. Open **Tools → Route**, or right-click the map and choose **Start route here**.
 2. Set the **survey speed**, and choose **Manual** or **Systematic**:
    - **Manual:** press **Add points on the map** and click each waypoint. Drag them to adjust.
    - **Systematic:** set the start, the direction of the first leg, the number of legs, leg length and spacing. Spyhop draws back-and-forth lines.
@@ -57,7 +57,7 @@ If your team shares its config files, use **Survey → File → Config packs** i
 
 ## Start a survey
 
-1. In **Survey → File**, press **Start New Survey…**.
+1. In **Survey**, press **Start New Survey…**.
 2. Enter the survey name in your team's own convention (it becomes the start of the file names). Fill in the survey details: platform, organization and chief scientist.
 3. Spyhop adds the **Start** row to the Effort table, switches the trackline on and opens the Effort tab.
 
@@ -78,15 +78,15 @@ If Spyhop is closed or crashes during a survey, it reopens the survey the next t
   - Enter or double-click edits a cell, and Tab moves on. Drop-downs filter as you type.
   - Each table has **Undo** and **Redo**.
   - Type `14:05` in a time cell to change only the time of day.
-- **Instruments:** **Survey → NMEA** shows depth, wind, water temperature and so on, from your network. Click one to plot it. You can also log the raw NMEA there.
+- **Instruments:** **Tools → Instruments** shows depth, wind, water temperature and so on, from your network. Click one to plot it. You can also log the raw NMEA there.
 
 ## End the survey
 
-In **Survey → File**, press **End Survey**. This adds the **End** row and switches the trackline off. An ended survey can still be corrected, and deleting the End row makes it active again. **Close Survey** puts it away without ending it.
+In **Survey**, press **End Survey**. This adds the **End** row and switches the trackline off. An ended survey can still be corrected, and deleting the End row makes it active again. **Close Survey** puts it away without ending it.
 
 ## Check for errors
 
-Open **Survey → Quality Control** and press **Run quality control check**. It lists:
+Open **Tools → Quality Control** and press **Run quality control check**. It lists:
 
 - **errors:** must fix, e.g. required fields left blank, values that aren't in the lists, impossible numbers
 - **warnings:** probably wrong, e.g. a sighting beyond the visibility, positions on land, GPS jumps
@@ -96,7 +96,7 @@ Open **Survey → Quality Control** and press **Run quality control check**. It 
 
 ## Reports
 
-**Survey → Reports** has a tab for each report:
+**Tools → Reports** has a tab for each report:
 
 - **Summary:** totals, survey details, species, observers, conditions, a map, and right whale sightings.
 - **Gear**, **Dead Birds**, **Right whales** and **Blue whales:** simple tables of those records.
@@ -105,7 +105,7 @@ Every report has **Save as HTML…** and **Save as PDF…** (PDF needs Google Ch
 
 ## Export the data
 
-In **Survey → File**, press **Export Data…** and choose any of:
+In **Survey**, press **Export Data…** and choose any of:
 
 - the separate CSV files
 - a merged CSV (sightings, effort, events and track points in time order, with the conditions on every row)
@@ -117,6 +117,6 @@ Several files are saved together as one zip. Everything goes in the `exports` fo
 
 ## Keep Spyhop up to date
 
-In **Survey → About → Updates**, press **Check for updates**. If there's a newer version, **Install** it and restart Spyhop. Your data and settings aren't touched, and the old version is kept as a backup. It's best to do this between surveys, with internet.
+In **Settings → About → Updates**, press **Check for updates**. If there's a newer version, **Install** it and restart Spyhop. Your data and settings aren't touched, and the old version is kept as a backup. It's best to do this between surveys, with internet.
 
-Your data are also always on disk as plain CSV files, in the survey data folder (**Survey → File** shows where), saved as you type.
+Your data are also always on disk as plain CSV files, in the survey data folder (**Survey** shows where), saved as you type.

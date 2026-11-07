@@ -8,7 +8,7 @@ The log has a start-up header (version, Python, system, folders), survey actions
 errors with tracebacks (server and the Spyhop window), slow moments, and a
 performance snapshot every 5 minutes. It never contains survey data values.
 
-Save diagnostics… (Survey → File) zips the logs, settings and system details
+Save diagnostics… (Survey) zips the logs, settings and system details
 for a bug report: see make_bundle().
 """
 from __future__ import annotations

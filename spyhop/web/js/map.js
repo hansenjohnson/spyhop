@@ -52,6 +52,7 @@ export class MapView {
     this.map.on('baselayerchange', (e) => {
       try { localStorage.setItem('wsr.base', e.name); } catch {}
       this.baseLayer = e.layer; this.showDepth('');
+      if (this.previewBox && !Object.values(this.chartLayers || {}).includes(e.layer)) { this.previewBox.remove(); this.previewBox = null; }
     });
     this.map.on('mouseout', () => this.showDepth(''));
     this.map.on('overlayadd overlayremove', () => this.saveOverlayState());
@@ -62,13 +63,11 @@ export class MapView {
   }
 
   // ---------------------------------------------------------------- layers
-  // A MapLibre style (Seascape): drawn by MapLibre GL inside Leaflet. MapLibre (about 1.6 MB) is
-  // loaded the first time the layer is shown; everything it fetches goes through Spyhop's tile cache.
-  glLayer(i, t) {
-    const grp = L.layerGroup([], { attribution: esc(t.attribution || '') });
-    let unit = 'm';
-    try { unit = new URL(t.url).searchParams.get('unit') || 'm'; } catch {}
-    grp._depth = new DepthProbe(i, unit);
+  // A MapLibre style (Seascape, or a Seascape area saved in the charts folder): drawn by MapLibre GL
+  // inside Leaflet. MapLibre (about 1.6 MB) is loaded the first time the layer is shown.
+  glLayer(styleUrl, attribution, unit, label) {
+    const grp = L.layerGroup([], { attribution: esc(attribution || '') });
+    grp._depth = new DepthProbe(styleUrl, unit);
     grp.on('add', async () => {
       if (grp._gl || grp._loading) return;
       grp._loading = true;
@@ -77,32 +76,53 @@ export class MapView {
           document.head.append(el('link', { rel: 'stylesheet', href: '/static/vendor/maplibre/maplibre-gl.css', 'data-maplibre': '1' }));
         }
         const mod = await import('/static/vendor/maplibre/leaflet-maplibre-gl.mjs');
-        grp._gl = mod.maplibreGL({ style: `${location.origin}/tiles/gl/${i}/style.json`, interactive: false, attributionControl: false });
+        grp._gl = mod.maplibreGL({ style: styleUrl, interactive: false, attributionControl: false });
         grp.addLayer(grp._gl);
         const gl = grp._gl.getMaplibreMap?.();
-        gl?.on('error', (e) => { const m = e?.error?.message || ''; if (m && !/204|Failed to fetch|AbortError/.test(m)) console.warn('Seascape:', m); });
+        gl?.on('error', (e) => { const m = e?.error?.message || ''; if (m && !/204|Failed to fetch|AbortError/.test(m)) console.warn(`${label}:`, m); });
       } catch (e) {
-        toast(`Couldn’t show ${t.name}: ${e.message}`, 'error', 8000);
+        toast(`Couldn’t show ${label}: ${e.message}`, 'error', 8000);
       } finally { grp._loading = false; }
     });
     return grp;
+  }
+
+  unitOf(url) { try { return new URL(url).searchParams.get('unit') || 'm'; } catch { return 'm'; } }
+
+  // a file in the charts folder: an MBTiles chart, or an area saved by a download
+  chartLayer(m) {
+    if (m.kind === 'style') {
+      const src = this.app.S.config.tile_sources.find((t) => t.name === m.source);
+      return this.glLayer(`${location.origin}/tiles/off/${encodeURIComponent(m.file)}/style.json`,
+        src?.attribution || m.name, this.unitOf(src?.url || ''), m.name);
+    }
+    const opts = { maxNativeZoom: m.maxzoom, minNativeZoom: m.minzoom, maxZoom: 20,
+      attribution: esc(this.app.S.config.tile_sources.find((t) => t.name === m.source)?.attribution || m.name) };
+    if (m.bounds) opts.bounds = [[m.bounds[1], m.bounds[0]], [m.bounds[3], m.bounds[2]]];
+    return L.tileLayer(`/tiles/mb/${encodeURIComponent(m.file)}/{z}/{x}/{y}`, opts);
+  }
+
+  // the layers-menu name; two files with the same name are told apart by their file names
+  chartLabel(m) {
+    const same = (this.app.S.mbtiles || []).filter((x) => x.name === m.name).length > 1;
+    return same ? `${m.name} (${m.file}, offline)` : `${m.name} (offline)`;
   }
 
   buildLayers() {
     const S = this.app.S;
     const bases = {}, overlays = {};
     S.config.tile_sources.forEach((t, i) => {
-      const layer = t.kind === 'style' ? this.glLayer(i, t) : L.tileLayer(`/tiles/s/${i}/{z}/{x}/{y}`, {
-        attribution: esc(t.attribution || ''), maxZoom: 20, maxNativeZoom: +t.max_zoom || 18,
-        crossOrigin: false, errorTileUrl: '' });
+      const layer = t.kind === 'style' ? this.glLayer(`${location.origin}/tiles/gl/${i}/style.json`, t.attribution, this.unitOf(t.url), t.name)
+        : L.tileLayer(`/tiles/s/${i}/{z}/{x}/{y}`, {
+          attribution: esc(t.attribution || ''), maxZoom: 20, maxNativeZoom: +t.max_zoom || 18,
+          crossOrigin: false, errorTileUrl: '' });
       if (t.overlay === '1') overlays[t.name] = layer; else bases[t.name] = layer;
     });
+    this.chartLayers = {};
     for (const m of S.mbtiles || []) {
       if (m.error) continue;
-      const opts = { maxNativeZoom: m.maxzoom, minNativeZoom: m.minzoom, maxZoom: 20, attribution: esc(m.name) };
-      if (m.bounds) opts.bounds = [[m.bounds[1], m.bounds[0]], [m.bounds[3], m.bounds[2]]];
-      const layer = L.tileLayer(`/tiles/mb/${encodeURIComponent(m.file)}/{z}/{x}/{y}`, opts);
-      if (m.overlay) overlays[`${m.name} (offline)`] = layer; else bases[`${m.name} (offline)`] = layer;
+      const layer = this.chartLayers[m.file] = this.chartLayer(m);
+      if (m.overlay) overlays[this.chartLabel(m)] = layer; else bases[this.chartLabel(m)] = layer;
     }
     bases['Coastline only (offline)'] = L.layerGroup();
     this.bases = bases;
@@ -140,6 +160,51 @@ export class MapView {
       if (on) layer.addTo(this.map);
     }
     this.layerControl = L.control.layers(bases, overlays, { position: 'topright', collapsed: true }).addTo(this.map);
+  }
+
+  // the charts folder changed (a download finished, or Rescan): update the layers menu
+  syncCharts(list) {
+    const byFile = Object.fromEntries((list || []).filter((m) => !m.error).map((m) => [m.file, m]));
+    for (const [file, layer] of Object.entries(this.chartLayers || {})) {
+      if (byFile[file] && byFile[file].tiles === layer._info?.tiles && byFile[file].created === layer._info?.created) continue;
+      const wasBase = this.baseLayer === layer;
+      this.layerControl.removeLayer(layer);
+      for (const d of [this.bases, this.overlays]) for (const k of Object.keys(d)) if (d[k] === layer) delete d[k];
+      if (this.map.hasLayer(layer)) this.map.removeLayer(layer);
+      delete this.chartLayers[file];
+      if (wasBase) this._restoreBase = file;
+    }
+    for (const m of Object.values(byFile)) {
+      if (this.chartLayers[m.file]) continue;
+      const layer = this.chartLayers[m.file] = this.chartLayer(m);
+      layer._info = { tiles: m.tiles, created: m.created };
+      if (m.overlay) { this.overlays[this.chartLabel(m)] = layer; this.layerControl.addOverlay(layer, this.chartLabel(m)); }
+      else { this.bases[this.chartLabel(m)] = layer; this.layerControl.addBaseLayer(layer, this.chartLabel(m)); }
+      if (this._restoreBase === m.file) { this.setBase(layer, this.chartLabel(m)); this._restoreBase = null; }
+    }
+    if (this._restoreBase) { const first = this.bases['Seascape depths (feet)'] || Object.values(this.bases)[0]; this.setBase(first); this._restoreBase = null; }
+  }
+
+  setBase(layer, name) {
+    if (this.baseLayer && this.baseLayer !== layer && this.map.hasLayer(this.baseLayer)) this.map.removeLayer(this.baseLayer);
+    if (!this.map.hasLayer(layer)) layer.addTo(this.map);
+    name ||= Object.entries(this.bases).find(([, l]) => l === layer)?.[0];
+    this.map.fire('baselayerchange', { layer, name });
+  }
+
+  // Show a chart file on its own and zoom to the area it covers
+  previewChart(m) {
+    const layer = this.chartLayers?.[m.file];
+    if (!layer) return false;
+    if (this.app.S.config.settings.follow_vessel) this.setFollow(false);
+    if (m.overlay) layer.addTo(this.map); else this.setBase(layer, this.chartLabel(m));
+    this.previewBox?.remove();
+    if (m.bounds) {
+      const b = [[m.bounds[1], m.bounds[0]], [m.bounds[3], m.bounds[2]]];
+      this.previewBox = L.rectangle(b, { color: '#0b5f86', weight: 2, dashArray: '6 6', fill: false, interactive: false }).addTo(this.map);
+      this.map.fitBounds(b, { padding: [20, 20], maxZoom: Math.max(m.minzoom, Math.min(m.maxzoom, 14)) });
+    }
+    return true;
   }
 
   saveOverlayState() {
@@ -512,7 +577,7 @@ export class MapView {
   }
 
   // Add a point to the drawn trackline. The line is broken (not joined to the previous point)
-  // at a trackline break (Settings → Tracking) and around points in an ERROR effort stretch.
+  // at a trackline break (Settings → General → Tracking) and around points in an ERROR effort stretch.
   appendTrack(p, live = true, state = p.Effort) {
     const disp = this.app.S.config.display;
     const ll = [+p.Lat, +p.Lon];

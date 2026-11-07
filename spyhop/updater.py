@@ -1,4 +1,4 @@
-"""Checking for and installing Spyhop updates (Survey → About → Updates).
+"""Checking for and installing Spyhop updates (Settings → About → Updates).
 
 Updates come from GitHub, from the hansenjohnson/spyhop repository:
 - the latest **release** (a tag such as v0.9.2, made with GitHub's "Draft a new release"), or

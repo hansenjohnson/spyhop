@@ -97,6 +97,78 @@ def _unb64(s: str) -> str:
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4)).decode()
 
 
+CHART_BATCH = 200          # tiles written to a chart file between commits
+
+
+def chart_file_name(name: str) -> str:
+    """The charts-folder file name for a downloaded area: <name>.mbtiles."""
+    n = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(name or "").strip()).strip(" .")
+    if n.lower().endswith(".mbtiles"):
+        n = n[:-8].strip(" .")
+    return f"{n}.mbtiles" if n else ""
+
+
+class ChartWriter:
+    """Writes a downloaded area into an MBTiles file in the charts folder.
+
+    A raster layer (Esri, NOAA) is a standard MBTiles file (`tiles`, `metadata`), so other map
+    programs can open it too. A MapLibre style (Seascape) has several tile sets plus its style,
+    TileJSON documents and fonts, so it also gets `spyhop_tiles` (one row per tile per tile set,
+    keyed by a hash of the tile set's address) and `spyhop_files`. Rows use the MBTiles (TMS) row
+    order. Writing to an existing file adds to it."""
+
+    def __init__(self, path: Path, kind: str):
+        self.path, self.kind, self.n = path, kind, 0
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.c = sqlite3.connect(path)
+        self.c.executescript("""
+            CREATE TABLE IF NOT EXISTS metadata (name TEXT PRIMARY KEY, value TEXT);
+            CREATE TABLE IF NOT EXISTS tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB,
+                                              PRIMARY KEY (zoom_level, tile_column, tile_row));""")
+        if kind == "style":
+            self.c.executescript("""
+                CREATE TABLE IF NOT EXISTS spyhop_tiles (tileset TEXT, zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER,
+                                                         tile_data BLOB, PRIMARY KEY (tileset, zoom_level, tile_column, tile_row));
+                CREATE TABLE IF NOT EXISTS spyhop_files (key TEXT PRIMARY KEY, data BLOB);""")
+
+    def meta(self) -> dict:
+        return dict(self.c.execute("SELECT name, value FROM metadata"))
+
+    def set_meta(self, values: dict):
+        self.c.executemany("INSERT OR REPLACE INTO metadata (name, value) VALUES (?, ?)",
+                           [(k, str(v)) for k, v in values.items() if v is not None])
+
+    def has(self, z, x, y, tileset=None) -> bool:
+        row = (2 ** z - 1) - y
+        if tileset is None:
+            q = self.c.execute("SELECT 1 FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?", (z, x, row))
+        else:
+            q = self.c.execute("SELECT 1 FROM spyhop_tiles WHERE tileset=? AND zoom_level=? AND tile_column=? AND tile_row=?",
+                               (tileset, z, x, row))
+        return q.fetchone() is not None
+
+    def put(self, z, x, y, data: bytes, tileset=None):
+        row = (2 ** z - 1) - y
+        if tileset is None:
+            self.c.execute("INSERT OR REPLACE INTO tiles VALUES (?, ?, ?, ?)", (z, x, row, data))
+        else:
+            self.c.execute("INSERT OR REPLACE INTO spyhop_tiles VALUES (?, ?, ?, ?, ?)", (tileset, z, x, row, data))
+        self._tick()
+
+    def put_file(self, key: str, data: bytes):
+        self.c.execute("INSERT OR REPLACE INTO spyhop_files VALUES (?, ?)", (key, data))
+        self._tick()
+
+    def _tick(self):
+        self.n += 1
+        if self.n % CHART_BATCH == 0:
+            self.c.commit()
+
+    def close(self):
+        self.c.commit()
+        self.c.close()
+
+
 class TileService:
     """Online tiles through a disk cache, MapLibre styles (Seascape) through the same cache, and MBTiles.
 
@@ -112,9 +184,12 @@ class TileService:
         self.prefetch_state = {"running": False, "done": 0, "total": 0, "failed": 0, "source": "",
                                "error": "", "skipped": ""}
         self._prefetch_task = None
-        self._offline_until = 0.0
-        self._conn_failures = 0
+        self._offline_until = 0.0           # everything (a test, or set when clearly offline)
+        self._host_until: dict[str, float] = {}     # per server: one that can't be reached doesn't block the others
+        self._host_failures: dict[str, int] = {}
         self._gl_hosts: dict[int, set[str]] = {}
+        self._chart_meta: dict[str, dict] = {}
+        self.on_charts_changed = None       # set by the server: called after a download adds a chart file
 
     async def close(self):
         if self.session:
@@ -138,14 +213,15 @@ class TileService:
     # -- the network, with an offline back-off ------------------------------------------
     async def _download(self, url: str) -> tuple[int, bytes, str]:
         """(status, body, content type); status 0 = no connection. Never raises."""
-        if time.monotonic() < self._offline_until:
+        host = urlsplit(url).netloc.lower()
+        if time.monotonic() < max(self._offline_until, self._host_until.get(host, 0.0)):
             return 0, b"", "no internet connection"
         last = ""
         for attempt in range(2):            # a dropped keep-alive connection is worth one more try
             try:
                 async with self._session().get(url) as r:
                     body = await r.read()
-                    self._conn_failures = 0
+                    self._host_failures.pop(host, None)
                     return r.status, body, r.headers.get("Content-Type", "")
             except aiohttp.ServerDisconnectedError as e:
                 last = f"the server closed the connection ({e.__class__.__name__})"
@@ -157,10 +233,10 @@ class TileService:
                 break
             except Exception as e:  # noqa: BLE001
                 return 0, b"", str(e)
-        self._conn_failures += 1
-        if self._conn_failures >= OFFLINE_AFTER:       # clearly offline: answer from the cache at once for a while
-            self._offline_until = time.monotonic() + OFFLINE_S
-            self._conn_failures = 0
+        self._host_failures[host] = self._host_failures.get(host, 0) + 1
+        if self._host_failures[host] >= OFFLINE_AFTER:   # can't reach it: answer from the cache at once for a while
+            self._host_until[host] = time.monotonic() + OFFLINE_S
+            self._host_failures[host] = 0
         return 0, b"", last
 
     @staticmethod
@@ -188,6 +264,9 @@ class TileService:
         cache = self._cache_path(src, z, x, y)
         if cache.exists():
             data = cache.read_bytes()
+            return data, sniff_type(data)
+        data = self._offline_tile(src, z, x, y)
+        if data is not None:
             return data, sniff_type(data)
         data, _why = await self._fetch(src, z, x, y, save=self.cfg.settings.get("tile_cache_enabled", True))
         if data is None:
@@ -253,7 +332,7 @@ class TileService:
         src = self.source(idx)
         if not src or src.get("kind") != "style":
             return None
-        style = await self._json_cached(self._gl_dir(src) / "_style.json", src["url"])
+        style = await self._json_cached(self._gl_dir(src) / "_style.json", src["url"]) or self._offline_json(src, "style")
         if not style:
             return None
         style = json.loads(json.dumps(style))
@@ -282,7 +361,8 @@ class TileService:
         await self._ensure_hosts(idx)
         if not src or not self._allowed(idx, upstream):
             return None
-        doc = await self._json_cached(self._gl_dir(src) / "_tilejson" / f"{_h(upstream)}.json", upstream)
+        doc = (await self._json_cached(self._gl_dir(src) / "_tilejson" / f"{_h(upstream)}.json", upstream)
+               or self._offline_json(src, f"tilejson:{_h(upstream)}"))
         if not doc:
             return None
         doc = dict(doc)
@@ -302,6 +382,9 @@ class TileService:
         if p.exists():
             data = p.read_bytes()
             return data, sniff_type(data), 200
+        data = self._offline_tile(src, z, x, y, tileset=_h(template))
+        if data is not None:
+            return data, sniff_type(data), 200
         url = template.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
         status, data, ct = await self._download(url)
         if status != 200 or _is_html(data):
@@ -319,6 +402,9 @@ class TileService:
         p = self._gl_dir(src) / folder / _h(upstream)
         if p.exists():
             return p.read_bytes()
+        data = self._offline_blob(src, f"file:{_h(upstream)}")
+        if data is not None:
+            return data
         status, data, _ = await self._download(upstream)
         if status != 200 or _is_html(data):
             return None
@@ -405,23 +491,68 @@ class TileService:
                 jobs += [("raster", *t) for t in self._tiles_in(bounds, z)]
         return {"jobs": jobs, "total": len(jobs), "zmax": zmax, "skipped": skipped, "note": note}
 
-    async def start_prefetch(self, idx: int, bounds: list[float], zmin: int, zmax: int, limit=50000) -> dict:
+    async def start_prefetch(self, idx: int, bounds: list[float], zmin: int, zmax: int, limit=50000, name: str = "") -> dict:
         if self.prefetch_state["running"]:
             raise ValueError("A download is already running.")
+        src = self.source(idx)
+        fn = chart_file_name(name or (f"{src['name']} {time.strftime('%Y-%m-%d')}" if src else ""))
+        if not fn:
+            raise ValueError("Give the download a name.")
+        path = self.cfg.charts_dir / fn
+        kind = "style" if src and src.get("kind") == "style" else "raster"
+        if path.exists():
+            old = self.chart_meta(fn)
+            if old.get("spyhop_source") != (src or {}).get("name"):
+                made = f"made from {old['spyhop_source']}" if old.get("spyhop_source") else "not made by a Spyhop download"
+                raise ValueError(f"There's already a chart called {fn} ({made}). Choose another name.")
         plan = await self.plan_prefetch(idx, bounds, zmin, zmax)
         if plan["total"] > limit:
             raise ValueError(f"That is {plan['total']:,} tiles — more than the {limit:,} limit. "
                              "Zoom the map in, or lower the highest zoom.")
         if not plan["total"]:
             raise ValueError("There are no tiles to download there at those zooms.")
-        src = self.source(idx)
+        writer = ChartWriter(path, kind)
+        try:
+            self._start_chart(writer, idx, src, kind, bounds, zmin, plan["zmax"])
+        except Exception:
+            writer.close()
+            raise
+        self._mb.pop(fn, None)
         self.prefetch_state = {"running": True, "done": 0, "total": plan["total"], "failed": 0, "cached": 0, "empty": 0,
-                               "source": src["name"], "error": "", "skipped": ", ".join(plan["skipped"]),
-                               "note": plan["note"]}
-        self._prefetch_task = asyncio.create_task(self._prefetch(idx, src, plan["jobs"]))
-        return {k: v for k, v in plan.items() if k != "jobs"}
+                               "saved": 0, "source": src["name"], "error": "", "skipped": ", ".join(plan["skipped"]),
+                               "note": plan["note"], "file": fn}
+        self._prefetch_task = asyncio.create_task(self._prefetch(idx, src, plan["jobs"], writer))
+        return {**{k: v for k, v in plan.items() if k != "jobs"}, "file": fn}
 
-    async def _prefetch(self, idx, src, jobs):
+    def _start_chart(self, w: ChartWriter, idx, src, kind, bounds, zmin, zmax):
+        """The chart file's metadata (an existing file's area and zooms are widened), and for a style its
+        style and TileJSON documents, so the area can be drawn from the file alone."""
+        old = w.meta()
+        s_, w_, n_, e_ = bounds
+        if old.get("bounds"):
+            try:
+                ow, os_, oe, on = (float(v) for v in old["bounds"].split(","))
+                w_, s_, e_, n_ = min(w_, ow), min(s_, os_), max(e_, oe), max(n_, on)
+            except ValueError:
+                pass
+        zmin = min(int(zmin), int(old.get("minzoom", zmin)))
+        zmax = max(int(zmax), int(old.get("maxzoom", zmax)))
+        w.set_meta({"name": old.get("name") or w.path.stem, "type": "overlay" if src.get("overlay") == "1" else "baselayer",
+                    "format": "spyhop-style" if kind == "style" else old.get("format", "png"),
+                    "bounds": f"{max(-180, w_):.6f},{max(-85.0511, s_):.6f},{min(180, e_):.6f},{min(85.0511, n_):.6f}",
+                    "minzoom": zmin, "maxzoom": zmax, "attribution": src.get("attribution", ""),
+                    "description": f"Downloaded by Spyhop from {src['name']}",
+                    "spyhop_kind": kind, "spyhop_source": src["name"], "spyhop_url": src["url"],
+                    "spyhop_created": old.get("spyhop_created") or time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                    "spyhop_updated": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
+        if kind == "style":
+            d = self._gl_dir(src)
+            for f in [d / "_style.json", *sorted((d / "_tilejson").glob("*.json"))]:
+                if f.exists():
+                    w.put_file("style" if f.name == "_style.json" else f"tilejson:{f.stem}", f.read_bytes())
+        w.c.commit()
+
+    async def _prefetch(self, idx, src, jobs, writer: ChartWriter):
         sem = asyncio.Semaphore(4)
         st = self.prefetch_state
 
@@ -439,37 +570,66 @@ class TileService:
                 st["done"] += 1
 
         async def job(j) -> str:
+                # every tile goes into the chart file; one already saved (in the file, or in the
+                # browsing cache) isn't downloaded again
                 why = ""
                 if j[0] == "raster":
                     _, z, x, y = j
-                    if self._cache_path(src, z, x, y).exists():
+                    if writer.has(z, x, y):
+                        st["cached"] += 1
+                        return ""
+                    cache = self._cache_path(src, z, x, y)
+                    if cache.exists():
+                        data = cache.read_bytes()
                         st["cached"] += 1
                     else:
-                        data, why = await self._fetch(src, z, x, y, save=True)   # always kept, whatever the cache setting
+                        data, why = await self._fetch(src, z, x, y, save=False)
                         if data is None:
                             st["failed"] += 1
+                            return why
+                    if st["saved"] == 0 and not writer.n:
+                        writer.set_meta({"format": "jpg" if sniff_type(data) == "image/jpeg" else "png"})
+                    writer.put(z, x, y, data)
+                    st["saved"] += 1
                 elif j[0] == "gl":
                     _, tpl, z, x, y = j
-                    if self._gl_tile_path(src, tpl, z, x, y).exists():
+                    ts_id = _h(tpl)
+                    if writer.has(z, x, y, ts_id):
                         st["cached"] += 1
+                        return ""
+                    data, ct, status = await self.gl_tile(idx, tpl, z, x, y, save=False)
+                    if data is None and status in (404, 204):   # no data there (open ocean, land)
+                        st["empty"] += 1
+                    elif data is None:
+                        st["failed"] += 1
+                        why = f"HTTP {status}" if status and status != 504 else (ct or "no connection")
                     else:
-                        data, ct, status = await self.gl_tile(idx, tpl, z, x, y, save=True)
-                        if data is None and status in (404, 204):   # no data there (open ocean, land)
-                            st["empty"] += 1
-                        elif data is None:
-                            st["failed"] += 1
-                            why = f"HTTP {status}" if status and status != 504 else (ct or "no connection")
+                        writer.put(z, x, y, data, ts_id)
+                        st["saved"] += 1
                 else:
-                    if await self.gl_file(idx, j[1], "_glyphs") is None:
+                    data = await self.gl_file(idx, j[1], "_glyphs")
+                    if data is None:
                         st["failed"] += 1
                         why = "a font file failed"
+                    else:
+                        writer.put_file(f"file:{_h(j[1])}", data)
                 return why
         try:
             await asyncio.gather(*(one(j) for j in jobs))
         except asyncio.CancelledError:
             st["error"] = st["error"] or "stopped"
         finally:
+            if src.get("kind") == "style":         # TileJSON fetched during the download, too
+                for f in sorted((self._gl_dir(src) / "_tilejson").glob("*.json")):
+                    writer.put_file(f"tilejson:{f.stem}", f.read_bytes())
+            writer.close()
+            self.rescan_charts()
             st["running"] = False
+            if self.on_charts_changed:
+                try:
+                    self.on_charts_changed()
+                except Exception:  # noqa: BLE001
+                    pass
 
     def cancel_prefetch(self):
         if self._prefetch_task:
@@ -485,28 +645,165 @@ class TileService:
             self._mb[name] = sqlite3.connect(f"file:{p}?mode=ro", uri=True, check_same_thread=False)
         return self._mb[name]
 
+    def rescan_charts(self):
+        """Look at the charts folder again (after a download, or files copied in)."""
+        self.cfg.mbtiles = sorted(p.name for p in self.cfg.charts_dir.glob("*.mbtiles"))
+        for name in list(self._mb):
+            self._mb.pop(name).close()
+        self._chart_meta.clear()
+
+    def chart_meta(self, name: str) -> dict:
+        """A chart file's metadata table, with its tile count and size ({} if unreadable)."""
+        if name not in self._chart_meta:
+            meta = {}
+            try:
+                c = self._mbconn(name)
+                if c is not None:
+                    meta = dict(c.execute("SELECT name, value FROM metadata"))
+                    n = c.execute("SELECT COUNT(*) FROM tiles").fetchone()[0]
+                    if meta.get("spyhop_kind") == "style":
+                        n += c.execute("SELECT COUNT(*) FROM spyhop_tiles").fetchone()[0]
+                    meta["_tiles"] = n
+                    meta["_bytes"] = (self.cfg.charts_dir / name).stat().st_size
+            except Exception as e:  # noqa: BLE001
+                meta = {"_error": str(e)}
+            self._chart_meta[name] = meta
+        return self._chart_meta[name]
+
     def mbtiles_info(self) -> list[dict]:
         out = []
         for name in self.cfg.mbtiles:
             info = {"file": name, "name": name.rsplit(".", 1)[0], "minzoom": 0, "maxzoom": 18,
-                    "bounds": None, "format": "png", "overlay": False}
+                    "bounds": None, "format": "png", "overlay": False, "kind": "chart", "source": "",
+                    "tiles": None, "mb": None, "created": ""}
+            m = self.chart_meta(name)
+            if m.get("_error"):
+                info["error"] = m["_error"]
             try:
-                c = self._mbconn(name)
-                for k, v in c.execute("SELECT name, value FROM metadata"):
-                    if k in ("minzoom", "maxzoom"):
-                        info[k] = int(float(v))
-                    elif k == "bounds":
-                        info["bounds"] = [float(a) for a in v.split(",")]
-                    elif k == "format":
-                        info["format"] = v
-                    elif k == "name" and v:
-                        info["name"] = v
-                    elif k == "type":
-                        info["overlay"] = v == "overlay"
-            except Exception as e:  # noqa: BLE001
-                info["error"] = str(e)
+                for k in ("minzoom", "maxzoom"):
+                    if m.get(k) not in (None, ""):
+                        info[k] = int(float(m[k]))
+                if m.get("bounds"):
+                    info["bounds"] = [float(a) for a in m["bounds"].split(",")]
+            except ValueError:
+                pass
+            # a Spyhop download is called by its file name (a copied file keeps the original's metadata name)
+            label = info["name"] if m.get("spyhop_kind") else (m.get("name") or info["name"])
+            info.update(format=m.get("format", info["format"]), name=label, bytes=m.get("_bytes"),
+                        overlay=m.get("type") == "overlay", kind=m.get("spyhop_kind") or "chart",
+                        source=m.get("spyhop_source", ""), created=m.get("spyhop_updated") or m.get("spyhop_created", ""),
+                        tiles=m.get("_tiles"), mb=round(m["_bytes"] / 1e6, 1) if m.get("_bytes") is not None else None)
             out.append(info)
         return out
+
+    def _charts_for(self, src: dict, kind: str):
+        for name in self.cfg.mbtiles:
+            m = self.chart_meta(name)
+            if m.get("spyhop_source") == src["name"] and m.get("spyhop_kind") == kind:
+                c = self._mbconn(name)
+                if c is not None:
+                    yield c
+
+    def _offline_tile(self, src: dict, z, x, y, tileset=None) -> bytes | None:
+        """A tile of this layer from a downloaded area in the charts folder."""
+        row = (2 ** z - 1) - y
+        try:
+            for c in self._charts_for(src, "style" if tileset else "raster"):
+                if tileset:
+                    r = c.execute("SELECT tile_data FROM spyhop_tiles WHERE tileset=? AND zoom_level=? AND tile_column=? AND tile_row=?",
+                                  (tileset, z, x, row)).fetchone()
+                else:
+                    r = c.execute("SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                                  (z, x, row)).fetchone()
+                if r:
+                    return bytes(r[0])
+        except sqlite3.Error:
+            pass
+        return None
+
+    def _offline_blob(self, src: dict, key: str) -> bytes | None:
+        try:
+            for c in self._charts_for(src, "style"):
+                r = c.execute("SELECT data FROM spyhop_files WHERE key=?", (key,)).fetchone()
+                if r:
+                    return bytes(r[0])
+        except sqlite3.Error:
+            pass
+        return None
+
+    def _offline_json(self, src: dict, key: str) -> dict | None:
+        data = self._offline_blob(src, key)
+        try:
+            return json.loads(data) if data else None
+        except ValueError:
+            return None
+
+    # -- a downloaded style area on its own: /tiles/off/<file>/… (preview, and an offline layer)
+    def _chart_conn(self, name: str):
+        m = self.chart_meta(name) if name in self.cfg.mbtiles else {}
+        return (self._mbconn(name), m) if m.get("spyhop_kind") == "style" else (None, m)
+
+    def offline_style(self, name: str, base: str) -> dict | None:
+        """The style saved in a downloaded chart file, drawing only that file's tiles and fonts."""
+        c, m = self._chart_conn(name)
+        if c is None:
+            return None
+        files = {k: bytes(v) for k, v in c.execute("SELECT key, data FROM spyhop_files")}
+        try:
+            style = json.loads(files["style"])
+        except (KeyError, ValueError):
+            return None
+        style_url = m.get("spyhop_url", "")
+        style["layers"] = [l for l in style.get("layers") or [] if not _is_sounding_layer(l)]
+        for layer in style["layers"]:
+            _more_contour_labels(layer)
+        top = int(float(m.get("maxzoom", 22) or 22))
+        here = f"{base}/tiles/off/{quote(name, safe='')}"
+        for s in (style.get("sources") or {}).values():
+            tpls, tj = list(s.get("tiles") or []), {}
+            if isinstance(s.get("url"), str):
+                up = urljoin(style_url, s["url"])
+                try:
+                    tj = json.loads(files.get(f"tilejson:{_h(up)}", b"{}"))
+                except ValueError:
+                    tj = {}
+                tpls = [urljoin(up, u) for u in tj.get("tiles", [])]
+                s.pop("url")
+                for k in ("minzoom", "maxzoom", "bounds", "encoding", "tileSize", "scheme", "attribution"):
+                    if k in tj and k not in s:
+                        s[k] = tj[k]
+            else:
+                tpls = [urljoin(style_url, u) for u in tpls]
+            tile_id = _h(tpls[0]) if tpls else "none"
+            s["tiles"] = [f"{here}/t/{tile_id}/{{z}}/{{x}}/{{y}}"]
+            s["maxzoom"] = min(int(s.get("maxzoom", top) or top), top)   # past what was saved, enlarge the saved tiles
+        if isinstance(style.get("glyphs"), str):
+            style["glyphs"] = f"{here}/glyphs/{{fontstack}}/{{range}}"
+        style.pop("sprite", None)
+        return style
+
+    def offline_style_tile(self, name: str, tileset: str, z, x, y) -> bytes | None:
+        c, _m = self._chart_conn(name)
+        if c is None:
+            return None
+        r = c.execute("SELECT tile_data FROM spyhop_tiles WHERE tileset=? AND zoom_level=? AND tile_column=? AND tile_row=?",
+                      (tileset, z, x, (2 ** z - 1) - y)).fetchone()
+        return bytes(r[0]) if r else None
+
+    def offline_glyphs(self, name: str, fontstack: str, rng: str) -> bytes | None:
+        c, m = self._chart_conn(name)
+        if c is None:
+            return None
+        r = c.execute("SELECT data FROM spyhop_files WHERE key='style'").fetchone()
+        try:
+            g = json.loads(bytes(r[0])).get("glyphs") if r else None
+        except ValueError:
+            g = None
+        if not isinstance(g, str):
+            return None
+        up = self.fill_glyphs(urljoin(m.get("spyhop_url", ""), g), fontstack, rng)
+        r = c.execute("SELECT data FROM spyhop_files WHERE key=?", (f"file:{_h(up)}",)).fetchone()
+        return bytes(r[0]) if r else None
 
     def get_mbtile(self, name: str, z: int, x: int, y: int):
         c = self._mbconn(name)

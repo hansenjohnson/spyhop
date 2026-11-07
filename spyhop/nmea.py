@@ -106,7 +106,7 @@ class VesselState:
         return d
 
 
-# Instrument readings shown in the NMEA tab: key -> (group, label, unit).
+# Instrument readings shown in Tools → Instruments: key -> (group, label, unit).
 # Readings not listed here (other transducers, extra engines) are added as they arrive.
 INSTRUMENTS = {
     "sog": ("Navigation", "Speed over ground", "kn"),
@@ -316,7 +316,7 @@ class NmeaDecoder:
         return self._set_heading(h + self.state.variation)
 
 
-    # -- other instruments (shown in the NMEA tab) ---------------------------
+    # -- other instruments (shown in Tools → Instruments) ---------------------------
     def _VHW(self, f, source):
         # true hdg,T,mag hdg,M,speed kn,N,speed km/h,K
         stw = _f(f[4]) if len(f) > 4 else None

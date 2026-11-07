@@ -1,6 +1,6 @@
 # Spyhop report definitions
 
-Each report in **Survey → Reports** (other than Summary) is one JSON file. Spyhop's
+Each report in **Tools → Reports** (other than Summary) is one JSON file. Spyhop's
 own are in this folder (`spyhop/report_defs/`). The report engine is `spyhop/reports.py`,
 which is separate from the rest of Spyhop.
 
@@ -8,7 +8,7 @@ which is separate from the rest of Spyhop.
 
 Don't edit the files here: an update to Spyhop replaces them. Instead:
 
-1. Open **Survey → Reports → Open the reports folder**. This is the `reports` folder
+1. Open **Tools → Reports → Open the reports folder**. This is the `reports` folder
    inside Spyhop's own folder, and it is kept across updates.
 2. Put a `.json` file there:
    - **New report:** give it a new `id`.

@@ -4,7 +4,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
 
 ![Spyhop](docs/screenshot.png)
 
-> **Active development.** Spyhop is developed for our own vessel-based whale surveys at the New England Aquarium, and its default lists, checks and reports follow our protocols. Other groups are welcome to use and adapt it: lists, shortcuts and reports are config files, not code. Expect changes between versions, and check the exported columns against your own pipelines before relying on them. Version: see [CHANGELOG.md](CHANGELOG.md) (also shown in Spyhop under Survey → About).
+> **Active development.** Spyhop is developed for our own vessel-based whale surveys at the New England Aquarium, and its default lists, checks and reports follow our protocols. Other groups are welcome to use and adapt it: lists, shortcuts and reports are config files, not code. Expect changes between versions, and check the exported columns against your own pipelines before relying on them. Version: see [CHANGELOG.md](CHANGELOG.md) (also shown in Spyhop under Settings → About).
 
 ## Features
 
@@ -83,7 +83,7 @@ Download and unzip the [latest release](https://github.com/hansenjohnson/spyhop/
 
 - **Start Spyhop with its icon.** It opens a Terminal (or console) window, which *is* Spyhop running, and then Spyhop's own window. **Keep the Terminal window open while you work.**
 - **To quit,** close the Terminal window, or press Ctrl+C in it. Everything is saved as you type, so quitting never loses data.
-- **To update,** open **Survey → About → Updates**, press **Check for updates**, then **Install**, and restart Spyhop when it asks.
+- **To update,** open **Settings → About → Updates**, press **Check for updates**, then **Install**, and restart Spyhop when it asks.
   - It needs internet, and it updates from this repository's latest release (or its main branch, before the first release).
   - It keeps a backup of the old version and never touches your data.
   - You can also replace the program files by hand, or run `git pull` if you cloned the repository.
@@ -94,20 +94,20 @@ Download and unzip the [latest release](https://github.com/hansenjohnson/spyhop/
 
 ## Starting a survey
 
-1. **Connect the GPS.** In **Survey → NMEA**, under *GPS / NMEA inputs*, press **+ Add input** and choose its type:
+1. **Connect the GPS.** In **Tools → Instruments**, under *GPS / NMEA inputs*, press **+ Add input** and choose its type:
    - **SERIAL** for a USB GPS (pick its port)
    - **UDP** or **TCP** for a ship's network
    - **SIMULATOR** to practise
    
    Press **Apply**. The status bar shows the position once there's a fix.
-2. **Check your lists** (once): edit species, event types, behaviours and observers in **Survey → Dropdowns**, and the keyboard shortcuts in **Survey → Shortcuts**. If your team shares a config pack, use it from **Survey → File → Config packs** instead.
-3. **Plan the route** (optional): **Survey → Route**, then **Activate route**.
-4. **Start:** in **Survey → File**, press **Start New Survey…**. Enter a name (in your team's own naming convention) and the survey details. Spyhop adds the *Start* row to Effort and starts the trackline.
+2. **Check your lists** (once): edit species, event types, behaviours and observers in **Settings → Dropdowns**, and the keyboard shortcuts in **Settings → Shortcuts**. If your team shares a config pack, use it from **Settings → Templates** instead.
+3. **Plan the route** (optional): **Tools → Route**, then **Activate route**.
+4. **Start:** in **Survey**, press **Start New Survey…**. Enter a name (in your team's own naming convention) and the survey details. Spyhop adds the *Start* row to Effort and starts the trackline.
 5. **Go on effort:** Ctrl+Shift+F (⌘⇧F on a Mac) adds an Effort row that switches effort ON or OFF. Fill in the conditions and the observers.
 6. **Record sightings and events:** press **Add row** in the Sightings or Events tab, use a shortcut (Ctrl/⌘+Shift+S for a sighting, Ctrl/⌘+Shift+V for an event), or right-click the map.
-7. **Finish:** **Survey → Quality Control → Run quality control check**, then **Survey → File → End Survey…** and **Export Data…**.
+7. **Finish:** **Tools → Quality Control → Run quality control check**, then **Survey → End Survey…** and **Export Data…**.
 
-The **tutorial** in **Survey → About** (also [docs/TUTORIAL.md](docs/TUTORIAL.md)) walks through all of this, including the simulator, config files, error checking and reports.
+The **tutorial** in **Settings → About** (also [docs/TUTORIAL.md](docs/TUTORIAL.md)) walks through all of this, including the simulator, config files, error checking and reports.
 
 ## Documentation
 
@@ -120,7 +120,7 @@ The **tutorial** in **Survey → About** (also [docs/TUTORIAL.md](docs/TUTORIAL.
 
 ## Feedback
 
-Please report problems and suggestions as GitHub issues. For a bug, **Survey → About → Save diagnostics…** makes a zip of Spyhop's logs and settings (no survey data and no team names) that you can attach.
+Please report problems and suggestions as GitHub issues. For a bug, **Settings → About → Save diagnostics…** makes a zip of Spyhop's logs and settings (no survey data and no team names) that you can attach.
 
 ## License
 

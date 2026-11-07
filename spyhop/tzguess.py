@@ -1,4 +1,4 @@
-"""Guess the local time zone from a position (Settings → Clock → "From the platform's position").
+"""Guess the local time zone from a position (Settings → General → Clock → "From the platform's position").
 
 Uses the offline time-zone map in `tzfpy` when it's installed. At sea, more than about
 12 nm from shore, the map only has the nautical zones (Etc/GMT+5 and so on, which have no

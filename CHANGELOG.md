@@ -6,6 +6,23 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.16.0 — 2026-11-07
+
+- **Downloaded map areas are saved in the charts folder**, one `.mbtiles` file per area, named when you download (Settings → General → Map and offline charts). Downloading again with the same name adds to the file. Esri and NOAA downloads are standard MBTiles files; a Seascape download also holds its style and label fonts, so it draws from the file alone. Copy a file to another computer's charts folder to use it there.
+- **A list of the charts folder**, with what each file was made from, its zooms, tiles, size and date, and the totals. **Preview** shows one file on its own, zoomed to its area. **Look for new files** picks up files copied in without a restart, and each file is its own "… (offline)" layer in the layers menu.
+- Online layers use a downloaded area's tiles before going online.
+- A map server that can't be reached is skipped for a few seconds without holding up the others.
+- Instrument plots close when you click outside them.
+- The summary and reports no longer show "null" where a section has nothing in it (e.g. no right whales sighted).
+
+## 0.15.0 — 2026-11-07
+
+- **New tab layout.** The top row is now Sightings, Effort, Events, **Survey**, **Tools** and **Settings**, in place of one Survey tab holding ten others.
+  - **Survey:** start, end, open and export surveys, the survey details, the surveys in the data folder, and the folders (formerly Survey → File).
+  - **Tools:** Waypoints, Route, **Instruments** (formerly NMEA: live readings and the raw NMEA log), Quality Control and Reports.
+  - **Settings:** **General** (formerly Settings), **Inputs** (the GPS / NMEA inputs, moved from NMEA), Shortcuts, Dropdowns, **Templates** (the config packs, moved from Survey → File) and About.
+  - Tools and Settings each reopen the tab you used last. Keyboard shortcuts that open a tab keep working (Ctrl/Cmd+4 Reports, Ctrl/Cmd+5 General).
+
 ## 0.14.0 — 2026-11-06
 
 - **Config packs are kept in a folder and listed.** They live in the `config_packs` folder of the survey data folder. Survey → File → Config packs (formerly Group config) lists them, with each one's latest change, whether it matches this computer's config, and which is in use.

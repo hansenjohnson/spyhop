@@ -11,13 +11,13 @@ python -m spyhop --sim
 python -m spyhop --sim --sim-heading 135
 ```
 
-It also sends made-up depth, wind, weather and engine readings, so the NMEA tab has something to show. The simulator is listed with your other inputs in the **NMEA** tab (under *GPS / NMEA inputs*) (a `--sim` one is marked *this session only*). Change its heading or speed there and press **Apply**; the boat takes the new heading at once, from where it is. Untick it and press **Apply** to stop it. Whenever you've edited the inputs but not applied them, the button reads **Apply — unsaved changes**.
+It also sends made-up depth, wind, weather and engine readings, so Tools → Instruments has something to show. The simulator is listed with your other inputs in **Settings → Inputs** (a `--sim` one is marked *this session only*). Change its heading or speed there and press **Apply**; the boat takes the new heading at once, from where it is. Untick it and press **Apply** to stop it. Whenever you've edited the inputs but not applied them, the button reads **Apply — unsaved changes**.
 
 Other options: `--install-shortcut` (make the Spyhop icon again), `--nmea serial:COM4:4800`, `--nmea udp:10110`, `--nmea tcp:192.168.1.5:10110`, `--nmea gpsd:127.0.0.1`, `--nmea file:mylog.nmea`, `--data-dir PATH`, `--window` (a native window, needs `pip install pywebview`), `--host 0.0.0.0` (lets a tablet on the boat network connect to the same recorder), `--no-browser`.
 
 **Quitting:** close the Terminal/console window, or press Ctrl+C in it. Your data is saved as you go, so quitting never loses anything. Closing only Spyhop's own window leaves it running, still recording the track; open the icon again to get the window back. If you quit with a survey still active, Spyhop asks whether to continue it the next time it starts.
 
-**Diagnostic logs:** Spyhop keeps a log in `logs/` in Spyhop's own folder (Survey → About → Open folder). `spyhop.log` is rotated at 5 MB, keeping 5 old ones. It records:
+**Diagnostic logs:** Spyhop keeps a log in `logs/` in Spyhop's own folder (Settings → About → Open folder). `spyhop.log` is rotated at 5 MB, keeping 5 old ones. It records:
 - the version and system at start-up
 - each action and whether it worked or was refused (never the data itself)
 - errors with their details, from Spyhop and from its window
@@ -28,7 +28,7 @@ Other options: `--install-shortcut` (make the Spyhop icon again), `--nmea serial
 
 **If Spyhop feels slow:** the Terminal window prints a line starting `spyhop.slow` whenever something takes too long: the server busy for more than 0.25 s, a request over 1.5 s (with map tiles labelled as downloads from the internet), or the Spyhop window busy for more than 0.2 s (saying whether you were moving the map and which tab was open). Nothing is printed while everything is quick. Copy those lines when reporting slowness.
 
-## Planning a route (Survey → Route)
+## Planning a route (Tools → Route)
 
 The route is drawn on the map with numbered waypoints and kept between sessions. While it's a **draft** it shows only while the Route tab is open; once **activated** it stays on the map from every tab.
 
@@ -62,11 +62,11 @@ The route is drawn on the map with numbered waypoints and kept between sessions.
   - a **View the route** link
 
   Everything except the name and position is kept up to date as the vessel moves.
-- **Save as map overlay** saves the route, under its name, as a GeoJSON overlay. It's drawn under *Imported overlays* in the map's layers menu and listed in Survey → Waypoints, where you can remove it.
+- **Save as map overlay** saves the route, under its name, as a GeoJSON overlay. It's drawn under *Imported overlays* in the map's layers menu and listed in Tools → Waypoints, where you can remove it.
 - **Export GPX…** downloads the waypoints and a route for a chart plotter or OpenCPN, and keeps a copy in `exports/`.
 - **Import GPX…** loads a route back. A GPX exported by Spyhop holds the whole design (mode, legs, speed, appearance), so it comes back exactly; from any other GPX, the route (or else the waypoints, or a track) becomes a manual route.
 
-## Connecting GPS / instruments (Survey → NMEA)
+## Connecting GPS / instruments (Tools → Instruments)
 
 The **NMEA** tab (inside Survey) has three parts:
 
@@ -99,10 +99,10 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
   - latest effort state
 - **Map:**
   - zoom and pan
-  - the vessel with a heading vector (on/off and length in Settings → Map display)
-  - default marker shape and colour for sightings and events are in Settings → Map display (species and event-type colours from your lists take priority); waypoints have their own shape and colour on each row
-  - the track: green on effort, and a thinner grey line off effort. Set each one's colour, width and line style (solid, dashed, dotted, dash-dot), or hide it, in **Settings → Map display → Trackline**.
-  - **Settings → Map display** has everything that changes the map's look: markers, the trackline, lines and vectors, and fading. Fading dims the trackline, sightings and events older than the chosen hours; waypoints never fade.
+  - the vessel with a heading vector (on/off and length in Settings → General → Map display)
+  - default marker shape and colour for sightings and events are in Settings → General → Map display (species and event-type colours from your lists take priority); waypoints have their own shape and colour on each row
+  - the track: green on effort, and a thinner grey line off effort. Set each one's colour, width and line style (solid, dashed, dotted, dash-dot), or hide it, in **Settings → General → Map display → Trackline**.
+  - **Settings → General → Map display** has everything that changes the map's look: markers, the trackline, lines and vectors, and fading. Fading dims the trackline, sightings and events older than the chosen hours; waypoints never fade.
   - sighting, event and waypoint markers, each with a label and a popup. The popup shows only the essentials:
     - **sightings:** the time, the animals' position, the species and the number (with calves)
     - **events:** the time, position, event and ID
@@ -113,23 +113,27 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
     - ⌖ follow the vessel
     - 📏 measure: click to add points, double-click or Esc to finish, click again to clear. Each leg shows true and magnetic bearing plus distance, and the total.
     - ◎ range rings
-    - ⤢ zoom to the whole survey (overlays are imported in Survey → Waypoints)
+    - ⤢ zoom to the whole survey (overlays are imported in Tools → Waypoints)
   - **layers menu** (top right): base maps, offline charts, and overlays you can switch on and off, including a **graticule** (lat/lon grid; spacing adapts to the zoom, longitude labels run vertically so they don't collide)
   - **labels:** sightings show the species code plus the FieldID if there is one, e.g. `RIWH Eg-3720` (or SightNo if there's no species yet); events show their event code and ID, e.g. `CTD C-07` (or E1, E2… if both are blank)
   - **right-click menu:** add a sighting, event or waypoint at that point; measure from here; copy the position
   - **readout (bottom-left):** cursor position, bearing and distance from the vessel, and a nautical-mile scale
-- **Tabs:** **Sightings**, **Effort**, **Events** and **Survey**. Each data tab has **Add row**, **Delete row**, **Undo** and **Redo**. With no survey open, Spyhop opens on **Survey → File** (see *Surveys* below).
-  - **Survey** has a second row of tabs:
-    - **File:** start, end, close, open, export and clear surveys; survey details; the data folder.
-    - **Settings**
-    - **Shortcuts:** every keyboard shortcut and what it does.
+- **Tabs:** **Sightings**, **Effort**, **Events**, **Survey**, **Tools** and **Settings**. Each data tab has **Add row**, **Delete row**, **Undo** and **Redo**. With no survey open, Spyhop opens on **Survey** (see *Surveys* below).
+  - **Survey:** start, end, close, open, export and clear surveys; survey details; the surveys in the data folder; the folders.
+  - **Tools** has a second row of tabs:
     - **Waypoints:** the waypoints table, and the **map overlays**: import or remove GeoJSON/GPX/KML files, and add **past surveys** in the data folder as overlays (their trackline, solid on effort and dashed off effort, sightings and events; press **Update** after changing one).
     - **Route:** plan and activate a route (see *Planning a route* below).
-    - **NMEA:** instrument readings (click one to plot it), the raw NMEA log and the GPS inputs.
+    - **Instruments:** instrument readings (click one to plot it) and the raw NMEA log.
     - **Quality Control**
     - **Reports:** the Summary and the other reports (below).
+  - **Settings** has a second row of tabs:
+    - **General:** map display, text size, offline maps, tracking and reminders, bearings, distances and the clock, and sleep.
+    - **Inputs:** the GPS / NMEA inputs.
+    - **Shortcuts:** every keyboard shortcut and what it does.
+    - **Dropdowns:** the species, event, behaviour and observer lists.
+    - **Templates:** config packs (see *Config packs* below).
     - **About:** the version, the tutorial, the changelog, the diagnostic logs (**Save diagnostics…**), and **Updates**: **Check for updates** looks on GitHub for a newer Spyhop and can install it (with a backup of the old version) and restart. Tick *Check when Spyhop starts* to be told automatically when there's internet.
-  - Clicking **Survey** returns to the one you used last. "Settings → …", "NMEA" and so on below mean those tabs inside Survey.
+  - Clicking **Tools** or **Settings** returns to the one of its tabs you used last.
 - **Reports** has its own row of tabs. **Summary** comes first, then one tab per report (see *Reports* below). **Summary** shows:
   - the summary numbers, then the survey's start and end times, duration and details (platform, organization, chief scientist and their email)
   - **Save as HTML…** saves the summary as **one HTML file**, with an interactive map of the survey (track, sightings and events, with popups) at the top and the rest in the same order as the Reports tab. Waypoints aren't included, since they don't belong to a survey. It opens in any browser, even offline, with no Spyhop needed, so it's easy to email or share.
@@ -141,7 +145,7 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
   - **observers on watch**: time each observer spent at Port, Recorder and Stbd while effort was ON, and their total
   - the range of environmental conditions (visibility, sea state, weather, glare) for the whole survey and on effort only
   - While effort is ON, *Time on effort*, the distances and the watch times count up live (marked ●).
-- **Bottom row:** a description of the selected column (e.g. what **Ref** means) and **View**. Start, End, Close, Export and Clear are in **Survey → File** only, so they can't be clicked by accident. **View** options:
+- **Bottom row:** a description of the selected column (e.g. what **Ref** means) and **View**. Start, End, Close, Export and Clear are in **Survey** only, so they can't be clicked by accident. **View** options:
   - **Split vertical** or **Split horizontal:** drag the divider to resize
   - **Overlay:** a floating log window you can drag and resize
 - **Minimize / maximize the tables:** use the ▁ and □ buttons at the right end of the tab bar, Ctrl+Shift+M (Cmd on Mac), or double-click the divider.
@@ -158,17 +162,17 @@ The tables work like a spreadsheet:
 - **Multi-select cells** (Behaviors) open a checklist.
 - **Map** checkboxes toggle with a click or the Space bar.
 - **Lat/Lon** are accepted in almost any form: `41 30.5 N`, `41°30'30"N`, `41.508`, `4130.5N`. If you leave off N/S/E/W, it uses the vessel's hemisphere, so `70 20.5` near Cape Cod means 70°20.5′W. Choose DDM, DD or DMS display under **Settings → Lat/lon format**; every table updates at once. Files always store decimal degrees.
-- **Times** are shown in the survey clock (Settings → Clock), with the zone in each cell (e.g. `15:52:22 EST`). Type `14:05` to change only the time of day. The files always store each time with its UTC offset, so switching the clock never changes data. The clock can be:
+- **Times** are shown in the survey clock (Settings → General → Clock), with the zone in each cell (e.g. `15:52:22 EST`). Type `14:05` to change only the time of day. The files always store each time with its UTC offset, so switching the clock never changes data. The clock can be:
   - **From the platform's position:** the time zone at the GPS position, from an offline map (`tzfpy`), daylight saving included. At sea, the nearest coast's zone within 150 nm (so a survey off Cape Cod keeps Eastern time), and the nautical zone further out. Settings shows which zone was found and how; it's checked again after every 5 nm.
   - **This computer's time zone**, **UTC**, or **any fixed UTC offset** (UTC−12:00 … UTC+14:00, including half and quarter hours).
-- **Trackline breaks** (Settings → Tracking): the trackline and the summary distances are broken where the platform would have moved faster than **30 kn** between two points (a GPS jump; use about 200 for aerial surveys), or where no position came in for **120 s**. 0 turns either off. Quality Control lists each jump or gap (one that jumps away and back counts as one), and its **Fix** button adds an **ERROR** row to the Effort table at the start of the stretch, plus a row at its end that puts the effort and conditions back. ERROR counts as off effort, and the stretch isn't drawn.
+- **Trackline breaks** (Settings → General → Tracking): the trackline and the summary distances are broken where the platform would have moved faster than **30 kn** between two points (a GPS jump; use about 200 for aerial surveys), or where no position came in for **120 s**. 0 turns either off. Quality Control lists each jump or gap (one that jumps away and back counts as one), and its **Fix** button adds an **ERROR** row to the Effort table at the start of the stretch, plus a row at its end that puts the effort and conditions back. ERROR counts as off effort, and the stretch isn't drawn.
 - **Sightings:**
   - New rows get the time, vessel position and an auto-incrementing **SightNo**. **FieldID** (after Images) is free text for your own ID (photo-ID, catalogue number…). It becomes the sighting's map label. The cursor skips it on a new row so you go straight to Species.
   - Enter **Bearing** and **Distance**, and the animal's position (**SigLat/SigLon**) is calculated. Bearings can be negative and count back from 360 (−10 is stored as 350), which is handy for relative bearings to port. Without a bearing and distance, SigLat/SigLon are the vessel position.
   - The vessel heading is saved in the CSV (`VesHdg`, not shown in the table) so that bearings relative to the bow can be converted.
   - Each row stores its own bearing reference (**Ref**: M magnetic, T true, R relative to the bow) and distance **Unit**, so changing the defaults in Settings never changes old rows.
   - Magnetic bearings use the World Magnetic Model.
-- **Waypoints** (Survey → Waypoints; called Marks before 0.5.0): each waypoint has its own **Shape** (Circle, Diamond, Square, Triangle, Star) and **Color** (pick from the list or type a `#hex` code).
+- **Waypoints** (Tools → Waypoints; called Marks before 0.5.0): each waypoint has its own **Shape** (Circle, Diamond, Square, Triangle, Star) and **Color** (pick from the list or type a `#hex` code).
 - **Events:** the default list includes **Gear Reported**, **Gear Recovered** and **Other** (they're added once to existing `event_types.csv` files too; delete them there if you don't want them). **ID** is free text for an instrument or sample ID (CTD cast number, tag ID, drifter ID…). Each event type has a short code in `event_types.csv` (the `event_code` column, e.g. `CTD`, `ACOD`). Type the code to pick the event, and the map label shows code + ID.
 - **Effort:** the Effort column is **Start**, **ON**, **OFF** or **End**.
   - The first row is always **Start** (added when the survey starts; it can't be changed or deleted), and **End** can only be the last row.
@@ -176,7 +180,7 @@ The tables work like a spreadsheet:
   - Start and End count as off effort in the summary and on the track.
 - Every edit is saved to disk immediately. Undo/redo is unlimited per tab.
 
-### Keyboard shortcuts (Survey → Shortcuts)
+### Keyboard shortcuts (Settings → Shortcuts)
 
 | Keys (Cmd on Mac) | Action |
 |---|---|
@@ -185,19 +189,19 @@ The tables work like a spreadsheet:
 | Ctrl+Shift+F | Add an effort row that switches effort ON↔OFF |
 | Ctrl+Shift+R, Ctrl+Shift+H | Add a sighting pre-filled with North Atlantic right whale / Humpback whale |
 | Ctrl+Shift+U / Y | Undo / redo |
-| Ctrl+1 … 5 | Sightings, Effort, Events, Survey → Reports, Survey → Settings |
+| Ctrl+1 … 5 | Sightings, Effort, Events, Tools → Reports, Settings → General |
 | Ctrl+PageUp/PageDown, Alt+←/→ | Previous/next tab |
 | Ctrl+Shift+C | Centre on the vessel |
 | Ctrl+Shift+M | Minimize / restore the data tables |
 
-**Changing them:** in **Survey → Shortcuts**, click a shortcut's keys and press the new ones, choose what it does from the list, and press **Save**.
+**Changing them:** in **Settings → Shortcuts**, click a shortcut's keys and press the new ones, choose what it does from the list, and press **Save**.
 - Shortcuts that add a row can pre-fill columns, e.g. `Species=Fin whale;Obs=OBS1`.
 - Keys need Mod (Ctrl, or ⌘ on a Mac) or Alt, so they don't get in the way of typing; F1–F12 work alone.
 - Keys used twice are flagged, and combinations that the browser or the computer may take (e.g. Ctrl+W) are marked.
 - **Restore the default shortcuts** puts the original set back (press Save to keep it), and **Revert** discards unsaved changes.
 - For many changes at once you can still edit `shortcuts.csv` in a spreadsheet and reload it.
 
-### Drop-down lists (Survey → Dropdowns)
+### Drop-down lists (Settings → Dropdowns)
 
 The **Species**, **Events**, **Behaviors** and **Observers** tabs edit the drop-down lists.
 - Each entry has a name (initials, for observers), a code, and for species and events a colour, typed as a name like `red` or picked.
@@ -207,7 +211,7 @@ The **Species**, **Events**, **Behaviors** and **Observers** tabs edit the drop-
 - **While a survey is under way the lists are greyed out and can't be changed**, so they stay the same for the whole survey. End the survey to edit them. (Pulling a group config pack during a survey is still possible, after a warning.)
 - For many changes at once, the files (`species.csv` and so on) can still be edited in a spreadsheet and reloaded.
 
-## Reports (Survey → Reports)
+## Reports (Tools → Reports)
 
 - **Summary** is described under *What's on screen*.
 - The built-in reports are simple tables of selected records, in time order:
@@ -230,25 +234,30 @@ The **Species**, **Events**, **Behaviors** and **Observers** tabs edit the drop-
 - **Online layers** (the map's layers button):
   - **Seascape depths (feet)**, the default: Open Waters' Seascape bathymetry, with depth shading and labelled contours in feet (Spyhop leaves out its spot soundings). While it's shown, the readout at the bottom left gives the **depth at the cursor** (below chart datum), next to the scale bar; it works offline wherever the map has been viewed or downloaded, on an OpenStreetMap base. It's drawn with MapLibre GL (bundled), which loads the first time the layer is shown. Seascape is not an official chart and **not for navigation**.
   - Esri Ocean, Esri Imagery, NOAA charts (NOAA's chart display service), and OpenStreetMap.
-- **Tile cache:** everything an online layer shows is saved on this computer as you view it, so areas you've looked at stay available offline.
-- **Downloading an area for offline use** (Survey → Settings → Map and offline charts): move the map to cover the survey area, choose the layer and the zoom range, and press **Download** while you have internet.
+- **Browsing cache:** everything an online layer shows is also saved on this computer as you view it (unless "Save tiles as you view them" is off), so areas you've looked at stay available offline.
+- **Downloading an area for offline use** (Settings → General → Map and offline charts): move the map to cover the survey area, choose the layer, the zoom range and a name (e.g. *Cape Cod Bay*), and press **Download** while you have internet.
+  - The area is saved as **one file in the charts folder**, `<name>.mbtiles`. Downloading again with the same name adds to that file (a bigger area or more zooms); a file is only ever added to from the layer it was made from.
   - Spyhop shows roughly how many tiles that is before you start, and a progress bar while it runs.
   - Each zoom level has four times the tiles of the one before, so keep the highest zoom modest for a big area: 12–13 suits a day's survey area, 14–15 a harbour.
   - A layer's own top zoom is respected (Esri Ocean stops at 13), and zooming in past what was downloaded shows the saved tiles enlarged.
-  - For Seascape, its depth tiles, contours and label fonts are downloaded. Its OpenStreetMap base isn't, because OpenStreetMap's tile policy forbids bulk downloading, so download that area in **Esri Ocean** too if you want land detail offline. OpenStreetMap on its own can't be downloaded either.
-  - Downloads are kept even if "Save tiles as you view them" is off. When it finishes, Spyhop says how many tiles were saved, how many had no data (open ocean or land, which is normal), and how many failed and why. Press **Download** again to retry the ones that failed.
-  - With no internet, Spyhop stops trying the network for a few seconds after repeated failures, so the map stays quick and draws from the saved tiles.
-- **MBTiles:** put `.mbtiles` files in the `charts` folder and restart. Free, weekly-updated **NOAA nautical charts** for US waters are available at <https://distribution.charts.noaa.gov/ncds/>: click a region and download the MBTiles file.
+  - For Seascape, the file holds its depth tiles, contours, label fonts and the map style itself. Its OpenStreetMap base isn't saved, because OpenStreetMap's tile policy forbids bulk downloading, so download that area in **Esri Ocean** too if you want land detail offline. OpenStreetMap on its own can't be downloaded either.
+  - When it finishes, Spyhop says how many tiles were saved and in which file, how many had no data (open ocean or land, which is normal), and how many failed and why. Press **Download** again to retry the ones that failed.
+  - With no internet, Spyhop stops trying a server for a few seconds after repeated failures, so the map stays quick and draws from the saved tiles.
+- **In the charts folder** (the same section): a table of every `.mbtiles` file there, downloads and charts you added yourself, with what it was made from, its zooms, number of tiles, size and date, and the totals.
+  - **Preview** shows that file on its own, zoomed to its area with a dashed outline: only what is saved in it, as you'll have it at sea. Choose another map in the layers menu to go back.
+  - Each file is also its own layer, "*name* (offline)", in the map's layers menu. When you use the online layer it was made from (e.g. Seascape), Spyhop takes the tiles from the file before going online, so the map is quick and saves bandwidth.
+  - A downloaded file works on any computer with Spyhop: copy it into that computer's charts folder and press **Look for new files**.
+- **MBTiles charts of your own:** put `.mbtiles` files (raster PNG/JPEG tiles) in the charts folder and press **Look for new files** (or restart). Free, weekly-updated **NOAA nautical charts** for US waters are available at <https://distribution.charts.noaa.gov/ncds/>: click a region and download the MBTiles file. Downloads of Esri and NOAA layers are ordinary MBTiles files, so other map programs can open them too.
 - The online map layers are built into Spyhop, so fixes arrive with updates. To add one of your own, create `tile_sources.csv` in the Spyhop folder with the columns `name,url,attribution,overlay,max_zoom,kind`: its layers are added after the built-in ones. The URL is an XYZ tile server, or an ArcGIS `export` URL using `{bbox}`, with kind `raster`. A MapLibre `style.json` URL uses kind `style`.
 
 The online layers could not be tested from the machine this was built on, which had no internet. Check them once on a connected laptop before you sail.
 
 ## Surveys
 
-Surveys are managed in **Survey → File**; the quality control check is in **Survey → Quality Control**.
+Surveys are managed in **Survey**; the quality control check is in **Tools → Quality Control**.
 
 - **Start New Survey…** asks for a name and the survey details, then adds the **Start** row to the Effort tab. The trackline starts recording.
-  - The details are **platform name** (vessel name), **platform type** (Vessel, Plane, Land or Other), **organization**, **chief scientist** and **chief scientist email**. They're filled in from your last survey and can be changed any time in Survey → File.
+  - The details are **platform name** (vessel name), **platform type** (Vessel, Plane, Land or Other), **organization**, **chief scientist** and **chief scientist email**. They're filled in from your last survey and can be changed any time in Survey.
   - They're saved with the survey as `<survey>_metadata.csv` and included in exports and the summary.
   - The name is used exactly as typed (only characters that file systems forbid, such as `/ : * ?`, become `_`), so use your team's own convention, e.g. `NEAQ_CCB_2026-11-04_A`. A name that's already in use is refused rather than changed.
   - If another survey is still active, you're asked whether to **End** it or just **Close** it (keeping it active) first.
@@ -257,14 +266,14 @@ Surveys are managed in **Survey → File**; the quality control check is in **Su
 - **Surveys in this folder** lists every survey with its status (Active/Ended), start and end times, and number of sightings.
   - Press **Open** to open one. If it's still active, you're asked whether to **Continue** it (tracking resumes) or just open it to look at or correct.
   - Surveys made before Start/End existed get a Start row added at the top, timed at their earliest record, with a notice.
-- **Quality control check** (Survey → Quality Control): press **Run quality control check** before you finish a survey (or any time). It lists problems as **errors** (must fix), **warnings** (probably wrong) and **notes** (worth a look), and **Show** takes you to the row and column. It doesn't change anything, except when you press a **Fix** button. **Save report…** downloads the list as a CSV. It checks:
+- **Quality control check** (Tools → Quality Control): press **Run quality control check** before you finish a survey (or any time). It lists problems as **errors** (must fix), **warnings** (probably wrong) and **notes** (worth a look), and **Show** takes you to the row and column. It doesn't change anything, except when you press a **Fix** button. **Save report…** downloads the list as a CSV. It checks:
   - **Survey details:** every field filled in, and a valid email.
   - **Required fields:** Sightings — everything except Behaviors, Bearing, Ref, Dist, Unit, FieldID and Notes. Effort — everything except Notes (Start and End rows need only the time and position). Events — everything except ID and Notes.
   - **Valid values:** choices are in their lists; numbers, positions and times can be read; no time is in the future; nothing is before Start or after End; rows are in time order; no SightNo or EventNo is used twice; the survey starts with Start and has an End.
   - **Plausible values:** Num a whole number of at least 1 (flagged over 500); Calves not more than Num; Bearing 0–360° (negative bearings are stored as their 0–360 equivalent) and Dist not negative, given together and with their Ref and Unit; relative bearings have a heading; animals within 10 nm of the vessel and no further than the visibility on the Effort row in force; vessel positions within 0.5 nm of the trackline at that time; positions not on land (by the bundled coastline, ignoring the first 0.5 km); no track jumps or gaps beyond the trackline-break settings (each has a **Fix** button that marks it with an ERROR Effort row).
   - **Protocol:** a new Effort row at least every 1.5 × the reminder interval while on effort; nobody in two watch positions at once; the sighting's observer is on watch; a sighting entered twice (same time, species, number and position) or a duplicated event (same type and ID within 30 s). A FieldID can be reused for different species, and two sightings of one species close together are fine. Notes list sightings off effort, effort in sea state above 5 or visibility under 0.5 nm, and observers on watch over 2 hours without a break.
   - The thresholds are at the top of `spyhop/qc.py`.
-- **Keeping the computer awake** (Survey → Settings → Sleep): a computer that goes to sleep stops recording the trackline and NMEA data, so by default Spyhop stops it sleeping **during a survey** (from Start until End, or until the survey is closed). Choose **Always** to keep it awake whenever Spyhop is open, or **Never** to leave sleep to the computer's own settings. Tick **Keep the screen on too** to stop the screen turning off as well. Closing a laptop's lid still puts most laptops to sleep, and a laptop on battery runs down faster. When Spyhop quits, or crashes, the computer's own sleep settings apply again. (It uses `caffeinate` on a Mac, a Windows power request on Windows, and `systemd-inhibit` on Linux.)
+- **Keeping the computer awake** (Settings → General → Sleep): a computer that goes to sleep stops recording the trackline and NMEA data, so by default Spyhop stops it sleeping **during a survey** (from Start until End, or until the survey is closed). Choose **Always** to keep it awake whenever Spyhop is open, or **Never** to leave sleep to the computer's own settings. Tick **Keep the screen on too** to stop the screen turning off as well. Closing a laptop's lid still puts most laptops to sleep, and a laptop on battery runs down faster. When Spyhop quits, or crashes, the computer's own sleep settings apply again. (It uses `caffeinate` on a Mac, a Windows power request on Windows, and `systemd-inhibit` on Linux.)
 - **Crash recovery:** if Spyhop is closed or crashes while a survey is active, it reopens that survey on the next start and asks whether to continue. Tracking resumes only once you say so.
 - **Clear Survey Data…** is the only thing that deletes data. It needs two confirmations, the second by typing the survey name, and closes the survey.
 
@@ -278,11 +287,11 @@ Spyhop's own folder holds your lists and settings:
 
 If you used Spyhop under its earlier name (Whale Survey Recorder), the old `WhaleSurveyRecorder` folder is moved to `Spyhop` the first time Spyhop starts, so your surveys and config files carry over.
 
-Both folders are shown in **Survey → File → Folders**, each with an **Open folder** link.
+Both folders are shown in **Survey → Folders**, each with an **Open folder** link.
 
-**Config packs:** a config pack is one file (`<name>.spyhop.zip`) holding the lists, shortcuts, map display and report templates. **Survey → File → Config packs** lists the packs in the `config_packs` folder of the survey data folder, with each one's latest change, whether it matches this computer, and which one is in use. **Use this pack…** shows what would change and then overwrites this computer's config files with the pack's, with no merging (a backup is saved first in `config_packs/backups`; **Restore…** undoes it). **Overwrite…** replaces a pack with this computer's config, and **Save this computer's config as a new pack…** makes a new one; both ask for your name and what changed and add it to the pack's record of changes. A team's pack on the web is pulled with **Get a pack from the web** → **Check**, and a copy is kept in the folder for offline use. Using a pack during a survey is allowed after a warning. See [CONFIG_PACKS.md](CONFIG_PACKS.md) for sharing and hosting packs.
+**Config packs:** a config pack is one file (`<name>.spyhop.zip`) holding the lists, shortcuts, map display and report templates. **Settings → Templates** lists the packs in the `config_packs` folder of the survey data folder, with each one's latest change, whether it matches this computer, and which one is in use. **Use this pack…** shows what would change and then overwrites this computer's config files with the pack's, with no merging (a backup is saved first in `config_packs/backups`; **Restore…** undoes it). **Overwrite…** replaces a pack with this computer's config, and **Save this computer's config as a new pack…** makes a new one; both ask for your name and what changed and add it to the pack's record of changes. A team's pack on the web is pulled with **Get a pack from the web** → **Check**, and a copy is kept in the folder for offline use. Using a pack during a survey is allowed after a warning. See [CONFIG_PACKS.md](CONFIG_PACKS.md) for sharing and hosting packs.
 
-The **survey data folder** holds the survey files, waypoints and exports. It's `data/` inside Spyhop's folder unless you choose another one under **Survey → File → Folders** (**Choose folder…** opens your computer's folder chooser, or type/paste a path). It's remembered between sessions. If it isn't found at start-up (e.g. an unplugged drive), Spyhop uses the default for that session and tells you. Switching folders closes the open survey first.
+The **survey data folder** holds the survey files, waypoints and exports. It's `data/` inside Spyhop's folder unless you choose another one under **Survey → Folders** (**Choose folder…** opens your computer's folder chooser, or type/paste a path). It's remembered between sessions. If it isn't found at start-up (e.g. an unplugged drive), Spyhop uses the default for that session and tells you. Switching folders closes the open survey first.
 
 ```
 Spyhop/                                   (Spyhop's own folder)
@@ -337,10 +346,10 @@ Kept from the plugin:
 New or different:
 
 - Markers are clickable, with popups.
-- New map tools: measure, range rings, right-click "add here", lines from vessel to sighting, imported overlays, and offline MBTiles and tile caching.
-- A Waypoints tab, with map overlays.
+- New map tools: measure, range rings, right-click "add here", lines from vessel to sighting, imported overlays, offline MBTiles, and downloaded areas saved in the charts folder.
+- A Waypoints tab (in Tools), with map overlays.
 - GeoJSON, GPX and merged-CSV export, chosen per export.
-- An NMEA tab with live instrument readings and raw NMEA logging.
+- An Instruments tab (in Tools) with live instrument readings and raw NMEA logging.
 - A quality control check.
 - Several NMEA inputs at once, with priority and a raw monitor.
 - The keyboard opens dropdowns on Windows too. This was a known limitation in the plugin.

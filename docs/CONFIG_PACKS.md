@@ -2,7 +2,7 @@
 
 A **config pack** holds one set of Spyhop config files: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates. It lets a team use the same lists on every computer, and lets one computer switch between setups (for example a vessel crew and an aerial crew).
 
-Packs are managed in **Survey → File → Config packs**. They are kept in the **`config_packs` folder in the survey data folder**, and Spyhop lists every pack there. For each one it shows the latest change, whether it matches this computer's config, and which pack is in use. From the list you can:
+Packs are managed in **Settings → Templates**. They are kept in the **`config_packs` folder in the survey data folder**, and Spyhop lists every pack there. For each one it shows the latest change, whether it matches this computer's config, and which pack is in use. From the list you can:
 
 - **Use this pack…:** see what would change, then overwrite this computer's config files with the pack's (a backup is saved first).
 - **Overwrite…:** replace the pack with this computer's config, adding your name and what changed to its record of changes.
@@ -29,7 +29,7 @@ A pack is a zip file (or, on GitHub, a repository or a folder in one) containing
 
 **Report templates go as a set.** If the pack has a `reports` folder with templates in it, each computer ends up with exactly those templates: any other templates of its own are removed. A pack with no templates leaves each computer's templates alone.
 
-Survey data, waypoints and personal settings (data folder, GPS inputs, clock, sleep and the rest of Survey → Settings) are never in a pack and never changed by one.
+Survey data, waypoints and personal settings (data folder, GPS inputs, clock, sleep and the rest of Settings → General) are never in a pack and never changed by one.
 
 Other files in the pack, such as a README, are listed and left alone.
 
@@ -49,8 +49,8 @@ A plain CSV that you can edit in Excel, with one row per change:
 
 ## Making and changing a pack
 
-1. Set up the lists and shortcuts the way the team wants (**Survey → Dropdowns** and **Survey → Shortcuts**).
-2. In **Survey → File → Config packs**, press **Save this computer's config as a new pack…**, or **Overwrite…** on the pack you are updating.
+1. Set up the lists and shortcuts the way the team wants (**Settings → Dropdowns** and **Settings → Shortcuts**).
+2. In **Settings → Templates**, press **Save this computer's config as a new pack…**, or **Overwrite…** on the pack you are updating.
 3. Spyhop asks for **your name** and **what changed** (and, for a new pack, its name). It fills in **Files changed** itself: for a new pack, the files changed since this computer last used or saved a pack ("all" if it doesn't know); for an overwrite, the files that differ from that pack. It adds this as a row to the pack's `spyhop-config.csv` and saves the pack in the config packs folder.
 4. To leave a file out (such as `display.csv`), unzip the pack, delete the file, and zip it again.
 5. To share it, press **Download** (or **Open the config packs folder**) and publish the file as described below. Upload a new version in place of the old one at the same address. In Google Drive, right-click the file → **File information → Manage versions → Upload new version**, so the link stays the same.

@@ -3,6 +3,18 @@
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// Leave out null / undefined / false when adding children, as el() does, so an optional part written
+// `x ? el(...) : null` never shows up as the text "null" (it did in the summary and reports).
+for (const m of ['append', 'prepend', 'replaceChildren']) {
+  for (const proto of [Element.prototype, DocumentFragment.prototype]) {
+    const orig = proto[m];
+    if (orig.__skipsNull) continue;
+    const wrapped = function (...kids) { return orig.apply(this, kids.filter((k) => k !== null && k !== undefined && k !== false)); };
+    wrapped.__skipsNull = true;
+    proto[m] = wrapped;
+  }
+}
+
 export function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -134,7 +146,8 @@ export function toast(text, level = 'info', ms = 4500) {
 let modalOpen = 0;
 export const isModalOpen = () => modalOpen > 0;
 
-export function modal({ title, body, buttons = [{ label: 'OK', value: true, primary: true }], onOpen, width }) {
+// closeOnOutside: a click on the dimmed area around the box closes it (for read-only boxes such as plots)
+export function modal({ title, body, buttons = [{ label: 'OK', value: true, primary: true }], onOpen, width, closeOnOutside = false }) {
   return new Promise((resolve) => {
     modalOpen++;
     const back = el('div', { class: 'modal-back' });
@@ -146,6 +159,12 @@ export function modal({ title, body, buttons = [{ label: 'OK', value: true, prim
       onclick: () => close(typeof b.value === 'function' ? b.value() : b.value) }, b.label));
     box.append(el('h3', {}, title), el('div', { class: 'modal-body' }, body), el('div', { class: 'modal-buttons' }, btns));
     back.append(box);
+    if (closeOnOutside) {
+      // only a press that starts and ends outside the box, so dragging out of it doesn't close it
+      let downOutside = false;
+      back.addEventListener('pointerdown', (e) => { downOutside = e.target === back; });
+      back.addEventListener('click', (e) => { if (downOutside && e.target === back) close(undefined); downOutside = false; });
+    }
     document.body.append(back);
     const key = (e) => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(undefined); }
@@ -226,7 +245,7 @@ export function renderMarkdown(md) {
 }
 
 // ------------------------------------------------------------------ trackline breaks
-// Settings → Tracking: the line is broken where the platform would have moved faster than
+// Settings → General → Tracking: the line is broken where the platform would have moved faster than
 // track_break_kn between two points, or where there were no points for track_break_gap_s.
 export function isTrackBreak(a, b, st = {}) {
   const kn = +st.track_break_kn || 0, gap = +st.track_break_gap_s || 0;

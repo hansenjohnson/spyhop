@@ -405,3 +405,6 @@ table.dd-edit input[data-col=name], table.dd-edit input[data-col=full_name] { mi
 .filebox .btnrow { margin-top: 0.5em; }
 .progress { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 0.4em 0 0.2em; max-width: 30em; }
 .progress .bar { height: 100%; background: var(--accent); transition: width 0.4s; }
+
+table.charts-table td { vertical-align: top; }
+table.charts-table tfoot td { font-weight: 600; border-top: 1px solid var(--line); }
