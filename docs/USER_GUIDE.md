@@ -28,11 +28,19 @@ Other options: `--install-shortcut` (make the Spyhop icon again), `--nmea serial
 
 **If Spyhop feels slow:** the Terminal window prints a line starting `spyhop.slow` whenever something takes too long: the server busy for more than 0.25 s, a request over 1.5 s (with map tiles labelled as downloads from the internet), or the Spyhop window busy for more than 0.2 s (saying whether you were moving the map and which tab was open). Nothing is printed while everything is quick. Copy those lines when reporting slowness.
 
-## Planning a route (Tools → Route)
+## Planning routes (Tools → Routes)
 
-The route is drawn on the map with numbered waypoints and kept between sessions. While it's a **draft** it shows only while the Route tab is open; once **activated** it stays on the map from every tab.
+**Saved routes** (top of the tab) lists the routes in the `routes` folder in Spyhop's folder, one GPX file each, with its mode, waypoints, length and when it was saved:
 
-- **Start a route from the map:** right-click and choose **Start route here**. The Route tab opens with that point as the start (the first waypoint in manual mode, carrying on with Add points; the start point in systematic mode).
+- **Show** puts a route on the map on every tab, in its own colour (remembered; *Saved routes* in the map's layers menu switches them all on or off). Click a waypoint for its position and distance from the vessel, and **Open to edit**. **Show all** / **Hide all**.
+- **Open** loads a route into the editor below (*Current route*), to change it or activate it. If the route you're editing has unsaved changes, Spyhop asks first. The route being edited is marked *editing* (*editing · changed* once you change it; **Revert** goes back to the saved copy).
+- **Zoom to** and **Delete** (after asking).
+- **New route** starts an empty one; **Import GPX…** loads a GPX file into the editor; **Open the routes folder**; **Look for new files** picks up GPX files copied into the folder (from a plotter, another computer or a colleague). A GPX file that wasn't made by Spyhop opens as a manual route.
+
+The **current route** is drawn on the map with numbered waypoints and kept between sessions. While it's a **draft** it shows only while the Routes tab is open; once **activated** it stays on the map from every tab.
+
+- **Save:** **Save route** keeps it in the routes folder under its name (a new name for a route opened from the folder renames its file); **Save as new…** saves a copy under another name. Saving over another route's name asks first.
+- **Start a route from the map:** right-click and choose **Start route here**. The Routes tab opens with that point as the start (the first waypoint in manual mode, carrying on with Add points; the start point in systematic mode).
 - **Survey speed** (kn) sets the times.
 - **Start position** is chosen in the *Manual trackline* or *Systematic trackline* section: the vessel's current position (the route follows the vessel until it's activated), or the first point you click (manual) or a fixed point you pick on the map, type or take from the vessel now (systematic).
 - **Manual:** press **Add points on the map** and click where each waypoint should go. Drag a waypoint to move it. Use **Undo last point** or the ✕ in the waypoint list to take points off.
@@ -45,16 +53,16 @@ The route is drawn on the map with numbered waypoints and kept between sessions.
   Legs alternate direction, joined by crossings of the leg spacing.
 - **Route** box at the top:
   - **Activate route** locks the waypoints where they are (no dragging or editing, and a vessel start is frozen at the position it had) and keeps the route on the map from every tab. **Deactivate** to edit it again.
-  - **Clear route** removes all its waypoints (saved overlays and GPX files are kept).
+  - **Clear route** removes all its waypoints (saved routes and GPX files are kept).
   - **Zoom to route.**
-  - The map's layers menu has a **Route** entry to hide or show it.
+  - The map's layers menu has a **Current route** entry to hide or show it.
 - **Tables:**
   - **Legs:** from/to, course, distance, time, running total distance and time, and the ETA if you start now. Crossings are greyed.
   - **Totals:** total distance (and distance on the legs), total time and finish time.
   - **Waypoints:** each position.
 
   Times assume the survey speed and no time for turns.
-- **Appearance:** colour, line style (solid, dashed, dotted, dash-dot), line width and waypoint size (numbers show from 14 px). The default is grey and dotted. Used on the map and in saved overlays.
+- **Appearance:** colour, line style (solid, dashed, dotted, dash-dot), line width and waypoint size (numbers show from 14 px). The default is grey and dotted. Used on the map and saved with the route.
 - **Active route waypoints:** click one to see:
   - its name and position
   - its distance and bearing from the vessel
@@ -62,9 +70,8 @@ The route is drawn on the map with numbered waypoints and kept between sessions.
   - a **View the route** link
 
   Everything except the name and position is kept up to date as the vessel moves.
-- **Save as map overlay** saves the route, under its name, as a GeoJSON overlay. It's drawn under *Imported overlays* in the map's layers menu and listed in Tools → Overlays, where you can remove it.
 - **Export GPX…** downloads the waypoints and a route for a chart plotter or OpenCPN, and keeps a copy in `exports/`.
-- **Import GPX…** loads a route back. A GPX exported by Spyhop holds the whole design (mode, legs, speed, appearance), so it comes back exactly; from any other GPX, the route (or else the waypoints, or a track) becomes a manual route.
+- A GPX saved or exported by Spyhop holds the whole design (mode, legs, speed, appearance), so it opens again exactly; from any other GPX, the route (or else the waypoints, or a track) becomes a manual route.
 
 ## Connecting GPS / instruments (Tools → Instruments)
 
@@ -123,13 +130,13 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
   - **Tools** has a second row of tabs:
     - **Waypoints:** the waypoints table.
     - **Overlays:** the **map overlays**: import GeoJSON/GPX/KML files, **show or hide** each one (or all), zoom to one, or remove it; and add **past surveys** in the data folder as overlays (their trackline, solid on effort and dashed off effort, sightings and events; press **Update** after changing one). Hidden overlays stay hidden next time. *Imported overlays* in the map's layers menu switches them all on or off.
-    - **Route:** plan and activate a route (see *Planning a route* below).
+    - **Routes:** saved routes (show them on the map, open, delete) and the route being designed or activated (see *Planning routes* below).
     - **Instruments:** instrument readings (click one to plot it) and the raw NMEA log.
     - **Quality Control**
     - **Summary:** the survey summary (below).
     - **Reports:** pick rows of Sightings, Events or Effort and some of their columns, and save them as CSV, HTML or PDF; **Run Reports…** saves several at once (see *Reports* below).
   - **Settings** has a second row of tabs:
-    - **General:** map display, text size, tracking and reminders, bearings, distances and the clock, and sleep.
+    - **General:** map display, text size (tables, interface and the status bar), tracking and reminders, bearings, distances and the clock, and sleep.
     - **Basemap:** downloading areas for offline use, and the charts folder (see *Maps offline* below).
     - **Inputs:** the GPS / NMEA inputs.
     - **Shortcuts:** every keyboard shortcut and what it does.
@@ -304,6 +311,7 @@ Spyhop/                                   (Spyhop's own folder)
   shortcuts.csv  display.csv
   settings/  settings.json  current_survey.txt
   charts/    *.mbtiles      overlays/  imported GeoJSON/GPX/KML
+  routes/    saved routes (Tools → Routes), one GPX file each
   reports/   saved reports (Tools → Reports), one *.json each
   spyhop-config.csv   the record of changes of the config pack last used or saved
   logs/      diagnostic logs (spyhop.log, crash.log, diagnostics zips)

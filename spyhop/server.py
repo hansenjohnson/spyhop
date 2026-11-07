@@ -16,7 +16,7 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 
 from .recorder import Recorder, ValueErrorMsg
-from . import awake, configpack, __version__, diag, reports, schema, updater
+from . import awake, configpack, __version__, diag, reports, routes, schema, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports
 from .store import safe_name
@@ -507,7 +507,7 @@ class App:
         targets = {"data": cfg.root, "app": cfg.root, "exports": cfg.export_dir, "charts": cfg.charts_dir,
                    "overlays": cfg.overlays_dir, "survey": cfg.data_dir, "datafolder": cfg.data_dir,
                    "nmealogs": cfg.data_dir / "nmea_logs", "logs": diag.log_dir(cfg.root),
-                   "reports": reports.user_dir(cfg),
+                   "reports": reports.user_dir(cfg), "routes": cfg.routes_dir,
                    "backups": configpack.backups_dir(cfg), "packs": configpack.packs_dir(cfg)}
         if what in targets:
             p = targets[what]
@@ -734,6 +734,38 @@ class App:
         dest = out / f"{name}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.gpx"
         dest.write_text(gpx, encoding="utf-8")
         return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}")
+
+    # ---- saved routes (Tools → Routes; routes.py)
+    async def routes_list(self, request):
+        return json_ok(routes=routes.list_routes(self.rec.cfg), folder=str(routes.routes_dir(self.rec.cfg)))
+
+    async def route_file(self, request):
+        try:
+            return json_ok(gpx=routes.read(self.rec.cfg, request.query.get("file", "")))
+        except routes.RouteError as e:
+            raise ValueErrorMsg(str(e))
+
+    async def route_save(self, request):
+        b = await request.json()
+        try:
+            r = routes.save(self.rec.cfg, str(b.get("name") or ""), b.get("gpx") or "", b.get("replace") or None,
+                            bool(b.get("overwrite")))
+        except routes.RouteError as e:
+            msg = str(e)
+            if msg.startswith("exists:"):
+                return json_ok(exists=msg.split(":", 1)[1])
+            raise ValueErrorMsg(msg)
+        self._broadcast_soon({"type": "routes"})
+        return json_ok(route=r)
+
+    async def route_delete(self, request):
+        b = await request.json()
+        try:
+            routes.delete(self.rec.cfg, str(b.get("file") or ""))
+        except routes.RouteError as e:
+            raise ValueErrorMsg(str(e))
+        self._broadcast_soon({"type": "routes"})
+        return json_ok()
 
     # ---- the summary as a PDF (Tools → Summary; the page is built by the window)
     async def summary_pdf(self, request):
@@ -1140,6 +1172,10 @@ class App:
         r.add_post("/api/overlays", self.overlay_upload)
         r.add_delete("/api/overlays/{name}", self.overlay_delete)
         r.add_post("/api/plan/gpx", self.plan_gpx)
+        r.add_get("/api/routes", self.routes_list)
+        r.add_get("/api/routes/file", self.route_file)
+        r.add_post("/api/routes/save", self.route_save)
+        r.add_post("/api/routes/delete", self.route_delete)
         r.add_post("/api/overlays/survey", self.overlay_from_survey)
         r.add_static("/static/", WEB)
         app.on_startup.append(self.on_startup)

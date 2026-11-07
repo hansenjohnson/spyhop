@@ -1,7 +1,9 @@
-// Tools → Route: design a trackline (manual clicks or a systematic parallel-leg
+// Tools → Routes: design a trackline (manual clicks or a systematic parallel-leg
 // pattern), see each leg's distance and time, activate it (locked and shown on the map
-// from every tab), style it, save it as a map overlay and/or export GPX.
-import { el, esc, api, toast, confirmBox, fmtCoord, fmtPos, fmtDist, fmtBrg, distM, bearing, destination, timeParts, dashFor, LINE_STYLES } from './util.js';
+// from every tab), style it, and export GPX. Routes are saved in the routes folder (one GPX
+// file each, server routes.py); the Saved routes list opens one to edit, or shows any of
+// them on the map from every tab.
+import { el, esc, api, toast, confirmBox, promptBox, fmtCoord, fmtPos, fmtDist, fmtBrg, distM, bearing, destination, timeParts, dashFor, LINE_STYLES } from './util.js';
 
 // "45 min", "1 h 42 min" — clearer for passage times than 0:45:00
 export function fmtDuration(sec) {
@@ -11,6 +13,7 @@ export function fmtDuration(sec) {
 
 const M_PER_NM = 1852;
 const STORE = 'wsr.plan';
+const SHOWN = 'wsr.routesShown';     // saved routes shown on the map
 export const STYLE_DEFAULTS = { color: '#6b6b6b', point: 18, width: 3, line: 'dotted' };
 const OLD_DEFAULT_STYLE = { color: '#d35400', point: 22, width: 3, line: 'dashed' };   // before 0.8.0
 const DEFAULTS = {
@@ -18,6 +21,7 @@ const DEFAULTS = {
   manual: { points: [] },
   sys: { start: null, bearing: 0, legs: 4, legNm: 10, spacingNm: 2, side: 'starboard' },
   active: false, locked: null,      // an activated route: its waypoints, frozen
+  file: null, savedKey: null,       // the saved route this was opened from / saved as, and its design then
   layerOn: true,                    // the "Route" entry in the map's layers menu
   style: { ...STYLE_DEFAULTS },
 };
@@ -61,9 +65,16 @@ export class Planner {
     this.layer = L.layerGroup();
     this.adding = false;          // manual: clicks on the map add points
     this.picking = false;         // systematic: the next click sets the start
-    this.inTab = false;           // the Route tab is open
+    this.inTab = false;           // the Routes tab is open
+    this.saved = null;            // the routes folder: [{file, name, mode, points, nm, ...}]
+    this.savedCache = {};         // file -> {modified, points, style, name}
+    try { this.shown = new Set(JSON.parse(localStorage.getItem(SHOWN) || '[]')); } catch { this.shown = new Set(); }
+    this.savedLayer = L.layerGroup();
     const m = app.map;
-    m.layerControl.addOverlay(this.layer, 'Route');
+    m.layerControl.addOverlay(this.layer, 'Current route');
+    m.layerControl.addOverlay(this.savedLayer, 'Saved routes');
+    this.savedLayer.addTo(m.map);
+    m.map.on('overlayadd', (e) => { if (e.layer === this.savedLayer) this.drawSaved(); });
     // the user ticking / unticking "Route" in the layers menu (not our own add/remove)
     m.map.on('overlayadd overlayremove', (e) => {
       if (e.layer !== this.layer || this._syncing) return;
@@ -73,9 +84,10 @@ export class Planner {
       if (this.inTab) this.render();
     });
     this.sync();
+    if (this.shown.size) this.loadSaved();
   }
 
-  // The route is on the map while the Route tab is open, and from every tab once activated
+  // The route is on the map while the Routes tab is open, and from every tab once activated
   // (unless "Route" is unticked in the layers menu).
   sync() {
     const want = this.state.layerOn && (this.inTab || this.state.active);
@@ -292,13 +304,219 @@ export class Planner {
   changed() {
     this.save();
     this.draw();
+    this.drawSaved();   // the saved copy is hidden while it's being edited
     this.render();      // the whole tab: the Route status buttons depend on the number of waypoints
+  }
+
+  // ------------------------------------------------------------------ the routes folder
+  designKey() { const d = this.design(); delete d.spyhop; return JSON.stringify(d); }
+  unsaved() { const s = this.state; return this.route().length > 0 && (!s.file || s.savedKey !== this.designKey()); }
+
+  async loadSaved() {
+    let r;
+    try { r = await api('/api/routes'); } catch { return; }
+    this.saved = r.routes; this.folder = r.folder;
+    const files = new Set(this.saved.map((x) => x.file));
+    let pruned = false;
+    for (const f of [...this.shown]) if (!files.has(f)) { this.shown.delete(f); pruned = true; }
+    if (pruned) this.saveShown();
+    if (this.state.file && !files.has(this.state.file)) { this.state.file = null; this.state.savedKey = null; this.save(); }
+    await this.drawSaved();
+    if (this.inTab) this.render();
+  }
+
+  saveShown() { try { localStorage.setItem(SHOWN, JSON.stringify([...this.shown])); } catch {} }
+
+  async savedRoute(file) {
+    const meta = this.saved?.find((x) => x.file === file);
+    const c = this.savedCache[file];
+    if (c && meta && c.modified === meta.modified) return c;
+    let r;
+    try { r = await api(`/api/routes/file?file=${encodeURIComponent(file)}`); } catch { return null; }
+    const res = parseRouteGpx(r.gpx, file);
+    if (res.error) { toast(res.error, 'error'); return null; }
+    return (this.savedCache[file] = { modified: meta?.modified, design: res.design, exact: res.exact, points: res.points,
+      style: { ...STYLE_DEFAULTS, ...(res.design.style || {}) }, name: res.design.name || meta?.name || file });
+  }
+
+  // the shown saved routes, read-only, on the map from every tab (not the one being edited)
+  async drawSaved() {
+    const seq = (this._savedSeq = (this._savedSeq || 0) + 1);
+    const map = this.app.map.map;
+    const items = [];
+    for (const f of this.shown) {
+      if (f === this.state.file && this.app.map.map.hasLayer(this.layer)) continue;
+      const c = await this.savedRoute(f);
+      if (c) items.push([f, c]);
+    }
+    if (seq !== this._savedSeq) return;
+    this.savedLayer.clearLayers();
+    if (!map.hasLayer(this.savedLayer)) return;
+    for (const [f, c] of items) {
+      const st = c.style, pts = c.points;
+      if (pts.length > 1) {
+        L.polyline(pts, { color: st.color, weight: +st.width || 3, dashArray: dashFor(st.line, st.width), opacity: 0.85,
+          lineCap: st.line === 'dotted' ? 'round' : 'butt' }).bindTooltip(c.name, { sticky: true }).addTo(this.savedLayer);
+      }
+      const size = Math.max(4, Math.min(36, Math.round((+st.point || 18) * 0.8)));
+      pts.forEach((ll, i) => {
+        L.marker(ll, { keyboard: false, icon: L.divIcon({ className: 'plan-wp saved', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+          html: `<span style="background:${st.color};font-size:${Math.max(7, Math.round(size * 0.5))}px">${size >= 14 ? i + 1 : ''}</span>` }) })
+          .bindTooltip(`${c.name} · ${i + 1}`, { direction: 'top', offset: [0, -size / 2] })
+          .bindPopup(() => this.savedPopup(f, c, i)).addTo(this.savedLayer);
+      });
+    }
+  }
+
+  savedPopup(file, c, i) {
+    const fmt = this.app.S.config.settings.latlon_format;
+    const ll = c.points[i];
+    const v = this.vesselLL();
+    return el('div', {}, el('b', {}, `${c.name} · waypoint ${i + 1}`),
+      el('div', {}, fmtPos(ll[0], ll[1], fmt)),
+      v ? el('div', { class: 'pop-rel' }, `${fmtDist(distM(v, ll), this.app.unit())} from the vessel, bearing ${fmtBrg(bearing(v, ll))}T`) : null,
+      el('div', { class: 'pop-btns' }, el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.app.map.map.closePopup(); this.openSaved(file); } }, 'Open to edit')));
+  }
+
+  setShown(file, on) {
+    if (on) this.shown.add(file); else this.shown.delete(file);
+    this.saveShown();
+    const m = this.app.map.map;
+    if (on && !m.hasLayer(this.savedLayer)) this.savedLayer.addTo(m);
+    this.drawSaved();
+    if (this.inTab) this.render();
+  }
+
+  async zoomSaved(file) {
+    const c = await this.savedRoute(file);
+    if (!c || !c.points.length) return;
+    if (!this.shown.has(file) && file !== this.state.file) this.setShown(file, true);
+    const m = this.app.map;
+    if (this.app.S.config.settings.follow_vessel) m.setFollow(false, true);
+    m.map.fitBounds(L.latLngBounds(c.points).pad(0.25), { maxZoom: 13 });
+  }
+
+  // Load a design into the editor (from a saved route or an imported GPX file).
+  applyDesign(d, file = null) {
+    const s = this.state;
+    Object.assign(s, {
+      mode: d.mode === 'systematic' ? 'systematic' : 'manual', speed: +d.speed > 0 ? +d.speed : s.speed,
+      start: d.start === 'vessel' ? 'vessel' : 'first', name: d.name || s.name,
+      manual: { points: (d.manual?.points || []).filter((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)) },
+      sys: { ...DEFAULTS.sys, ...(d.sys || {}) },
+      style: d.style ? { ...STYLE_DEFAULTS, ...d.style } : s.style,
+      active: false, locked: null, file,
+    });
+    s.savedKey = file ? this.designKey() : null;
+    this.adding = false; this.picking = false;
+    this.updateClickMode();
+    this.save(); this.sync(); this.drawSaved();
+  }
+
+  async confirmLeave(what) {
+    const s = this.state;
+    if (s.active && !await confirmBox('Replace the active route?', `The current route “${s.name}” is active. Deactivate it and ${what}?`, 'Yes')) return false;
+    if (!s.active && this.unsaved() && !await confirmBox('Discard the changes?', `“${s.name}” has changes that aren’t saved. ${what[0].toUpperCase() + what.slice(1)} anyway?`, 'Discard changes', true)) return false;
+    return true;
+  }
+
+  async openSaved(file) {
+    if (file === this.state.file && !this.unsaved()) { this.app.showTab('route'); this.fit(); return; }
+    if (!await this.confirmLeave(file === this.state.file ? 'go back to the saved copy' : 'open another route')) return;
+    const c = await this.savedRoute(file);
+    if (!c) return;
+    this.applyDesign({ ...c.design, name: c.design.name || c.name }, file);
+    if (!c.exact) { this.state.savedKey = this.designKey(); this.save(); }
+    this.app.showTab('route');
+    this.render(); this.fit();
+    toast(c.exact ? `Opened “${this.state.name}”.` : `Opened ${file} as a manual route (${this.state.manual.points.length} waypoints).`, 'info', 4000);
+  }
+
+  async newRoute() {
+    if (!await this.confirmLeave('start a new route')) return;
+    const names = new Set((this.saved || []).map((x) => x.name.toLowerCase()));
+    let i = 1; while (names.has(`route ${i}`)) i++;
+    this.applyDesign({ mode: this.state.mode, speed: this.state.speed, start: 'first', name: `Route ${i}`, manual: { points: [] }, sys: { ...DEFAULTS.sys }, style: this.state.style });
+    this.render();
+  }
+
+  async saveRoute(asNew = false) {
+    const r = this.requireRoute();
+    if (!r) return;
+    const s = this.state;
+    let name = s.name;
+    if (asNew) {
+      name = (await promptBox('Save as a new route', 'Name', s.file ? `${s.name} (copy)` : s.name, 'Save'))?.trim();
+      if (!name) return;
+      s.name = name;
+    }
+    const replace = asNew ? null : s.file;
+    let res;
+    try { res = await api('/api/routes/save', { name, gpx: this.gpx(r), replace }); } catch { return; }
+    if (res.exists) {
+      if (!await confirmBox('Replace the saved route?', `There’s already a saved route ${res.exists}. Replace it with this one?`, 'Replace', true)) return;
+      try { res = await api('/api/routes/save', { name, gpx: this.gpx(r), replace, overwrite: true }); } catch { return; }
+    }
+    s.file = res.route.file;
+    s.savedKey = this.designKey();
+    delete this.savedCache[s.file];
+    this.save();
+    toast(`Saved “${name}” in the routes folder.`);
+    await this.loadSaved();
+  }
+
+  async deleteSaved(file) {
+    const meta = this.saved?.find((x) => x.file === file);
+    if (!await confirmBox('Delete the saved route?', `Delete “${meta?.name || file}”? This removes ${file} from the routes folder.${file === this.state.file ? ' The route stays in the editor, unsaved.' : ''}`, 'Delete', true)) return;
+    try { await api('/api/routes/delete', { file }); } catch { return; }
+    this.shown.delete(file); this.saveShown();
+    delete this.savedCache[file];
+    if (file === this.state.file) { this.state.file = null; this.state.savedKey = null; this.save(); }
+    await this.loadSaved();
+  }
+
+  savedSection() {
+    const s = this.state;
+    const list = this.saved;
+    const sec = el('section', { class: 'settings-sec routes-saved' }, el('h3', {}, 'Saved routes'));
+    if (!list) { sec.append(el('p', { class: 'hint' }, 'Loading…')); return sec; }
+    const fmtDate = (iso) => { const t = timeParts(new Date(iso), this.app.clock()); return `${t.date} ${t.time.slice(0, 5)}`; };
+    const body = list.length ? el('div', { class: 'table-scroll' }, el('table', { class: 'summary routes-table' },
+      el('thead', {}, el('tr', {}, ['Show', 'Route', ''].map((h) => el('th', {}, h)))),
+      el('tbody', {}, list.map((r) => {
+        const editing = r.file === s.file;
+        const mode = { manual: 'Manual', systematic: 'Systematic', imported: 'GPX file' }[r.mode] || '';
+        const bits = [mode, r.points ? `${r.points} waypoints` : '', r.nm ? `${r.nm.toFixed(2)} nm` : '', `saved ${fmtDate(r.modified)}`].filter(Boolean);
+        return el('tr', { class: editing ? 'editing' : '', 'data-file': r.file },
+          el('td', {}, el('input', { type: 'checkbox', checked: this.shown.has(r.file), disabled: !!r.error,
+            title: 'Show this route on the map, on every tab', onchange: (e) => this.setShown(r.file, e.target.checked) })),
+          el('td', { class: 'route-name' }, el('span', { class: 'route-swatch', style: { background: r.color || STYLE_DEFAULTS.color } }), ' ', el('b', {}, r.name),
+            editing ? el('span', { class: 'pill route-editing' }, this.unsaved() ? 'editing · changed' : 'editing') : null,
+            r.error ? el('div', { class: 'warn-text' }, r.error)
+              : el('div', { class: 'hint' }, bits.join(' · '), r.name + '.gpx' !== r.file ? ` · ${r.file}` : '')),
+          el('td', { class: 'route-actions' },
+            el('button', { disabled: !!r.error || (editing && !this.unsaved()), onclick: () => this.openSaved(r.file) }, editing ? (this.unsaved() ? 'Revert' : 'Editing') : 'Open'),
+            el('button', { disabled: !!r.error, onclick: () => this.zoomSaved(r.file) }, 'Zoom to'),
+            el('button', { class: 'danger-outline', onclick: () => this.deleteSaved(r.file) }, 'Delete')));
+      }))))
+      : el('p', { class: 'hint' }, 'No saved routes yet. Design one below and press Save route.');
+    sec.append(body,
+      el('div', { class: 'btnrow' },
+        el('button', { onclick: () => this.newRoute() }, 'New route'),
+        el('button', { onclick: () => this.importGpx() }, 'Import GPX…'),
+        list.length ? el('button', { onclick: () => { list.forEach((r) => { if (!r.error) this.shown.add(r.file); }); this.saveShown(); this.setShown(list[0].file, true); } }, 'Show all') : null,
+        this.shown.size ? el('button', { onclick: () => { this.shown.clear(); this.saveShown(); this.drawSaved(); this.render(); } }, 'Hide all') : null,
+        el('button', { onclick: () => this.app.open('routes') }, 'Open the routes folder'),
+        el('button', { onclick: () => this.loadSaved() }, 'Look for new files')),
+      el('p', { class: 'hint' }, 'Each route is a GPX file in the routes folder in Spyhop’s folder, so it can also go straight to a chart plotter or OpenCPN. Show puts a route on the map on every tab (Saved routes in the layers menu). Open loads it below to edit or activate. GPX files copied into the folder are listed after Look for new files.'));
+    return sec;
   }
 
   // ------------------------------------------------------------------ tab
   render() {
     const pane = document.getElementById('pane-route');
     if (!pane) return;
+    if (this.saved === null && !this._loadingSaved) { this._loadingSaved = true; this.loadSaved().finally(() => { this._loadingSaved = false; }); }
     const s = this.state;
     const fmt = this.app.S.config.settings.latlon_format;
     const sec = (title, ...kids) => el('section', { class: 'settings-sec' }, el('h3', {}, title), ...kids);
@@ -361,12 +579,15 @@ export class Planner {
           : s.sys.start ? 'Drag the first waypoint on the map to move the whole pattern.' : 'Choose a start point: pick it on the map, type it, or use the vessel position.'));
     }
 
-    const nameIn = el('input', { type: 'text', value: s.name, style: 'width:16em', onchange: (e) => { s.name = e.target.value.trim() || 'Route'; this.save(); } });
+    const nameIn = el('input', { type: 'text', value: s.name, style: 'width:16em', onchange: (e) => { s.name = e.target.value.trim() || 'Route'; this.save(); this.render(); } });
     const n = this.route().length;
-    const status = sec('Route',
+    const unsaved = this.unsaved();
+    const status = sec(`Current route: ${s.name}`,
+      el('p', { class: 'hint' }, s.file ? (unsaved ? `Opened from ${s.file}; changed since it was saved.` : `Saved as ${s.file}.`)
+        : n ? 'Not saved yet.' : 'Empty: design one below, or open a saved route.'),
       s.active
         ? el('p', {}, el('b', { class: 'route-active' }, '● Active. '), 'The waypoints are locked and the route is drawn on the map from every tab',
-          s.layerOn ? '' : ' (it is hidden now: tick “Route” in the map’s layers menu)', '. Deactivate it to change it.')
+          s.layerOn ? '' : ' (it is hidden now: tick “Current route” in the map’s layers menu)', '. Deactivate it to change it.')
         : el('p', { class: 'hint' }, 'Draft: drawn on the map only while this tab is open. Activate it to lock the waypoints and keep it on the map.'),
       el('div', { class: 'btnrow' },
         s.active
@@ -391,13 +612,13 @@ export class Planner {
           el('input', { type: 'number', min: 4, max: 48, step: 2, value: st.point, style: 'width:5em',
             oninput: (e) => { const v = Math.max(4, Math.min(48, +e.target.value || 22)); setStyle('point', v); } }), el('span', { class: 'hint' }, 'px (numbers show from 14)'))),
       el('div', { class: 'btnrow' }, el('button', { onclick: () => { s.style = { ...STYLE_DEFAULTS }; this.save(); this.draw(); this.render(); } }, 'Reset appearance')),
-      el('p', { class: 'hint' }, 'Used on the map and in a saved overlay.'));
-    const out = sec('Save the design',
+      el('p', { class: 'hint' }, 'Used on the map and in the saved GPX file.'));
+    const out = sec('Save',
       el('div', { class: 'btnrow' }, el('label', { class: 'inline' }, 'Name ', nameIn),
-        el('button', { class: 'primary', onclick: () => this.saveOverlay() }, 'Save as map overlay'),
-        el('button', { onclick: () => this.exportGpx() }, 'Export GPX…'),
-        el('button', { onclick: () => this.importGpx() }, 'Import GPX…')),
-      el('p', { class: 'hint' }, 'A saved overlay is drawn under “Imported overlays” in the map’s layers menu and listed in Tools → Overlays (hide or remove it there). The GPX file holds the waypoints and the route, for a chart plotter or OpenCPN; it is also kept in the exports folder. Import GPX… loads a route back: one exported by Spyhop comes back exactly as designed (mode, legs, speed and appearance); from any other GPX file, the route (or else the waypoints, or a track) becomes a manual route.'));
+        el('button', { class: 'primary', disabled: n < 2 || (!!s.file && !unsaved && s.file === `${s.name}.gpx`), onclick: () => this.saveRoute(false) }, s.file ? 'Save route' : 'Save route…'),
+        s.file ? el('button', { disabled: n < 2, onclick: () => this.saveRoute(true) }, 'Save as new…') : null,
+        el('button', { disabled: n < 2, onclick: () => this.exportGpx() }, 'Export GPX…')),
+      el('p', { class: 'hint' }, 'Save route keeps it in the routes folder (listed under Saved routes); renaming it and saving renames the file. Export GPX… downloads a copy and keeps one in the exports folder, for a chart plotter or OpenCPN. A route saved or exported by Spyhop opens again exactly as designed (mode, legs, speed and appearance); any other GPX file opens as a manual route of its route points (or else its waypoints, or its track).'));
 
     if (s.active) {
       for (const box of [design, modeBox]) {
@@ -405,7 +626,7 @@ export class Planner {
         box.querySelectorAll('input, select, button').forEach((x) => { x.disabled = true; });
       }
     }
-    pane.replaceChildren(status, design, modeBox, el('section', { class: 'settings-sec', id: 'plan-tables' }), looks, out);
+    pane.replaceChildren(this.savedSection(), status, out, design, modeBox, el('section', { class: 'settings-sec', id: 'plan-tables' }), looks);
     this.renderTables();
   }
 
@@ -430,7 +651,7 @@ export class Planner {
   }
 
   async clearRoute() {
-    if (!await confirmBox('Clear the route?', 'Remove all the waypoints of this route' + (this.state.active ? ' and deactivate it' : '') + '? Saved overlays and GPX files are not affected.', 'Clear', true)) return;
+    if (!await confirmBox('Clear the route?', 'Remove all the waypoints of this route' + (this.state.active ? ' and deactivate it' : '') + '? Saved routes and GPX files are not affected.', 'Clear', true)) return;
     const s = this.state;
     s.active = false; s.locked = null;
     s.manual.points = []; s.sys.start = null;
@@ -460,7 +681,7 @@ export class Planner {
     this.app.showTab('route');
     this.updateClickMode();
     this.render();
-    toast(s.mode === 'systematic' ? 'Start point set; adjust the legs in the Route tab.'
+    toast(s.mode === 'systematic' ? 'Start point set; adjust the legs in the Routes tab.'
       : s.manual.points.length > 1 ? 'Added as the route’s first waypoint.' : 'Route started here: click the map to add the next waypoints.', 'info', 5000);
   }
 
@@ -512,42 +733,6 @@ export class Planner {
     return r;
   }
 
-  geojson(r) {
-    const legs = this.legs(r);
-    const last = legs[legs.length - 1];
-    const s = this.state;
-    const created = new Date().toISOString();
-    const lonlat = (ll) => [+ll[1].toFixed(6), +ll[0].toFixed(6)];
-    return {
-      type: 'FeatureCollection',
-      features: [
-        { type: 'Feature', geometry: { type: 'LineString', coordinates: r.map((p) => lonlat(p.ll)) },
-          properties: { name: s.name, kind: 'Planned trackline', mode: s.mode, speed_kn: s.speed,
-            total_nm: +(last.total / M_PER_NM).toFixed(2), duration: fmtDuration(last.totalS), created,
-            stroke: s.style.color, 'stroke-width': +s.style.width || 3, dash: dashFor(s.style.line, s.style.width) } },
-        ...r.map((p, i) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: lonlat(p.ll) },
-          properties: { name: `${s.name} ${p.name}`, waypoint: i + 1, 'marker-color': s.style.color, 'marker-radius': Math.max(2, Math.round((+s.style.point || 22) / 4)),
-            ...(i ? { leg_nm: +(legs[i - 1].m / M_PER_NM).toFixed(2), total_nm: +(legs[i - 1].total / M_PER_NM).toFixed(2) } : {}) } })),
-      ],
-    };
-  }
-
-  async saveOverlay() {
-    const r = this.requireRoute();
-    if (!r) return;
-    const file = `${this.state.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')}.geojson`;
-    if ((this.app.S.overlays || []).includes(file)
-      && !await confirmBox('Replace the overlay?', `An overlay called ${file} already exists. Replace it with this route?`, 'Replace')) return;
-    const fd = new FormData();
-    fd.append('file', new Blob([JSON.stringify(this.geojson(r), null, 1)], { type: 'application/geo+json' }), file);
-    const res = await fetch('/api/overlays', { method: 'POST', body: fd }).then((x) => x.json()).catch(() => ({ ok: false, error: 'Couldn’t reach Spyhop' }));
-    if (!res.ok) { toast(res.error, 'error'); return; }
-    // make sure imported overlays are visible so the user sees it
-    const m = this.app.map;
-    if (!m.map.hasLayer(m.layers.imported)) m.layers.imported.addTo(m.map);
-    toast(`Saved the route as the overlay ${file}`);
-  }
-
   gpx(r) {
     const x = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const s = this.state;
@@ -590,22 +775,10 @@ ${r.map((p, i) => '  ' + pt('rtept', p, i)).join('\n')}
       try { txt = await f.text(); } catch (e) { toast(`Couldn’t read ${f.name}: ${e.message}`, 'error'); return; }
       const res = parseRouteGpx(txt, f.name);
       if (res.error) { toast(res.error, 'error', 8000); return; }
-      const s = this.state;
-      const hasRoute = s.active || this.route().length;
-      if (hasRoute && !await confirmBox('Replace the route?', `Replace the current route${s.active ? ' (it is active)' : ''} with “${res.design.name}” from ${f.name}?`, 'Replace')) return;
-      const d = res.design;
-      Object.assign(s, {
-        mode: d.mode === 'systematic' ? 'systematic' : 'manual', speed: +d.speed > 0 ? +d.speed : s.speed,
-        start: d.start === 'vessel' ? 'vessel' : 'first', name: d.name || s.name,
-        manual: { points: (d.manual?.points || []).filter((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)) },
-        sys: { ...s.sys, ...(d.sys || {}) },
-        style: d.style ? { ...STYLE_DEFAULTS, ...d.style } : s.style,
-        active: false, locked: null,
-      });
-      this.adding = false; this.picking = false;
-      this.updateClickMode();
-      this.save(); this.sync(); this.render(); this.fit();
-      toast(res.exact ? `Loaded the route “${s.name}” as it was designed.` : `Loaded ${s.manual.points.length} waypoints from ${f.name} as a manual route.`, 'info', 6000);
+      if (!await this.confirmLeave(`load “${res.design.name}” from ${f.name}`)) return;
+      this.applyDesign(res.design, null);
+      this.render(); this.fit();
+      toast(`${res.exact ? `Loaded the route “${this.state.name}” as it was designed` : `Loaded ${this.state.manual.points.length} waypoints from ${f.name} as a manual route`}. Press Save route to keep it in the routes folder.`, 'info', 7000);
     };
     input.click();
   }
@@ -626,18 +799,20 @@ ${r.map((p, i) => '  ' + pt('rtept', p, i)).join('\n')}
 export function parseRouteGpx(txt, fileName = '') {
   const doc = new DOMParser().parseFromString(txt, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length || !doc.getElementsByTagName('gpx').length) return { error: `${fileName || 'That file'} isn’t a GPX file.` };
-  const ext = doc.getElementsByTagName('spyhop:route')[0];
-  if (ext) {
-    try {
-      const d = JSON.parse(ext.textContent);
-      if (d && (d.mode === 'manual' || d.mode === 'systematic')) return { design: d, exact: true };
-    } catch { /* fall back to the points */ }
-  }
   const name = (n, tag) => n.getElementsByTagName(tag)[0]?.textContent?.trim() || '';
   const pts = (list) => [...list].map((p) => [+(+p.getAttribute('lat')).toFixed(6), +(+p.getAttribute('lon')).toFixed(6)])
     .filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180);
   let points = [], title = '';
   const rte = doc.getElementsByTagName('rte')[0];
+  const ext = doc.getElementsByTagName('spyhop:route')[0];
+  if (ext) {
+    try {
+      const d = JSON.parse(ext.textContent);
+      // the route as drawn when saved (a route from the vessel is saved where the vessel was)
+      const drawn = rte ? pts(rte.getElementsByTagName('rtept')) : pts(doc.getElementsByTagName('wpt'));
+      if (d && (d.mode === 'manual' || d.mode === 'systematic')) return { design: d, exact: true, points: drawn };
+    } catch { /* fall back to the points */ }
+  }
   if (rte) { points = pts(rte.getElementsByTagName('rtept')); title = name(rte, 'name'); }
   if (points.length < 2) { points = pts(doc.getElementsByTagName('wpt')); }
   if (points.length < 2) { const trk = doc.getElementsByTagName('trk')[0]; if (trk) { points = pts(trk.getElementsByTagName('trkpt')); title = title || name(trk, 'name'); } }
@@ -645,5 +820,5 @@ export function parseRouteGpx(txt, fileName = '') {
   if (points.length > 500) return { error: `${fileName || 'The file'} has ${points.length} points; a route can have up to 500.` };
   const meta = doc.getElementsByTagName('metadata')[0];
   title = title || (meta && name(meta, 'name')) || fileName.replace(/\.gpx$/i, '') || 'Imported route';
-  return { design: { mode: 'manual', start: 'first', name: title, manual: { points } }, exact: false };
+  return { design: { mode: 'manual', start: 'first', name: title, manual: { points } }, exact: false, points };
 }

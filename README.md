@@ -18,7 +18,8 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
   - offline coastline, online base maps with a tile cache, and NOAA MBTiles charts offline
 - **Route planning:**
   - manual or systematic (parallel-leg) tracklines, with leg times at the survey speed
-  - activate a route to keep it on the chart
+  - save any number of routes (as GPX files in a routes folder), show them on the chart and open them to edit
+  - activate a route to keep it on the chart, with ETAs at each waypoint
   - GPX export and import
 - **GPS and instruments:**
   - serial/USB, UDP, TCP, gpsd and file replay, with priorities between inputs
@@ -99,7 +100,7 @@ Download and unzip the [latest release](https://github.com/hansenjohnson/spyhop/
    
    Press **Apply**. The status bar shows the position once there's a fix.
 2. **Check your lists** (once): edit species, event types, behaviours and observers in **Settings → Dropdowns**, and the keyboard shortcuts in **Settings → Shortcuts**. If your team shares a config pack, use it from **Settings → Templates** instead.
-3. **Plan the route** (optional): **Tools → Route**, then **Activate route**.
+3. **Plan the route** (optional): **Tools → Routes**, then **Save route** and **Activate route**.
 4. **Start:** in **Survey**, press **Start New Survey…**. Enter a name (in your team's own naming convention) and the survey details. Spyhop adds the *Start* row to Effort and starts the trackline.
 5. **Go on effort:** Ctrl+Shift+F (⌘⇧F on a Mac) adds an Effort row that switches effort ON or OFF. Fill in the conditions and the observers.
 6. **Record sightings and events:** press **Add row** in the Sightings or Events tab, use a shortcut (Ctrl/⌘+Shift+S for a sighting, Ctrl/⌘+Shift+V for an event), or right-click the map.

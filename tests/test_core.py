@@ -1847,3 +1847,48 @@ def test_reports_folder_migrates_old_templates_and_filters(tmp_path):
     for f in reports.load(cfg2)[0]:
         reports.delete(cfg2, f["file"])
     assert reports.load(cfg2)[0] == []                                   # not put back
+
+
+def test_saved_routes_folder(tmp_path):
+    import json as _json
+    from spyhop import routes
+    from spyhop.config import Config
+    cfg = Config(tmp_path / "app")
+    assert cfg.routes_dir.is_dir() and routes.list_routes(cfg) == []
+    design = {"spyhop": 1, "mode": "systematic", "speed": 9, "name": "Leg plan", "style": {"color": "#ff0000"},
+              "sys": {"start": [41.9, -70.3], "bearing": 0, "legs": 2, "legNm": 5, "spacingNm": 1}}
+    gpx = ('<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1" '
+           'xmlns:spyhop="https://github.com/spyhop/route/1"><metadata><name>Leg plan</name><extensions><spyhop:route>'
+           + _json.dumps(design).replace("&", "&amp;").replace("<", "&lt;") + '</spyhop:route></extensions></metadata>'
+           '<rte><name>Leg plan</name><rtept lat="41.9" lon="-70.3"/><rtept lat="42.0" lon="-70.3"/>'
+           '<rtept lat="42.0" lon="-70.28"/></rte></gpx>')
+    r = routes.save(cfg, "Leg plan", gpx)
+    assert r["file"] == "Leg plan.gpx" and r["mode"] == "systematic" and r["points"] == 3 and r["color"] == "#ff0000"
+    assert 6.8 < r["nm"] < 7.0 and r["spyhop"]
+    with pytest.raises(routes.RouteError, match="exists"):
+        routes.save(cfg, "Leg plan", gpx)                         # a new route with a name in use
+    routes.save(cfg, "Leg plan", gpx, overwrite=True)
+    routes.save(cfg, "Leg plan", gpx, replace="Leg plan.gpx")     # saving the open one again
+    r2 = routes.save(cfg, "Renamed/plan", gpx, replace="Leg plan.gpx")
+    assert r2["file"] == "Renamed_plan.gpx" and [x["file"] for x in routes.list_routes(cfg)] == ["Renamed_plan.gpx"]
+    # a GPX copied into the folder from elsewhere, and one that isn't GPX
+    (cfg.routes_dir / "other.gpx").write_text('<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1">'
+                                              '<wpt lat="41" lon="-70"/><wpt lat="41.1" lon="-70"/></gpx>')
+    (cfg.routes_dir / "broken.gpx").write_text("nope")
+    by = {x["file"]: x for x in routes.list_routes(cfg)}
+    assert by["other.gpx"]["mode"] == "imported" and by["other.gpx"]["points"] == 2 and not by["other.gpx"]["spyhop"]
+    assert by["broken.gpx"]["error"]
+    assert "spyhop:route" in routes.read(cfg, "Renamed_plan.gpx")
+    for bad in ("../x.gpx", "x.txt", ".hidden.gpx", "missing.gpx"):
+        with pytest.raises(routes.RouteError):
+            routes.read(cfg, bad)
+    with pytest.raises(routes.RouteError):
+        routes.save(cfg, "x", "not gpx")
+    routes.delete(cfg, "other.gpx")
+    assert "other.gpx" not in {x["file"] for x in routes.list_routes(cfg)}
+
+
+def test_status_bar_font_size_default(tmp_path):
+    from spyhop.config import Config
+    cfg = Config(tmp_path)
+    assert cfg.display["status_font_size"] == "13"

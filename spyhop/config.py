@@ -206,6 +206,7 @@ DEFAULT_DISPLAY = {
     "track_off_style": "solid",
     "grid_font_size": "13",
     "ui_font_size": "13",
+    "status_font_size": "13",       # the status bar along the top
     "sightings_marker_shape": "Diamond",
     "sightings_marker_color": "darkorange",
     "events_marker_shape": "Square",
@@ -298,8 +299,9 @@ class Config:
         self.settings_dir = self.root / "settings"
         self.charts_dir = self.root / "charts"
         self.overlays_dir = self.root / "overlays"
+        self.routes_dir = self.root / "routes"          # saved routes (Tools → Routes), one GPX file each
         self.tile_cache_dir = self.root / "tile_cache"
-        for d in (self.root, self.settings_dir, self.charts_dir, self.overlays_dir):
+        for d in (self.root, self.settings_dir, self.charts_dir, self.overlays_dir, self.routes_dir):
             d.mkdir(parents=True, exist_ok=True)
         self.ensure_defaults()
         self._add_new_list_rows()

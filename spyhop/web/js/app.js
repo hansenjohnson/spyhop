@@ -139,7 +139,7 @@ class App {
   topTabs() { return ['sightings', 'effort', 'events']; }
   tabGroups() {
     return [
-      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Route'], ['nmea', 'Instruments'], ['qc', 'Quality Control'], ['summary', 'Summary'], ['reports', 'Reports']]],
+      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Routes'], ['nmea', 'Instruments'], ['qc', 'Quality Control'], ['summary', 'Summary'], ['reports', 'Reports']]],
       ['config', 'Settings', [['settings', 'General'], ['basemap', 'Basemap'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'],
         ['templates', 'Templates'], ['about', 'About']]]];
   }
@@ -349,6 +349,7 @@ class App {
     const d = this.S.config.display;
     document.documentElement.style.setProperty('--grid-font', `${+d.grid_font_size || 13}px`);
     document.documentElement.style.setProperty('--ui-font', `${+d.ui_font_size || 13}px`);
+    document.documentElement.style.setProperty('--status-font', `${+d.status_font_size || +d.ui_font_size || 13}px`);
   }
 
   // ---------------------------------------------------------------- render
@@ -502,6 +503,7 @@ class App {
       case 'overlays': api('/api/bootstrap').then((d) => { this.S.overlays = d.overlays; this.S.surveys = d.surveys; this.map.loadOverlays(d.overlays); this.renderOverlays(); }); break;
       case 'reload': this.reload(); break;
       case 'reports': this.reportsTool.onDefsChanged(); break;
+      case 'routes': this.planner.loadSaved(); break;
       default: break;
     }
   }
@@ -1301,7 +1303,7 @@ class App {
       + `, ${riwh.reduce((a, r) => a + (+r.Calves || 0), 0)} calves. Positions are the whales’ (SigLat/SigLon), or the vessel’s if none was worked out.` : '';
     pane.replaceChildren(
       el('div', { class: 'summary-head' },
-        el('h2', {}, `Survey: ${sv.name}${sv.ended ? ' (ended)' : ''}`),
+        el('h2', {}, `Survey: ${sv.name}`),
         el('div', { class: 'summary-actions no-print' },
           el('button', { onclick: () => this.saveSummaryHtml(), title: 'Save this summary and a map of the survey as one HTML file that opens in any browser, even offline' }, 'Save as HTML…'),
           el('button', { disabled: this.reportsTool.defs && !this.reportsTool.defs.pdf, title: 'Save this summary, with its map, as a PDF (needs Google Chrome or Microsoft Edge)',
@@ -1663,7 +1665,8 @@ class App {
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('nmea'); } }, 'Tools → Instruments'), '.')),
       sec('Text size',
         el('div', { class: 'grid2' },
-          dnum('grid_font_size', 'Table font size', 9, 28), dnum('ui_font_size', 'Interface font size', 9, 24))),
+          dnum('grid_font_size', 'Table font size', 9, 28), dnum('ui_font_size', 'Interface font size', 9, 24),
+          dnum('status_font_size', 'Status bar font size', 9, 36))),
       sec('Map display',
         el('h4', {}, 'Markers'),
         el('div', { class: 'grid2' },

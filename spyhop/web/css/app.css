@@ -40,7 +40,8 @@ a { color: var(--accent); }
 
 /* ------------------------------------------------------------ status bar */
 #status { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25em 1.1em; padding: 0.35em 0.8em;
-  background: var(--panel); border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; flex: none; }
+  background: var(--panel); border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; flex: none;
+  font-size: var(--status-font, inherit); }
 .sf { white-space: nowrap; }
 .sf.grow { flex: 1; }
 #sf-clock { font-weight: 700; font-size: 1.15em; }
@@ -454,3 +455,13 @@ table.overlay-table td { vertical-align: middle; }
 .run-reports label.check { margin: 0.4em 0; }
 .rr-folder { display: flex; gap: 0.4em; margin-top: 0.3em; }
 .rr-done { margin: 0.4em 0; padding-left: 1.2em; max-height: 18em; overflow: auto; }
+/* Tools → Routes: saved routes */
+.routes-table { width: 100%; }
+.routes-table td { vertical-align: middle; }
+.routes-table td.route-name { width: 100%; }
+.routes-table tr.editing td { background: var(--sel); }
+.route-swatch { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 50%; vertical-align: -0.1em; border: 1px solid rgba(0,0,0,.2); }
+.route-editing { margin-left: 0.5em; background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.route-actions { white-space: nowrap; }
+.route-actions button { margin-right: 0.3em; }
+.plan-wp.saved span { opacity: 0.85; }

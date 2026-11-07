@@ -6,6 +6,17 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.20.0 — 2026-11-07
+
+- **Tools → Routes** (was Route) keeps any number of routes, in a new `routes` folder in Spyhop's folder (one GPX file each, so a route can also go straight to a chart plotter).
+  - **Saved routes** at the top of the tab lists them, with mode, waypoints, length and date. **Show** puts any of them on the map on every tab (in their own colours; *Saved routes* in the layers menu); **Open** loads one to edit or activate; **Zoom to**; **Delete**.
+  - **Save route** / **Save as new…** / **New route** in the editor; the route being edited is marked, with *changed* until it's saved, and Spyhop asks before discarding changes.
+  - GPX files copied into the folder are listed after **Look for new files**.
+  - **Save as map overlay** is gone: show a saved route instead. (Overlays saved from routes before stay in Tools → Overlays.)
+  - In the layers menu, *Route* is now *Current route*.
+- **Status bar font size** in Settings → General → Text size.
+- The Summary's title no longer says "(ended)".
+
 ## 0.19.0 — 2026-11-07
 
 - **Tools → Filter is now Tools → Reports**, and the old Reports tab, its JSON report templates and the code behind them are gone. Tools: Waypoints, Overlays, Route, Instruments, Quality Control, Summary, Reports.

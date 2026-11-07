@@ -11,7 +11,7 @@ Spyhop records a vessel-based whale survey: sightings, effort and conditions, ev
 - **Tabs** (right):
   - **Sightings**, **Effort** and **Events** are the data tables.
   - **Survey** starts, ends, opens and exports surveys.
-  - **Tools** holds Waypoints, Overlays, Route, Instruments, Quality Control, Summary and Reports.
+  - **Tools** holds Waypoints, Overlays, Routes, Instruments, Quality Control, Summary and Reports.
   - **Settings** holds General, Basemap, Inputs, Shortcuts, Dropdowns, Templates and About.
 - **Status bar** (top): time, position, speed, survey name, tracking and effort state.
   - If the GPS fix is lost, it says **NO GPS** or **GPS LOST**.
@@ -49,13 +49,13 @@ If your team shares its config files, use **Settings → Templates** instead. Pa
 
 ## Plan a route
 
-1. Open **Tools → Route**, or right-click the map and choose **Start route here**.
+1. Open **Tools → Routes**, or right-click the map and choose **Start route here**.
 2. Set the **survey speed**, and choose **Manual** or **Systematic**:
    - **Manual:** press **Add points on the map** and click each waypoint. Drag them to adjust.
    - **Systematic:** set the start, the direction of the first leg, the number of legs, leg length and spacing. Spyhop draws back-and-forth lines.
 3. The tables show each leg's course, distance and time, the totals and the finish time.
 4. Press **Activate route**. The waypoints lock, the route stays on the map from every tab, and clicking a waypoint shows its distance and bearing from the vessel.
-5. **Save as map overlay** to keep the route, or **Export GPX…** for a chart plotter. **Import GPX…** loads a saved route back.
+5. **Save route** keeps it in the routes folder. **Saved routes**, at the top of the tab, lists every saved route: **Show** puts one on the map, **Open** brings it back to edit or activate. **Export GPX…** downloads a copy for a chart plotter.
 
 ## Start a survey
 
