@@ -1375,290 +1375,291 @@ class App {
       buttons: [{ label: 'Open it', value: () => this.open(`export:${r.name}`) }, { label: 'Done', primary: true, value: true }] });
   }
 
-  // ---------------------------------------------------------------- config packs (configpack.py)
-  // Settings → Templates: config packs (configpack.py)
+  // ---------------------------------------------------------------- templates (templates.py)
+  // Settings → Templates: a team's setup in one file, kept in the templates folder of the survey data folder
   renderTemplates() {
     const pane = $('#pane-templates');
     if (!pane) return;
-    pane.replaceChildren(this.groupConfigSection());
+    pane.replaceChildren(this.templatesSection());
   }
 
-  groupConfigSection() {
-    const S = this.S, st = S.config.settings, gc = (this.gc ||= {});
-    const sec = (title, ...kids) => el('section', { class: 'settings-sec', id: 'group-config' }, el('h3', {}, title), ...kids);
+  templatesSection() {
+    const S = this.S, st = S.config.settings, tp = (this.tpl ||= {});
+    const sec = (title, ...kids) => el('section', { class: 'settings-sec', id: 'templates' }, el('h3', {}, title), ...kids);
     const when = (iso) => { const p = iso && timeParts(iso, this.clock()); return p ? `${p.date} ${p.time.slice(0, 5)} ${p.abbr}` : ''; };
-    if ((!gc.list || gc.listDir !== S.config.data_dir) && !gc.loading) this.loadConfigPacks();
-    const L = gc.list;
-    const stem = (n) => n.replace(/\.spyhop\.zip$|\.spyhop$|\.zip$/i, '');
+    if ((!tp.list || tp.listDir !== S.config.data_dir) && !tp.loading) this.loadTemplates();
+    const L = tp.list;
+    const stem = (n) => n.replace(/\.spyhop-template\.zip$|\.spyhop\.zip$|\.spyhop$|\.zip$/i, '');
     const ext = (n) => n.slice(stem(n).length);
-    const cur = L?.current?.name && L.packs.find((p) => p.name === L.current.name);
+    const cur = L?.current?.name && L.templates.find((p) => p.name === L.current.name);
     const btn = (label, attrs, fn) => el('button', { ...attrs, onclick: fn }, label);
 
-    // ---- this computer's config and the packs in the folder
+    // ---- this computer's setup and the templates in the folder
     const kids = [
-      el('p', {}, 'A template (config pack) holds a team’s setup in one small file, so every computer records the same way: the species, event types, observers and behaviours lists, keyboard shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log, network GPS / NMEA inputs) and the online overlays and map feeds, and if you choose, waypoints, routes and overlays. Packs are kept in the config packs folder in the survey data folder; share one by uploading it (or copying it to a USB stick) and use it on another computer. Offline charts, survey data, serial GPS ports and the data folder are never in a pack.'),
+      el('p', {}, 'A template is your team’s Spyhop setup in one small file, so every computer records the same way: the species, event types, observers and behaviours lists, keyboard shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log, network GPS / NMEA inputs), the map feeds and which online overlays are on, and, if you choose, waypoints, routes and overlays. Update the template and use it again whenever the team changes something. Templates are kept in the templates folder of the survey data folder; share one by uploading it (or copying it to a USB stick). Offline charts, survey data, serial GPS ports and the data folder are never in a template.'),
     ];
-    if (!L) kids.push(el('p', { class: 'hint' }, gc.loading ? 'Reading the config packs folder…' : ''));
+    if (!L) kids.push(el('p', { class: 'hint' }, tp.loading ? 'Reading the templates folder…' : ''));
     else {
       let curText;
       const c = L.current;
       if (c?.name && cur) {
         const how = { saved: 'Saved to', loaded: 'Loaded from', backup: 'Restored from a backup, then' }[c.how] || 'From';
-        curText = el('p', { id: 'gc-current' }, el('b', {}, 'This computer’s config: '), `${how} `, el('span', { class: 'mono' }, cur.name),
+        curText = el('p', { id: 'tpl-current' }, el('b', {}, 'This computer’s setup: '), `${how} `, el('span', { class: 'mono' }, cur.name),
           c.when ? ` (${when(c.when)})` : '', cur.matches ? ' — no changes since.'
             : cur.differs?.length ? ` — changed since: ${cur.differs.join(', ')}.` : '.');
-      } else if (c?.how === 'backup') curText = el('p', { id: 'gc-current' }, el('b', {}, 'This computer’s config: '), `restored from a backup${c.when ? ` (${when(c.when)})` : ''}.`);
-      else curText = el('p', { id: 'gc-current' }, el('b', {}, 'This computer’s config: '), c?.name ? `from ${c.name}, which is no longer in the folder.` : 'not saved to or loaded from a pack in this folder yet.');
+      } else if (c?.how === 'backup') curText = el('p', { id: 'tpl-current' }, el('b', {}, 'This computer’s setup: '), `restored from a backup${c.when ? ` (${when(c.when)})` : ''}.`);
+      else curText = el('p', { id: 'tpl-current' }, el('b', {}, 'This computer’s setup: '), c?.name ? `from ${c.name}, which is no longer in the folder.` : 'not saved to or loaded from a template in this folder yet.');
       kids.push(curText);
-      kids.push(el('p', { class: 'hint' }, 'Packs in ', el('span', { class: 'mono' }, L.folder)));
-      if (!L.packs.length) kids.push(el('p', { class: 'hint', id: 'gc-nopacks' }, 'No packs here yet. Save this computer’s config as a pack, or get one from a web address below.'));
+      kids.push(el('p', { class: 'hint' }, 'Templates in ', el('span', { class: 'mono' }, L.folder)));
+      if (!L.templates.length) kids.push(el('p', { class: 'hint', id: 'tpl-none' }, 'No templates here yet. Save this computer’s setup as a template, or get one from a web address below.'));
       else {
-        kids.push(el('table', { class: 'summary gc-packs', id: 'gc-packs' },
-          el('thead', {}, el('tr', {}, ['Pack', 'Latest change', 'Compared with here', ''].map((h) => el('th', {}, h)))),
-          el('tbody', {}, L.packs.map((p) => {
+        kids.push(el('table', { class: 'summary tpl-list', id: 'tpl-list' },
+          el('thead', {}, el('tr', {}, ['Template', 'Latest change', 'Compared with here', ''].map((h) => el('th', {}, h)))),
+          el('tbody', {}, L.templates.map((p) => {
             const inUse = cur && p.name === cur.name;
             const status = p.error ? el('span', { class: 'err' }, p.error)
               : p.problems?.length ? el('span', { class: 'err' }, `Has problems: ${p.problems[0]}`)
                 : p.matches ? 'Same' : `Differs: ${p.differs.join(', ')}`;
             const latest = p.latest ? el('span', {}, [p.latest.date, p.latest.by].filter(Boolean).join(' · '),
-              p.latest.notes ? el('div', { class: 'gc-note' }, p.latest.notes) : null) : el('span', { class: 'hint' }, 'no record of changes');
-            return el('tr', { class: inUse ? 'gc-inuse' : '', 'data-pack': p.name },
+              p.latest.notes ? el('div', { class: 'tpl-note' }, p.latest.notes) : null) : el('span', { class: 'hint' }, 'no record of changes');
+            return el('tr', { class: inUse ? 'tpl-inuse' : '', 'data-template': p.name },
               el('td', {}, el('b', {}, stem(p.name)), el('span', { class: 'hint' }, ext(p.name)), inUse ? el('span', { class: 'pill' }, 'in use') : null),
               el('td', {}, latest),
               el('td', {}, status),
-              el('td', { class: 'gc-actions' },
-                btn('Use this pack…', { class: 'gc-use', disabled: !!(p.error || p.problems?.length) }, () => this.checkGroupConfig({ pack: p.name })),
-                btn('Overwrite…', { class: 'gc-overwrite', title: 'Overwrite this pack with this computer’s config' }, () => this.saveConfigPack(p.name)),
-                el('a', { class: 'button', href: `/api/configpacks/file/${encodeURIComponent(p.name)}`, download: p.name }, 'Download')));
+              el('td', { class: 'tpl-actions' },
+                btn('Use this template…', { class: 'tpl-use', disabled: !!(p.error || p.problems?.length) }, () => this.checkTemplate({ template: p.name })),
+                btn('Update…', { class: 'tpl-update', title: 'Replace this template with this computer’s setup' }, () => this.saveTemplate(p.name)),
+                el('a', { class: 'button', href: `/api/templates/file/${encodeURIComponent(p.name)}`, download: p.name }, 'Download')));
           }))));
       }
     }
     kids.push(el('div', { class: 'btnrow' },
-      btn('Save this computer’s config as a new pack…', { id: 'gc-save-new', class: 'primary' }, () => this.saveConfigPack(null)),
-      btn('Open the config packs folder', {}, () => this.open('packs')),
-      btn('Refresh', {}, () => this.loadConfigPacks())));
+      btn('Save as a new template…', { id: 'tpl-save-new', class: 'primary' }, () => this.saveTemplate(null)),
+      btn('Open the templates folder', {}, () => this.open('templates')),
+      btn('Refresh', {}, () => this.loadTemplates())));
 
-    // ---- what a pack would change (from the list, the web or a backup)
-    if (gc.done) {
-      const ad = gc.done.added || {}, n = (k, w) => ad[k] ? `${ad[k]} ${w}${ad[k] > 1 ? 's' : ''}` : '';
+    // ---- what a template did / would change (from the list, the web or a backup)
+    if (tp.done) {
+      const ad = tp.done.added || {}, n = (k, w) => ad[k] ? `${ad[k]} ${w}${ad[k] > 1 ? 's' : ''}` : '';
       const addText = [n('waypoints', 'waypoint'), n('routes', 'route'), n('overlays', 'overlay'), n('feeds', 'map feed')].filter(Boolean).join(', ');
-      const repl = gc.done.changed.filter((f) => !/^(Map feed: |routes\/|overlays\/|waypoints\.csv$)/.test(f));
-      kids.push(el('p', { class: 'okbox', id: 'gc-done' }, repl.length || addText || gc.done.removed
+      const repl = tp.done.changed.filter((f) => !/^(Map feed: |routes\/|overlays\/|waypoints\.csv$)/.test(f));
+      kids.push(el('p', { class: 'okbox', id: 'tpl-done' }, repl.length || addText || tp.done.removed
         ? ['Done.', repl.length ? ` Updated: ${repl.join(', ')}.` : '', addText ? ` Added ${addText}.` : '',
-          gc.done.removed ? ` Removed ${gc.done.removed} waypoint${gc.done.removed > 1 ? 's' : ''} the pack had added.` : ''].join('') : 'Done; nothing needed changing.',
-        gc.done.copy ? el('span', {}, ' A copy was kept in the config packs folder as ', el('span', { class: 'mono' }, gc.done.copy), '.') : '',
-        gc.done.backup ? el('span', {}, ' Backup saved as ', el('span', { class: 'mono' }, gc.done.backup), '. ') : ' ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); gc.done = null; this.renderTemplates(); } }, 'OK')));
+          tp.done.removed ? ` Removed ${tp.done.removed} waypoint${tp.done.removed > 1 ? 's' : ''} the template had added.` : ''].join('') : 'Done; nothing needed changing.',
+        tp.done.copy ? el('span', {}, ' A copy was kept in the templates folder as ', el('span', { class: 'mono' }, tp.done.copy), '.') : '',
+        tp.done.backup ? el('span', {}, ' Backup saved as ', el('span', { class: 'mono' }, tp.done.backup), '. ') : ' ',
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); tp.done = null; this.renderTemplates(); } }, 'OK')));
     }
-    const r = gc.result;
-    if (r) kids.push(this.configPackResult(r));
+    if (tp.result) kids.push(this.templateResult(tp.result));
 
     // ---- from the web
-    const urlBox = el('input', { type: 'text', id: 'gc-url', placeholder: 'https://drive.google.com/file/d/…', value: gc.url ?? st.group_config_url ?? '',
-      style: { flex: '1', minWidth: '22em' }, oninput: (e) => { gc.url = e.target.value; },
-      onkeydown: (e) => { if (e.key === 'Enter') this.checkGroupConfig(); } });
-    const last = st.group_config_last || {};
-    kids.push(el('h4', {}, 'Get a pack from the web'),
-      el('p', {}, 'Paste the link to the team’s pack (Google Drive, Dropbox, GitHub or a website, shared so anyone with the link can open it). Nothing is downloaded until you press Check; a copy of the pack is then kept in the config packs folder, so it can be used again without internet.'),
-      el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Web address of the pack:', urlBox),
-        el('button', { id: 'btn-gc-check', onclick: () => this.checkGroupConfig() }, gc.busy === 'check' ? 'Checking…' : 'Check')),
-      last.pulled ? el('p', { id: 'gc-last', class: 'hint' }, `Last pulled from the web ${when(last.pulled)}`,
-        last.latest ? ` — the pack’s latest change: ${[last.latest.date, last.latest.by, last.latest.notes].filter(Boolean).join(' · ')}` : '',
-        last.url && last.url !== (gc.url ?? st.group_config_url) ? ` (from ${last.url})` : '') : null);
+    const urlBox = el('input', { type: 'text', id: 'tpl-url', placeholder: 'https://drive.google.com/file/d/…', value: tp.url ?? st.template_url ?? '',
+      style: { flex: '1', minWidth: '22em' }, oninput: (e) => { tp.url = e.target.value; },
+      onkeydown: (e) => { if (e.key === 'Enter') this.checkTemplate(); } });
+    const last = st.template_last || {};
+    kids.push(el('h4', {}, 'Get a template from the web'),
+      el('p', {}, 'Paste the link to the team’s template (Google Drive, Dropbox, GitHub or a website, shared so anyone with the link can open it). Nothing is downloaded until you press Check; a copy is then kept in the templates folder, so it can be used again without internet.'),
+      el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Web address of the template:', urlBox),
+        el('button', { id: 'btn-tpl-check', onclick: () => this.checkTemplate() }, tp.busy === 'check' ? 'Checking…' : 'Check')),
+      last.pulled ? el('p', { id: 'tpl-last', class: 'hint' }, `Last got from the web ${when(last.pulled)}`,
+        last.latest ? ` — the template’s latest change: ${[last.latest.date, last.latest.by, last.latest.notes].filter(Boolean).join(' · ')}` : '',
+        last.url && last.url !== (tp.url ?? st.template_url) ? ` (from ${last.url})` : '') : null);
 
     // ---- backups
     const bk = L?.backups || [];
     kids.push(el('h4', {}, 'Backups'),
-      el('p', { class: 'hint' }, 'Spyhop saves a backup of this computer’s config before using a pack (unless you untick it), in ',
-        el('span', { class: 'mono' }, L?.backups_folder || 'config_packs/backups'), '.'),
-      bk.length ? el('table', { class: 'summary', id: 'gc-backups' }, el('tbody', {}, bk.slice(0, 5).map((b) => el('tr', {},
+      el('p', { class: 'hint' }, 'Spyhop saves a backup of this computer’s setup before using a template (unless you untick it), in ',
+        el('span', { class: 'mono' }, L?.backups_folder || 'templates/backups'), '. A backup is itself a template.'),
+      bk.length ? el('table', { class: 'summary', id: 'tpl-backups' }, el('tbody', {}, bk.slice(0, 5).map((b) => el('tr', {},
         el('td', {}, when(b.modified)), el('td', { class: 'mono' }, b.name),
-        el('td', {}, btn('Restore…', {}, () => this.checkGroupConfig({ backup: b.name }))))))) : null,
+        el('td', {}, btn('Restore…', {}, () => this.checkTemplate({ backup: b.name }))))))) : null,
       el('div', { class: 'btnrow' },
-        btn('Save a backup now', { id: 'btn-gc-backup' }, () => this.backupGroupConfig()),
+        btn('Save a backup now', { id: 'btn-tpl-backup' }, () => this.backupTemplate()),
         btn('Open the backups folder', {}, () => this.open('backups'))),
-      el('details', { class: 'hint' }, el('summary', {}, 'How to share a pack with the team'),
-        el('p', {}, 'Save this computer’s config as a pack (or overwrite the team’s pack with it), giving your name and what you changed: that’s added to the pack’s record of changes (spyhop-config.csv inside it). Then upload the file in place of the old one, keeping the same link (in Google Drive: Manage versions → Upload new version). Others press Check with that link.'),
-        el('p', {}, 'Packs are ordinary zip files named .spyhop.zip, so they open in any zip tool; Spyhop also reads packs named .zip or .spyhop. To leave a file out of a pack (e.g. display.csv, so each person keeps their own marker and text sizes), unzip it, delete the file and zip it again. SharePoint and OneDrive links usually need a sign-in, so they don’t work. See docs/CONFIG_PACKS.md.')));
+      el('details', { class: 'hint' }, el('summary', {}, 'How to share a template with the team'),
+        el('p', {}, 'Save this computer’s setup as a template (or Update the team’s template with it), giving your name and what you changed: that’s added to the template’s record of changes. Then upload the file in place of the old one, keeping the same link (in Google Drive: Manage versions → Upload new version). Others press Check with that link.'),
+        el('p', {}, 'Templates are ordinary zip files named .spyhop-template.zip, so they open in any zip tool: the lists and shortcuts are CSV files, and everything else is in spyhop-config.json. Spyhop also reads templates named .spyhop.zip, .spyhop or .zip, including ones made by older versions. SharePoint and OneDrive links usually need a sign-in, so they don’t work. See docs/TEMPLATES.md.')));
     return sec('Templates', ...kids);
   }
 
-  configPackResult(r) {
-    const S = this.S, st = S.config.settings, gc = this.gc;
+  templateResult(r) {
+    const S = this.S, st = S.config.settings, tp = this.tpl;
     const label = { new: 'New — will be added', changed: 'Changed — replaces this computer’s copy', same: 'Same as here',
-      removed: r.kind === 'backup' ? 'Will be removed' : 'Not in the pack — will be removed', kept: 'Already here — this computer’s is kept' };
+      removed: r.kind === 'backup' ? 'Will be removed' : 'Not in the template — will be removed', kept: 'Already here — this computer’s is kept' };
     const todo = r.files.filter((f) => f.status !== 'same' && f.status !== 'kept');
-    const title = r.kind === 'backup' ? `Restoring the backup ${r.name}` : r.kind === 'folder' ? `Using the pack ${r.name}` : 'The pack from the web';
+    const title = r.kind === 'backup' ? `Restoring the backup ${r.name}` : r.kind === 'folder' ? `Using the template ${r.name}` : 'The template from the web';
     const box = [el('h4', {}, `${title}: what would change`), el('p', { class: 'hint' }, `From ${r.source}`)];
-    box.push(el('p', { class: 'warnbox' }, el('b', {}, 'This overwrites this computer’s config files and shared settings. '),
-      'The pack’s lists, shortcuts and map display replace the ones here (nothing is merged); its saved reports replace all of this computer’s saved reports; its settings and network GPS / NMEA inputs replace this computer’s. Map feeds, waypoints, routes and overlays are only added: any already here are kept as they are, and none are removed',
-      r.kind === 'backup' ? ', except those the pack used after this backup added, which are taken away.' : '.',
+    box.push(el('p', { class: 'warnbox' }, el('b', {}, 'This replaces this computer’s lists, shortcuts, map display, saved reports and shared settings. '),
+      'The template’s lists, shortcuts and map display replace the ones here (nothing is merged); its saved reports replace all of this computer’s saved reports; its settings and network GPS / NMEA inputs replace this computer’s. Map feeds, waypoints, routes and overlays are only added: any already here are kept as they are, and none are removed',
+      r.kind === 'backup' ? ', except those the template used after this backup added, which are taken away.' : '.',
       ' Survey data, offline charts, serial GPS ports and the data folder are never changed.'));
     const inf = r.info || {};
-    if (inf.min_spyhop || inf.made_with) box.push(el('p', { class: 'hint', id: 'gc-version' },
+    if (inf.min_spyhop || inf.made_with) box.push(el('p', { class: 'hint', id: 'tpl-version' },
       [inf.min_spyhop ? `Needs Spyhop ${inf.min_spyhop} or newer` : '', inf.made_with ? `made with Spyhop ${inf.made_with}` : ''].filter(Boolean).join('; '),
       ` (this computer has ${S.about?.spyhop || ''}).`));
-    if (r.display) {
-      const d = r.display, names = [d.ais && 'AIS vessels', d.radar_us && 'US radar', d.radar_world && 'worldwide radar',
+    if (r.online) {
+      const d = r.online, names = [d.ais && 'AIS vessels', d.radar_us && 'US radar', d.radar_world && 'worldwide radar',
         ...(d.feed_names || [])].filter(Boolean);
-      box.push(el('p', { class: 'hint', id: 'gc-display' }, `Online overlays it switches on: ${names.length ? names.join(', ') : 'none'} (the others are switched off; each computer can change them afterwards).`));
+      box.push(el('p', { class: 'hint', id: 'tpl-online' }, `Online overlays it switches on: ${names.length ? names.join(', ') : 'none'} (the others are switched off; each computer can change them afterwards).`));
     }
     if (r.problems.length) {
-      box.push(el('div', { class: 'errbox' }, el('b', {}, 'The pack has problems, so it can’t be used. Ask whoever looks after it to fix:'),
+      box.push(el('div', { class: 'errbox' }, el('b', {}, 'The template has problems, so it can’t be used. Ask whoever looks after it to fix:'),
         el('ul', {}, r.problems.map((p) => el('li', {}, p)))));
     }
-    box.push(el('table', { class: 'summary gc-files' },
-      el('thead', {}, el('tr', {}, ['What', 'What happens', 'Here', 'In the pack'].map((h) => el('th', {}, h)))),
-      el('tbody', {}, r.files.map((f) => el('tr', { class: `gc-${f.status}` },
-        el('td', { class: f.unit === 'rows' || f.unit === 'report' || f.unit === 'route' || f.unit === 'overlay' ? 'mono' : '' }, f.file),
+    const count = (f, n) => (f.unit === 'rows' || f.unit === 'waypoints') && n != null ? `${n} ${f.unit === 'rows' ? 'row' : 'waypoint'}${n === 1 ? '' : 's'}` : '';
+    box.push(el('table', { class: 'summary tpl-parts' },
+      el('thead', {}, el('tr', {}, ['What', 'What happens', 'Here', 'In the template'].map((h) => el('th', {}, h)))),
+      el('tbody', {}, r.files.map((f) => el('tr', { class: `tpl-${f.status}` },
+        el('td', { class: ['rows', 'route', 'overlay'].includes(f.unit) ? 'mono' : '' }, f.file),
         el('td', {}, f.unit === 'waypoints' && f.status === 'new' ? `${f.add} new — will be added` : label[f.status],
-          f.detail ? el('div', { class: 'gc-note' }, f.detail) : null),
-        el('td', {}, (f.unit === 'rows' || f.unit === 'waypoints') && f.here != null ? `${f.here} ${f.unit === 'rows' ? 'rows' : f.here === 1 ? 'waypoint' : 'waypoints'}` : ''),
-        el('td', {}, (f.unit === 'rows' || f.unit === 'waypoints') && f.pack != null ? `${f.pack} ${f.unit === 'rows' ? 'rows' : f.pack === 1 ? 'waypoint' : 'waypoints'}` : ''))))));
-    if (r.manifest.length) {
-      box.push(el('h4', {}, 'Recent changes in the pack (spyhop-config.csv)'), el('table', { class: 'summary' },
-        el('thead', {}, el('tr', {}, ['Date', 'Changed by', 'Files', 'Notes'].map((h) => el('th', {}, h)))),
-        el('tbody', {}, r.manifest.map((m) => el('tr', {}, el('td', {}, m.date), el('td', {}, m.by), el('td', {}, m.files), el('td', {}, m.notes))))));
-    } else box.push(el('p', { class: 'hint' }, 'The pack has no spyhop-config.csv, so there’s no record of its changes.'));
-    if (r.ignored.length) box.push(el('p', { class: 'hint' }, `Not config files, so left alone: ${r.ignored.join(', ')}`));
-    const cancel = el('button', { onclick: () => { gc.result = null; this.renderTemplates(); } }, 'Cancel');
+          f.detail ? el('div', { class: 'tpl-note' }, f.detail) : null),
+        el('td', {}, count(f, f.here)), el('td', {}, count(f, f.in_template)))))));
+    if (r.history.length) {
+      box.push(el('h4', {}, 'Recent changes in the template'), el('table', { class: 'summary' },
+        el('thead', {}, el('tr', {}, ['Date', 'Changed by', 'What changed', 'Notes'].map((h) => el('th', {}, h)))),
+        el('tbody', {}, r.history.map((m) => el('tr', {}, el('td', {}, m.date), el('td', {}, m.by), el('td', {}, m.changed), el('td', {}, m.notes))))));
+    } else box.push(el('p', { class: 'hint' }, 'The template has no record of its changes.'));
+    if (r.ignored.length) box.push(el('p', { class: 'hint' }, `Not part of a template, so left alone: ${r.ignored.join(', ')}`));
+    const cancel = el('button', { onclick: () => { tp.result = null; this.renderTemplates(); } }, 'Cancel');
     if (!r.problems.length) {
       if (!todo.length) {
-        box.push(el('p', { id: 'gc-uptodate' }, el('b', {}, 'This computer already has this config.')),
-          el('div', { class: 'btnrow' }, el('button', { id: 'btn-gc-pull', onclick: () => this.pullGroupConfig() },
-            r.kind === 'web' || r.kind === 'file' ? 'Keep a copy in the config packs folder' : 'Mark it as in use'), cancel));
+        box.push(el('p', { id: 'tpl-uptodate' }, el('b', {}, 'This computer already has this setup.')),
+          el('div', { class: 'btnrow' }, el('button', { id: 'btn-tpl-use', onclick: () => this.useTemplate() },
+            r.kind === 'web' || r.kind === 'file' ? 'Keep a copy in the templates folder' : 'Mark it as in use'), cancel));
       } else {
-        const dirBox = el('input', { type: 'text', id: 'gc-backup-dir', value: gc.backupDir ?? st.group_config_backup_dir ?? '',
-          placeholder: this.gc.list?.backups_folder || '', style: { flex: '1', minWidth: '18em' },
-          oninput: (e) => { gc.backupDir = e.target.value; } });
-        const backup = el('input', { type: 'checkbox', id: 'gc-backup', checked: gc.backup ?? st.group_config_backup !== false,
-          onchange: (e) => { gc.backup = e.target.checked; } });
+        const dirBox = el('input', { type: 'text', id: 'tpl-backup-dir', value: tp.backupDir ?? st.template_backup_dir ?? '',
+          placeholder: tp.list?.backups_folder || '', style: { flex: '1', minWidth: '18em' },
+          oninput: (e) => { tp.backupDir = e.target.value; } });
+        const backup = el('input', { type: 'checkbox', id: 'tpl-backup', checked: tp.backup ?? st.template_backup !== false,
+          onchange: (e) => { tp.backup = e.target.checked; } });
         const verb = r.kind === 'backup' ? 'Restore' : r.kind === 'folder' ? 'Use it' : 'Pull it';
         box.push(
-          el('label', { class: 'check' }, backup, el('span', {}, 'Save a backup of this computer’s config files first (it can be restored to undo)')),
+          el('label', { class: 'check' }, backup, el('span', {}, 'Save a backup of this computer’s setup first (it can be restored to undo)')),
           el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Backup folder:', dirBox),
-            el('button', { onclick: async () => { const p = await this.pickFolder(); if (p) { gc.backupDir = p; dirBox.value = p; } } }, 'Choose…')),
-          el('div', { class: 'btnrow' }, el('button', { id: 'btn-gc-pull', class: 'primary', onclick: () => this.pullGroupConfig() },
-            gc.busy === 'pull' ? 'Working…' : `${verb}: ${todo.length} change${todo.length > 1 ? 's' : ''}`), cancel));
+            el('button', { onclick: async () => { const p = await this.pickFolder(); if (p) { tp.backupDir = p; dirBox.value = p; } } }, 'Choose…')),
+          el('div', { class: 'btnrow' }, el('button', { id: 'btn-tpl-use', class: 'primary', onclick: () => this.useTemplate() },
+            tp.busy === 'use' ? 'Working…' : `${verb}: ${todo.length} change${todo.length > 1 ? 's' : ''}`), cancel));
       }
     } else box.push(el('div', { class: 'btnrow' }, cancel));
-    return el('div', { id: 'gc-result', class: 'gc-result' }, ...box);
+    return el('div', { id: 'tpl-result', class: 'tpl-result' }, ...box);
   }
 
-  async loadConfigPacks() {
-    const gc = (this.gc ||= {});
-    gc.loading = true;
-    try { gc.list = await api('/api/configpacks'); gc.listDir = this.S.config.data_dir; } catch { gc.list = gc.list || null; gc.listDir = this.S.config.data_dir; }
-    gc.loading = false;
+  async loadTemplates() {
+    const tp = (this.tpl ||= {});
+    tp.loading = true;
+    try { tp.list = await api('/api/templates'); } catch { tp.list = tp.list || null; }
+    tp.listDir = this.S.config.data_dir;
+    tp.loading = false;
     if (this.tab === 'templates') this.renderTemplates();
   }
 
-  // name: overwrite that pack in the folder; null: save a new one
-  async saveConfigPack(name) {
+  // name: update that template in the folder; null: save a new one
+  async saveTemplate(name) {
     let info;
-    try { info = await api('/api/groupconfig/changes' + (name ? `?name=${encodeURIComponent(name)}` : '')); } catch { return; }
-    const since = info.since === 'pull' ? 'the last time a pack was used here' : info.since === 'pack' ? 'the last pack saved here' : null;
-    const filesText = info.files == null ? 'all' : info.files.join('; ');
-    const by = el('input', { type: 'text', id: 'mp-by', value: info.by || '', style: { width: '100%' }, placeholder: 'e.g. H. Johnson' });
-    const notes = el('textarea', { id: 'mp-notes', rows: 3, style: { width: '100%' }, placeholder: 'e.g. Added Dead bird; new observer JM' });
-    const files = el('input', { type: 'text', id: 'mp-files', value: filesText, style: { width: '100%' } });
-    const fname = el('input', { type: 'text', id: 'mp-name', style: { width: '100%' }, placeholder: 'e.g. 2026-NEA-CCB' });
-    // the optional parts: the overwritten pack's choice, else the last one made here
+    try { info = await api('/api/templates/changes' + (name ? `?name=${encodeURIComponent(name)}` : '')); } catch { return; }
+    const since = info.since === 'use' ? 'the last time a template was used here' : info.since === 'save' ? 'the last template saved here' : null;
+    const by = el('input', { type: 'text', id: 'tpl-by', value: info.by || '', style: { width: '100%' }, placeholder: 'e.g. H. Johnson' });
+    const notes = el('textarea', { id: 'tpl-notes', rows: 3, style: { width: '100%' }, placeholder: 'e.g. Added Dead bird; new observer JM' });
+    const changed = el('input', { type: 'text', id: 'tpl-changed', value: info.files == null ? 'all' : info.files.join('; '), style: { width: '100%' } });
+    const fname = el('input', { type: 'text', id: 'tpl-name', style: { width: '100%' }, placeholder: 'e.g. 2026-NEA-CCB' });
+    // the optional parts: the updated template's choice, else the last one made here
     let inc = info.includes;
-    if (!Array.isArray(inc)) { try { inc = JSON.parse(localStorage.getItem('wsr.packInclude') || '[]'); } catch { inc = []; } }
+    if (!Array.isArray(inc)) {
+      try { inc = JSON.parse(localStorage.getItem('wsr.templateInclude') || localStorage.getItem('wsr.packInclude') || '[]'); } catch { inc = []; }
+    }
     const part = (key, label, n) => el('label', { class: 'check' },
-      el('input', { type: 'checkbox', class: 'mp-include', value: key, checked: inc.includes(key) }),
+      el('input', { type: 'checkbox', class: 'tpl-include', value: key, checked: inc.includes(key) }),
       el('span', {}, `${label} (${n} on this computer)`));
     const online = this.online.displayState();
     const onNames = [online.ais && 'AIS vessels', online.radar_us && 'US radar', online.radar_world && 'worldwide radar',
       ...(this.online.feeds || []).filter((f) => online.feeds.includes(f.url)).map((f) => f.name)].filter(Boolean);
-    const withDisplay = el('input', { type: 'checkbox', id: 'mp-display', checked: true });
-    const minV = el('input', { type: 'text', id: 'mp-min', value: info.min_spyhop || info.min_default || '', style: { width: '8em' } });
-    const filesHint = name ? (info.files?.length ? `Different from ${name}.` : `Nothing differs from ${name}.`)
+    const withOnline = el('input', { type: 'checkbox', id: 'tpl-online-on', checked: true });
+    const minV = el('input', { type: 'text', id: 'tpl-min', value: info.min_spyhop || info.min_default || '', style: { width: '8em' } });
+    const changedHint = name ? (info.files?.length ? `Different from ${name}.` : `Nothing differs from ${name}.`)
       : since ? (info.files?.length ? `Changed on this computer since ${since}.` : `Nothing has changed on this computer since ${since}.`)
         : 'Spyhop doesn’t know what changed, so it says all.';
     const body = el('div', { class: 'stack-form' },
-      name ? el('p', { class: 'warnbox' }, el('b', {}, `This replaces ${name} `), 'with this computer’s config files. If this is the team’s pack, check with whoever looks after it first; the change is added to the pack’s record of changes.')
-        : el('p', {}, 'This saves this computer’s config files as a new pack in the config packs folder, with your change added to its record of changes (spyhop-config.csv).'),
-      name ? null : el('label', { class: 'stack' }, 'Pack name', fname, el('span', { class: 'hint' }, 'Saved as <name>.spyhop.zip')),
+      name ? el('p', { class: 'warnbox' }, el('b', {}, `This replaces ${name} `), 'with this computer’s setup. If this is the team’s template, check with whoever looks after it first; the change is added to the template’s record of changes.')
+        : el('p', {}, 'This saves this computer’s setup as a new template in the templates folder, with your change added to its record of changes.'),
+      name ? null : el('label', { class: 'stack' }, 'Template name', fname, el('span', { class: 'hint' }, 'Saved as <name>.spyhop-template.zip')),
       el('label', { class: 'stack' }, 'Your name', by),
-      el('label', { class: 'stack' }, 'What changed', notes),
-      el('label', { class: 'stack' }, 'Files changed', files, el('span', { class: 'hint' }, filesHint)),
-      el('div', { class: 'stack mp-parts' }, el('b', {}, 'Also include'),
-        el('span', { class: 'hint' }, 'The lists, shortcuts, map display, saved reports, shared settings and map feeds are always in the pack. Waypoints, routes and overlays are added on the computers that use it; any they already have are kept.'),
+      el('label', { class: 'stack' }, 'What you changed', notes),
+      el('label', { class: 'stack' }, 'Parts changed', changed, el('span', { class: 'hint' }, changedHint)),
+      el('div', { class: 'stack tpl-parts-choice' }, el('b', {}, 'Also include'),
+        el('span', { class: 'hint' }, 'The lists, shortcuts, map display, saved reports, shared settings and map feeds are always in the template. Waypoints, routes and overlays are added on the computers that use it; any they already have are kept.'),
         part('waypoints', 'Waypoints', info.waypoints), part('routes', 'Routes', info.routes), part('overlays', 'Overlays', info.overlays),
-        el('label', { class: 'check' }, withDisplay, el('span', {}, `Which online overlays are switched on, and the radar settings (now: ${onNames.length ? onNames.join(', ') : 'none'})`))),
-      el('div', { class: 'stack mp-min' }, el('label', { class: 'inline' }, 'Needs Spyhop version ', minV, ' or newer'),
-        el('span', { class: 'hint' }, `Computers with an older Spyhop are asked to update before they can use the pack. ${info.min_default} is the lowest; this computer has ${info.version}.`)));
+        el('label', { class: 'check' }, withOnline, el('span', {}, `Which online overlays are switched on, and the radar settings (now: ${onNames.length ? onNames.join(', ') : 'none'})`))),
+      el('div', { class: 'stack tpl-min' }, el('label', { class: 'inline' }, 'Needs Spyhop version ', minV, ' or newer'),
+        el('span', { class: 'hint' }, `Computers with an older Spyhop are asked to update before they can use the template. ${info.min_default} is the lowest; this computer has ${info.version}.`)));
     for (;;) {
-      const ok = await modal({ title: name ? 'Overwrite a config pack' : 'Save a new config pack', body,
-        buttons: [{ label: 'Cancel', value: false }, { label: name ? 'Overwrite the pack' : 'Save the pack', value: true, primary: true }],
+      const ok = await modal({ title: name ? 'Update a template' : 'Save a new template', body,
+        buttons: [{ label: 'Cancel', value: false }, { label: name ? 'Update the template' : 'Save the template', value: true, primary: true }],
         onOpen: () => { setTimeout(() => (!name ? fname : by.value ? notes : by).focus(), 0); return true; } });
       if (!ok) return;
-      if (!name && !fname.value.trim()) { toast('Please give the pack a name.', 'warn'); continue; }
+      if (!name && !fname.value.trim()) { toast('Please give the template a name.', 'warn'); continue; }
       if (by.value.trim() && notes.value.trim()) break;
-      toast('Please give your name and what changed.', 'warn');
+      toast('Please give your name and what you changed.', 'warn');
     }
     try {
-      const include = [...body.querySelectorAll('.mp-include')].filter((x) => x.checked).map((x) => x.value);
-      try { localStorage.setItem('wsr.packInclude', JSON.stringify(include)); } catch {}
-      const r = await api('/api/configpacks/save', { name: name || fname.value, overwrite: !!name, by: by.value, notes: notes.value, files: files.value,
-        include, min_spyhop: minV.value.trim(), online_display: withDisplay.checked ? online : null });
-      toast(`${name ? 'Pack overwritten' : 'Pack saved'}: ${r.name}`, 'info', 6000);
+      const include = [...body.querySelectorAll('.tpl-include')].filter((x) => x.checked).map((x) => x.value);
+      try { localStorage.setItem('wsr.templateInclude', JSON.stringify(include)); } catch {}
+      const r = await api('/api/templates/save', { name: name || fname.value, overwrite: !!name, by: by.value, notes: notes.value, changed: changed.value,
+        include, min_spyhop: minV.value.trim(), online: withOnline.checked ? online : null });
+      toast(`${name ? 'Template updated' : 'Template saved'}: ${r.name}`, 'info', 6000);
     } catch { return; }
-    await this.loadConfigPacks();
+    await this.loadTemplates();
   }
 
   async pickFolder() {
     try { return (await api('/api/pick-folder', {})).path || null; } catch { return null; }
   }
 
-  // from = {pack: name} or {backup: name}; else the web address box
-  async checkGroupConfig(from = null) {
-    const gc = (this.gc ||= {});
+  // from = {template: name} or {backup: name}; else the web address box
+  async checkTemplate(from = null) {
+    const tp = (this.tpl ||= {});
     let req = from;
-    if (!req) { const url = ($('#gc-url')?.value ?? gc.url ?? '').trim(); gc.url = url; req = { url }; }
-    gc.result = null; gc.done = null; gc.busy = from ? null : 'check';
+    if (!req) { const url = ($('#tpl-url')?.value ?? tp.url ?? '').trim(); tp.url = url; req = { url }; }
+    tp.result = null; tp.done = null; tp.busy = from ? null : 'check';
     this.renderTemplates();
-    try { gc.result = await api('/api/groupconfig/check', req); } catch { /* the error is shown as a toast */ }
-    gc.busy = null;
+    try { tp.result = await api('/api/templates/check', req); } catch { /* the error is shown as a toast */ }
+    tp.busy = null;
     this.renderTemplates();
-    $('#gc-result')?.scrollIntoView({ block: 'nearest' });
+    $('#tpl-result')?.scrollIntoView({ block: 'nearest' });
   }
 
-  async pullGroupConfig() {
-    const gc = this.gc, r = gc?.result;
+  async useTemplate() {
+    const tp = this.tpl, r = tp?.result;
     if (!r) return;
     const todo = r.files.filter((f) => f.status !== 'same' && f.status !== 'kept');
-    const backup = todo.length ? ($('#gc-backup')?.checked ?? true) : false;
-    const backupDir = ($('#gc-backup-dir')?.value ?? '').trim();
+    const backup = todo.length ? ($('#tpl-backup')?.checked ?? true) : false;
+    const backupDir = ($('#tpl-backup-dir')?.value ?? '').trim();
     if (todo.length) {
       const over = todo.filter((f) => f.status !== 'new' || f.unit === 'rows' || f.unit === 'report');
       const adds = todo.filter((f) => !over.includes(f));
-      let text = over.length ? `${over.length === 1 ? 'This' : 'These'} will be overwritten or removed on this computer: ${over.map((f) => f.file).join(', ')}.` : '';
+      let text = over.length ? `${over.length === 1 ? 'This' : 'These'} will be replaced or removed on this computer: ${over.map((f) => f.file).join(', ')}.` : '';
       if (adds.length) text += `${text ? ' ' : ''}Added: ${adds.map((f) => f.unit === 'waypoints' ? `${f.add} waypoint${f.add > 1 ? 's' : ''}` : f.file).join(', ')}.`;
-      text += backup ? ' A backup is saved first.' : ' No backup will be saved, so changes made here to these files will be lost.';
-      if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and Quality Control will flag values that are no longer in a list. Changing the config during a survey is unusual: are you sure?';
-      if (!await confirmBox('Overwrite config files?', text, 'Overwrite', true)) return;
+      text += backup ? ' A backup is saved first.' : ' No backup will be saved, so changes made here to these will be lost.';
+      if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and Quality Control will flag values that are no longer in a list. Changing the setup during a survey is unusual: are you sure?';
+      if (!await confirmBox('Use this template?', text, r.kind === 'backup' ? 'Restore' : 'Use it', true)) return;
     }
-    gc.busy = 'pull'; this.renderTemplates();
+    tp.busy = 'use'; this.renderTemplates();
     try {
-      const res = await api('/api/groupconfig/pull', { token: r.token, backup, backup_dir: backupDir });
-      gc.done = { changed: res.changed, backup: res.backup, copy: res.copy, added: res.added, removed: res.removed_waypoints }; gc.result = null;
-      toast(r.kind === 'backup' ? 'Backup restored' : 'Config pack used');
+      const res = await api('/api/templates/use', { token: r.token, backup, backup_dir: backupDir });
+      tp.done = { changed: res.changed, backup: res.backup, copy: res.copy, added: res.added, removed: res.removed_waypoints }; tp.result = null;
+      toast(r.kind === 'backup' ? 'Backup restored' : 'Template used');
     } catch { /* toast shown */ }
-    gc.busy = null;
-    await this.loadConfigPacks();
+    tp.busy = null;
+    await this.loadTemplates();
   }
 
-  async backupGroupConfig() {
-    const gc = (this.gc ||= {});
-    const dir = ($('#gc-backup-dir')?.value ?? gc.backupDir ?? this.S.config.settings.group_config_backup_dir ?? '').trim();
+  async backupTemplate() {
+    const tp = (this.tpl ||= {});
+    const dir = ($('#tpl-backup-dir')?.value ?? tp.backupDir ?? this.S.config.settings.template_backup_dir ?? '').trim();
     try {
-      const r = await api('/api/groupconfig/backup', { dir });
+      const r = await api('/api/templates/backup', { dir });
       toast(`Backup saved: ${r.path}`);
     } catch { return; }
-    await this.loadConfigPacks();
+    await this.loadTemplates();
   }
 
   // ---------------------------------------------------------------- settings

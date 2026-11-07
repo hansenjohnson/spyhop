@@ -78,7 +78,7 @@ export class OnlineOverlays {
     setInterval(() => { if (map.hasLayer(this.radarUS)) this.radarUS.setUrl(IEM + '?_={stamp}', false); }, 60000);
   }
 
-  // what's switched on here, as a config pack records it (packparts.DISPLAY_KEYS)
+  // what's switched on here, as a template records it (templates.ONLINE_KEYS)
   displayState() {
     const map = this.app.map.map;
     return { ais: this.isOn('ais'), radar_us: this.isOn('us'), radar_world: this.isOn('world'),
@@ -86,8 +86,8 @@ export class OnlineOverlays {
       radar_opacity: this.prefs.radarOpacity, hide_stopped: !!this.prefs.hideStopped };
   }
 
-  // A config pack used on this computer says which online overlays to switch on (settings
-  // online_display, with a new stamp each time a pack is used). Applied once per stamp; after that
+  // A template used on this computer says which online overlays to switch on (settings
+  // online_display, with a new stamp each time a template is used). Applied once per stamp; after that
   // the person's own choices on this computer stand.
   applyPackDisplay() {
     const d = this.app.S.config.settings.online_display;

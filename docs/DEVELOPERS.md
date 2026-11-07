@@ -36,8 +36,7 @@ spyhop/
   report_defs/    the starting saved reports, copied into that folder once
   routes.py       the routes folder (Tools → Routes): list, read, save, delete GPX files
   feeds.py        map feeds (Settings → Inputs): ArcGIS / GeoJSON fetch, presets, the saved copy in <Spyhop>/feeds
-  configpack.py   config packs (Settings → Templates): read, compare, apply, save, fetch from the web, backups
-  packparts.py    the pack parts added in 0.22: shared settings, network inputs, feeds, waypoints, routes, overlays, minimum version
+  templates.py    templates (Settings → Templates): spyhop-config.json + the list CSVs (+ waypoints, routes, overlays); read (older formats too), compare, use, save, fetch from the web, backups
   browser.py      finds Chrome/Edge for the app window and for PDF printing (headless --print-to-pdf)
   tzguess.py      the clock's time zone from the platform's position (tzfpy)
   diag.py         diagnostic logs, crash capture, performance snapshots, the diagnostics bundle

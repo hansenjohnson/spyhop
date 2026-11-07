@@ -6,6 +6,19 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.24.0 — 2026-11-07
+
+- **"Config packs" are now called templates everywhere**: in Settings → Templates (**Use this template…**, **Update…**, **Save as a new template…**, **Get a template from the web**), in the docs (docs/CONFIG_PACKS.md is now **docs/TEMPLATES.md**) and in the code.
+  - Templates are saved as **`<name>.spyhop-template.zip`** in a **`templates`** folder in the survey data folder; the old `config_packs` folder is renamed the first time 0.24 runs. Older `.spyhop.zip` files are still read.
+  - Your settings for templates (web address, backup folder, the template in use…) carry over.
+- **One `spyhop-config.json` in each template** holds everything that isn't a table: the format, the minimum Spyhop version and which optional parts it has, the record of changes, the shared settings, the network inputs, the map feeds, which online overlays are on, the map display and the saved reports. The lists and shortcuts stay as CSV files, and waypoints, routes and overlays as their own files. This replaces `spyhop-pack.json`, `spyhop-settings.json`, `spyhop-config.csv`, `display.csv` and the `reports` folder in a template (all still read from older templates).
+  - **Map feeds travel as their address, name, colour and refresh time only.** The saved copy of each feed's data (sometimes several MB) is no longer put in templates; each computer downloads the feed itself. Templates are now usually well under 100 KB.
+  - Templates now need Spyhop 0.24.0 or newer (the lowest minimum version).
+  - This computer's record of changes moved from `spyhop-config.csv` in Spyhop's folder to `settings/template_history.json`.
+- **Sawtooth routes, reworked:**
+  - **Survey direction** is now the way the whole pattern advances (it was the bearing of leg 1), and **Angle between legs** is the angle where one leg meets the next (it was the turn at each waypoint). The first leg goes to starboard or port of the survey direction. Sawtooth routes saved in 0.23 open as the same pattern.
+  - **Return:** at the far end a short **crossover** leg, at a right angle to the last leg, leads onto the reciprocal sawtooth, which comes back through the outbound one, crossing each outbound leg at its middle.
+
 ## 0.23.0 — 2026-11-07
 
 - **Tools → Routes:**

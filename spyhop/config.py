@@ -229,9 +229,9 @@ DEFAULT_DISPLAY = {
 
 DEFAULT_SETTINGS = {
     "online_feeds": [],             # map feeds (Settings → Inputs → Online overlays; feeds.py)
-    "online_display": {},           # online overlays to show, set by a config pack: {ais, radar_us, radar_world,
+    "online_display": {},           # online overlays to show, set by a template: {ais, radar_us, radar_world,
                                     # feeds: [urls], radar_opacity, hide_stopped, stamp}; applied once per stamp
-    "group_config_added": {},       # what each pack used added, by the backup made before it: {backup: {waypoints:
+    "template_added": {},           # what each template used added, by the backup made before it: {backup: {waypoints:
                                     # [RowIDs], routes, overlays, feeds}}, so restoring that backup removes them
     "tracking_enabled": False,
     "tracking_interval": 10,
@@ -244,14 +244,13 @@ DEFAULT_SETTINGS = {
     "check_updates_on_start": False,  # look on GitHub for a newer Spyhop when it starts (needs internet)
     "keep_awake": "survey",         # stop the computer sleeping: off | survey (while one is active) | always
     "keep_screen_on": False,        # … and keep the screen on too
-    "group_config_url": "",         # web address of the group's config pack (configpack.py)
-    "group_config_backup": True,    # save a backup zip of the config files before each pull
-    "group_config_backup_dir": "",  # where (empty: <survey data folder>/config_packs/backups)
-    "group_config_last": {},        # the last pull: {url, pulled, latest: {date, by, files, notes}, changed}
-    "group_config_author": "",      # the name last given when making a pack
-    "group_config_pack_name": "",   # (before 0.14.0) the pack's file name
-    "group_config_current": {},     # the pack this config came from or was saved to: {name, how: loaded|saved|backup, when}
-    "group_config_fingerprints": {},  # {from: pull|pack, when, files: {name: sha1}}: to list what changed since
+    "template_url": "",             # web address of the team's template (templates.py)
+    "template_backup": True,        # save a backup of this computer's setup before using a template
+    "template_backup_dir": "",      # where (empty: <survey data folder>/templates/backups)
+    "template_last": {},            # the last one from the web: {url, pulled, latest: {date, by, changed, notes}, changed}
+    "template_author": "",          # the name last given when saving a template
+    "template_current": {},         # the template this setup came from or was saved to: {name, how: loaded|saved|backup, when}
+    "template_fingerprints": {},    # {from: use|save, when, files: {part: sha1}}: to list what changed since
     "bearing_reference": "M",
     "distance_unit": "nm",
     "mag_variation": "auto",
@@ -594,11 +593,23 @@ class Config:
 
     def load_settings(self) -> dict:
         s = json.loads(json.dumps(DEFAULT_SETTINGS))
+        saved = {}
         try:
-            s.update(json.loads(self.settings_path.read_text()))
+            saved = json.loads(self.settings_path.read_text())
+            s.update(saved)
         except (FileNotFoundError, json.JSONDecodeError):
             pass
+        saved_keys = set(saved) if isinstance(saved, dict) else set()
         s.pop("surfacings_enabled", None)
+        # 0.24: "config packs" became templates
+        for k, v in list(s.items()):
+            if k.startswith("group_config_"):
+                s.pop(k)
+                new = "template_" + k[len("group_config_"):]
+                if new in DEFAULT_SETTINGS and new not in saved_keys:
+                    s[new] = v
+        if isinstance(s.get("template_current"), dict) and s["template_current"].get("how") == "pull":
+            s["template_current"]["how"] = "loaded"
         s["timezone"] = clean_timezone(s.get("timezone"))
         return s
 

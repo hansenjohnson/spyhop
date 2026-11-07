@@ -36,8 +36,8 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
   - positions on land, sightings beyond the visibility, GPS jumps and gaps (with a one-click Fix), observer rules, and more
 - **Summary and reports:**
   - a Summary (totals, conditions, observers, a map), saved as HTML or PDF
-  - **Reports:** pick species or event types, conditions and columns from any table, see the result live, and save it as CSV, HTML or PDF; save reports by name, share them in config packs, and run them all at once
-- **Config packs:** save a team's setup (lists, shortcuts, map display, saved reports, shared settings and network inputs, map feeds, and optionally waypoints, routes and overlays) as one small `.spyhop.zip` file, switch between packs, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer pulls the latest with one button, keeping a backup.
+  - **Reports:** pick species or event types, conditions and columns from any table, see the result live, and save it as CSV, HTML or PDF; save reports by name, share them in templates, and run them all at once
+- **Templates:** save a team's setup (lists, shortcuts, map display, saved reports, shared settings and network inputs, map feeds, and optionally waypoints, routes and overlays) as one small `.spyhop-template.zip` file, switch between templates, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer gets the latest with one button, keeping a backup.
 - **Export:** separate CSVs, a merged time-ordered CSV (sightings, effort, events and track) with the conditions on every row, GPX, GeoJSON, the summary and saved reports, in one zip.
 
 ## System requirements
@@ -100,7 +100,7 @@ Download and unzip the [latest release](https://github.com/hansenjohnson/spyhop/
    - **SIMULATOR** to practise
    
    Press **Apply**. The status bar shows the position once there's a fix.
-2. **Check your lists** (once): edit species, event types, behaviours and observers in **Settings → Dropdowns**, and the keyboard shortcuts in **Settings → Shortcuts**. If your team shares a config pack, use it from **Settings → Templates** instead.
+2. **Check your lists** (once): edit species, event types, behaviours and observers in **Settings → Dropdowns**, and the keyboard shortcuts in **Settings → Shortcuts**. If your team shares a template, use it from **Settings → Templates** instead.
 3. **Plan the route** (optional): **Tools → Routes**, then **Save route** and **Activate route**.
 4. **Start:** in **Survey**, press **Start New Survey…**. Enter a name (in your team's own naming convention) and the survey details. Spyhop adds the *Start* row to Effort and starts the trackline.
 5. **Go on effort:** Ctrl+Shift+F (⌘⇧F on a Mac) adds an Effort row that switches effort ON or OFF. Fill in the conditions and the observers.
@@ -113,7 +113,7 @@ The **tutorial** in **Settings → About** (also [docs/TUTORIAL.md](docs/TUTORIA
 
 - [docs/TUTORIAL.md](docs/TUTORIAL.md): a short tour of the main tasks.
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md): the full reference, covering every tab, the files Spyhop writes, export formats, offline maps, and the differences from the OpenCPN plugin.
-- [docs/CONFIG_PACKS.md](docs/CONFIG_PACKS.md): sharing config files and saved reports across a team.
+- [docs/TEMPLATES.md](docs/TEMPLATES.md): sharing a team's setup (lists, settings, saved reports and more) across computers.
 - [docs/DEVELOPERS.md](docs/DEVELOPERS.md): running from source, the code layout and the tests.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
 

@@ -181,8 +181,8 @@ class Recorder:
 
 
     # -- raw NMEA log --------------------------------------------------------
-    def pack_waypoints(self, rows: list[dict], remove_ids: list[str] = ()) -> list[str]:
-        """Waypoints from a config pack: add these rows (no undo entry, as they didn't come from typing), and
+    def template_waypoints(self, rows: list[dict], remove_ids: list[str] = ()) -> list[str]:
+        """Waypoints from a template: add these rows (no undo entry, as they didn't come from typing), and
         remove the ones with these RowIDs (restoring a backup). Returns the new rows' RowIDs."""
         t = self.tables["marks"]
         if not rows and not remove_ids:

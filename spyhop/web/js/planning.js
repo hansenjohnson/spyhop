@@ -21,7 +21,7 @@ const DEFAULTS = {
   manual: { points: [] },
   sys: { start: null, bearing: 0, legs: 4, legNm: 10, spacingNm: 2, side: 'starboard' },
   // sawtooth (zig-zag): starts at sys.start, like the parallel legs
-  saw: { bearing: 0, legs: 6, legNm: 5, turn: 90, side: 'starboard', ret: false },
+  saw: { direction: 0, angle: 90, legs: 6, legNm: 5, side: 'starboard', ret: false },
   active: false, locked: null,      // an activated route: its waypoints, frozen
   file: null, savedKey: null,       // the saved route this was opened from / saved as, and its design then
   layerOn: true,                    // the "Routes" entry in the map's layers menu (current and saved routes)
@@ -60,36 +60,46 @@ export function systematicPoints(start, brg, legs, legM, spacingM, side) {
   return pts;
 }
 
-// Sawtooth (zig-zag): leg 1 along `brg`, then a turn of `turn` degrees to the chosen side, leg 2,
-// a turn back the other way, and so on: the legs alternate between brg and brg ± turn, so the
-// pattern advances along brg ± turn/2. With `ret`, after the farthest waypoint the platform comes
-// back along the same pattern mirrored about the line through that waypoint (the reciprocal
-// sawtooth), so outbound and return legs together make a chain of diamonds.
-export function sawtoothPoints(start, brg, legs, legM, turn, side, ret) {
-  const sgn = side === 'port' ? -1 : 1;
+// Sawtooth (zig-zag). The pattern advances along `dir`; consecutive legs meet at `angle` degrees,
+// so each leg runs (180 − angle)/2 off `dir`, the first to the chosen side. The waypoints alternate
+// between the start line and a line `width` to that side. With `ret`, a short crossover leg at a
+// right angle to the last leg leads onto the reciprocal sawtooth (its waypoints on the opposite
+// line from the outbound ones), which comes back through the outbound pattern, crossing each leg at
+// its middle, and ends level with the start on the far line.
+// Worked out on a flat plane around the start (metres along, metres to starboard): over a survey
+// area the difference from great circles is negligible, and the two patterns line up exactly.
+export function sawtoothPoints(start, dir, legs, legM, angle, side, ret) {
   const rad = Math.PI / 180;
-  const norm = (a) => ((a % 360) + 360) % 360;
-  // worked out on a flat plane around the start (metres east, north), so the return pattern is an
-  // exact mirror image; over a survey area the difference from great circles is negligible
-  const kx = 111320 * Math.cos(start[0] * rad), ky = 110540;
-  const toLL = ([x, y]) => [start[0] + y / ky, start[1] + x / kx];
-  const heads = [];
-  for (let i = 0; i < legs; i++) heads.push(norm(i % 2 ? brg + sgn * turn : brg));
-  const xy = [[0, 0]];
-  heads.forEach((h) => { const [x, y] = xy[xy.length - 1]; xy.push([x + legM * Math.sin(h * rad), y + legM * Math.cos(h * rad)]); });
-  const pts = xy.map((q, i) => ({ ll: i ? toLL(q) : start, name: i === 0 ? 'Start' : i === legs ? (ret ? 'Far end' : 'End') : `Turn ${i}` }));
+  const sg = side === 'port' ? -1 : 1;
+  const th = (180 - angle) / 2 * rad;
+  const dx = legM * Math.cos(th), w = legM * Math.sin(th) * sg;
+  const a = dir * rad, kx = 111320 * Math.cos(start[0] * rad), ky = 110540;
+  // (along, to starboard) → lat/lon
+  const toLL = ([x, y]) => [+(start[0] + (x * Math.cos(a) - y * Math.sin(a)) / ky).toFixed(6),
+    +(start[1] + (x * Math.sin(a) + y * Math.cos(a)) / kx).toFixed(6)];
+  const P = Array.from({ length: legs + 1 }, (_, k) => [k * dx, k % 2 ? w : 0]);
+  const pts = P.map((q, k) => ({ ll: k ? toLL(q) : start, name: k === 0 ? 'Start' : k === legs ? (ret ? 'Far end' : 'End') : `Turn ${k}`,
+    ...(k ? { leg: `Leg ${k}`, survey: true } : {}) }));
   if (ret) {
-    const a = norm(brg + sgn * turn / 2) * rad, u = [Math.sin(a), Math.cos(a)];
-    const far = xy[legs];
-    for (let k = legs - 1; k >= 0; k--) {
-      // the outbound waypoint k, mirrored about the line through the far end along the pattern's axis
-      const d = [xy[k][0] - far[0], xy[k][1] - far[1]];
-      const along = d[0] * u[0] + d[1] * u[1];
-      const m = [far[0] + 2 * along * u[0] - d[0], far[1] + 2 * along * u[1] - d[1]];
-      pts.push({ ll: toLL(m), name: k === 0 ? 'End' : `Return turn ${legs - k}` });
+    const C = P.map(([x, y]) => [x, w - y]);                 // the reciprocal pattern's waypoints
+    const pn = P[legs], d = [(pn[0] - P[legs - 1][0]) / legM, (pn[1] - P[legs - 1][1]) / legM];
+    const cn = C[legs], t = (pn[0] - cn[0]) * d[0] + (pn[1] - cn[1]) * d[1];
+    const q = [cn[0] + t * d[0], cn[1] + t * d[1]];          // the foot of the right angle from the far end onto it
+    pts.push({ ll: toLL(q), name: 'Crossover', leg: 'Crossover', survey: false });
+    for (let k = legs, j = 1; k >= 0; k--, j++) {
+      pts.push({ ll: toLL(C[k]), name: k === 0 ? 'End' : `Return turn ${j}`, leg: `Return leg ${j}`, survey: true });
     }
   }
-  return pts.map((q) => ({ ...q, ll: [+q.ll[0].toFixed(6), +q.ll[1].toFixed(6)] }));
+  return pts;
+}
+
+// a sawtooth design from 0.23 (bearing of leg 1 and the turn at each waypoint) in today's terms
+export function sawFromOld(w) {
+  if (!w || w.direction !== undefined || w.bearing === undefined) return w;
+  const turn = Math.max(1, Math.min(179, +w.turn || 90)), s = w.side === 'port' ? -1 : 1;
+  const { bearing, turn: _t, ...rest } = w;
+  return { ...rest, direction: ((((+bearing || 0) + s * turn / 2) % 360) + 360) % 360, angle: 180 - turn,
+    side: w.side === 'port' ? 'starboard' : 'port' };        // leg 1 was on the other side of the line it advanced along
 }
 
 export const MODE_LABELS = { manual: 'Manual', systematic: 'Systematic – parallel legs', sawtooth: 'Systematic – sawtooth' };
@@ -147,7 +157,7 @@ export class Planner {
       if (s) {
         // a style never changed from the old orange default takes the new grey dotted one
         const st = s.style && Object.keys(OLD_DEFAULT_STYLE).every((k) => s.style[k] === OLD_DEFAULT_STYLE[k]) ? null : s.style;
-        return { ...DEFAULTS, ...s, manual: { ...DEFAULTS.manual, ...s.manual }, sys: { ...DEFAULTS.sys, ...s.sys }, saw: { ...DEFAULTS.saw, ...s.saw }, style: { ...STYLE_DEFAULTS, ...st } };
+        return { ...DEFAULTS, ...s, manual: { ...DEFAULTS.manual, ...s.manual }, sys: { ...DEFAULTS.sys, ...s.sys }, saw: { ...DEFAULTS.saw, ...sawFromOld(s.saw) }, style: { ...STYLE_DEFAULTS, ...st } };
       }
     } catch {}
     return structuredClone(DEFAULTS);
@@ -173,8 +183,8 @@ export class Planner {
     if (!start) return [];
     if (s.mode === 'sawtooth') {
       const w = s.saw;
-      return sawtoothPoints(start, ((+w.bearing || 0) % 360 + 360) % 360, Math.max(1, Math.min(200, Math.round(+w.legs || 1))),
-        Math.max(0, +w.legNm || 0) * M_PER_NM, Math.max(1, Math.min(179, +w.turn || 90)), w.side, !!w.ret);
+      return sawtoothPoints(start, ((+w.direction || 0) % 360 + 360) % 360, Math.max(1, Math.min(200, Math.round(+w.legs || 1))),
+        Math.max(0, +w.legNm || 0) * M_PER_NM, Math.max(1, Math.min(179, +w.angle || 90)), w.side, !!w.ret);
     }
     const legs = Math.max(1, Math.min(200, Math.round(+s.sys.legs || 1)));
     return systematicPoints(start, ((+s.sys.bearing || 0) % 360 + 360) % 360, legs,
@@ -190,10 +200,9 @@ export class Planner {
       const m = distM(a.ll, b.ll);
       const sec = m / M_PER_NM / speed * 3600;
       total += m; totalS += sec;
-      const n = Math.round(+this.state.saw.legs || 1);
-      const kind = this.state.mode === 'systematic' ? (i % 2 ? 'Crossing' : `Leg ${i / 2 + 1}`)
-        : this.state.mode === 'sawtooth' && i >= n ? `Return leg ${i - n + 1}` : `Leg ${i + 1}`;
-      out.push({ kind, from: a.name, to: b.name, course: bearing(a.ll, b.ll), m, sec, total, totalS, survey: this.state.mode !== 'systematic' || i % 2 === 0 });
+      const kind = b.leg || (this.state.mode === 'systematic' ? (i % 2 ? 'Crossing' : `Leg ${i / 2 + 1}`) : `Leg ${i + 1}`);
+      const survey = b.survey ?? (this.state.mode !== 'systematic' || i % 2 === 0);
+      out.push({ kind, from: a.name, to: b.name, course: bearing(a.ll, b.ll), m, sec, total, totalS, survey });
     }
     return out;
   }
@@ -451,7 +460,7 @@ export class Planner {
       start: d.start === 'vessel' ? 'vessel' : 'first', name: d.name || s.name,
       manual: { points: (d.manual?.points || []).filter((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)) },
       sys: { ...DEFAULTS.sys, ...(d.sys || {}) },
-      saw: { ...DEFAULTS.saw, ...(d.saw || {}) },
+      saw: { ...DEFAULTS.saw, ...sawFromOld(d.saw || {}) },
       style: d.style ? { ...STYLE_DEFAULTS, ...d.style } : s.style,
       active: false, locked: null, file,
     });
@@ -632,16 +641,17 @@ export class Planner {
         : s.sys.start ? 'Drag the first waypoint on the map to move the whole pattern.' : 'Choose a start point: pick it on the map, type it, or use the vessel position.');
       if (s.mode === 'sawtooth') {
         const w = s.saw;
-        const axis = Math.round((((+w.bearing || 0) + (w.side === 'port' ? -1 : 1) * (+w.turn || 90) / 2) % 360 + 360) % 360);
-        const across = (Math.sin((+w.turn || 90) / 2 * Math.PI / 180) * (+w.legNm || 0));
-        const along = (Math.cos((+w.turn || 90) / 2 * Math.PI / 180) * (+w.legNm || 0) * Math.max(1, Math.round(+w.legs || 1)));
+        const n3 = (v) => Math.round((((+v || 0) % 360) + 360) % 360).toString().padStart(3, '0');
+        const th = (180 - (+w.angle || 90)) / 2, sg = w.side === 'port' ? -1 : 1;
+        const width = Math.sin(th * Math.PI / 180) * (+w.legNm || 0);
+        const along = Math.cos(th * Math.PI / 180) * (+w.legNm || 0) * Math.max(1, Math.round(+w.legs || 1));
         modeBox = sec('Sawtooth trackline',
           startRow('A fixed point'), startBox,
           el('div', { class: 'grid2' },
-            num('Leg direction', () => w.bearing, (v) => { w.bearing = ((+v || 0) % 360 + 360) % 360; }, { step: 1, min: -360, max: 360, unit: '°T (bearing of leg 1)' }),
+            num('Survey direction', () => w.direction, (v) => { w.direction = ((+v || 0) % 360 + 360) % 360; }, { step: 1, min: -360, max: 360, unit: '°T (the way the pattern advances)' }),
             num('Leg length', () => w.legNm, (v) => { w.legNm = Math.max(0, +v || 0); }, { step: 0.5, unit: 'nm' }),
-            num('Turning angle', () => w.turn, (v) => { w.turn = Math.max(1, Math.min(179, +v || 90)); }, { step: 1, min: 1, max: 179, unit: '° turned at each waypoint' }),
-            el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'First turn to'),
+            num('Angle between legs', () => w.angle, (v) => { w.angle = Math.max(1, Math.min(179, +v || 90)); }, { step: 1, min: 1, max: 179, unit: '° where one leg meets the next' }),
+            el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'First leg to'),
               el('select', { onchange: (e) => { w.side = e.target.value; this.changed(true); } },
                 el('option', { value: 'starboard', selected: w.side !== 'port' }, 'Starboard (right)'),
                 el('option', { value: 'port', selected: w.side === 'port' }, 'Port (left)'))),
@@ -649,11 +659,10 @@ export class Planner {
             el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Pattern'),
               el('select', { class: 'saw-ret', onchange: (e) => { w.ret = e.target.value === 'return'; this.changed(true); } },
                 el('option', { value: 'oneway', selected: !w.ret }, 'One way'),
-                el('option', { value: 'return', selected: !!w.ret }, 'Return: a reciprocal sawtooth back from the far end')))),
-          el('p', { class: 'hint saw-summary' }, `The legs alternate between ${Math.round(+w.bearing || 0).toString().padStart(3, '0')}°T and `,
-            `${Math.round((((+w.bearing || 0) + (w.side === 'port' ? -1 : 1) * (+w.turn || 90)) % 360 + 360) % 360).toString().padStart(3, '0')}°T, so the pattern advances toward ${axis.toString().padStart(3, '0')}°T: `,
-            `${along.toFixed(1)} nm along that line, ${across.toFixed(1)} nm wide.`,
-            w.ret ? ' The return legs mirror the outbound ones about the line through the far end, crossing back to make a chain of diamonds.' : ''),
+                el('option', { value: 'return', selected: !!w.ret }, 'Return: a reciprocal sawtooth back through it')))),
+          el('p', { class: 'hint saw-summary' }, `The legs alternate between ${n3((+w.direction || 0) + sg * th)}°T and ${n3((+w.direction || 0) - sg * th)}°T, `,
+            `advancing toward ${n3(w.direction)}°T: ${along.toFixed(1)} nm along that line and ${width.toFixed(1)} nm wide.`,
+            w.ret ? ' At the far end a short crossover leg, at a right angle to the last leg, leads onto the reciprocal sawtooth, which comes back through the outbound one, crossing each of its legs in the middle.' : ''),
           startHint);
       } else {
       modeBox = sec('Systematic trackline',
@@ -728,7 +737,8 @@ export class Planner {
     const r = this.route();
     if (r.length < 2) { toast('The route needs at least two waypoints.', 'warn'); return; }
     this.adding = false; this.picking = false;
-    this.state.locked = r.map(({ ll, name, fixed }) => ({ ll: [+ll[0].toFixed(6), +ll[1].toFixed(6)], name, ...(fixed ? { fixed: true } : {}) }));
+    this.state.locked = r.map(({ ll, name, fixed, leg, survey }) => ({ ll: [+ll[0].toFixed(6), +ll[1].toFixed(6)], name,
+      ...(fixed ? { fixed: true } : {}), ...(leg ? { leg, survey } : {}) }));
     this.state.active = true;
     this.state.activated = new Date().toISOString();
     this.state.layerOn = true;
@@ -797,7 +807,7 @@ export class Planner {
     const surveyM = legs.filter((l) => l.survey).reduce((a, l) => a + l.m, 0);
     const totals = last ? el('div', { class: 'cards' },
       el('div', { class: 'card' }, el('div', { class: 'card-v' }, nm(last.total)), el('div', { class: 'card-l' }, 'nm in total')),
-      this.state.mode === 'systematic' && surveyM !== last.total ? el('div', { class: 'card' }, el('div', { class: 'card-v' }, nm(surveyM)), el('div', { class: 'card-l' }, 'nm on the legs')) : null,
+      surveyM !== last.total ? el('div', { class: 'card' }, el('div', { class: 'card-v' }, nm(surveyM)), el('div', { class: 'card-l' }, 'nm on the legs')) : null,
       el('div', { class: 'card' }, el('div', { class: 'card-v' }, dur(last.totalS)), el('div', { class: 'card-l' }, `at ${this.state.speed} kn`)),
       el('div', { class: 'card' }, el('div', { class: 'card-v' }, eta(last.totalS)), el('div', { class: 'card-l' }, 'finish, if you start now'))) : null;
     const legTable = el('table', { class: 'summary plan-table' },

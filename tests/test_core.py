@@ -1229,7 +1229,7 @@ def test_summary_pdf_uses_printed_page(tmp_path, monkeypatch):
     assert printed == [(html, 6000)]
 
 
-def _pack_zip(files: dict, top: str = "") -> bytes:
+def _template_zip(files: dict, top: str = "") -> bytes:
     import io as _io, zipfile as _zf
     buf = _io.BytesIO()
     with _zf.ZipFile(buf, "w") as z:
@@ -1257,120 +1257,6 @@ def _serve(routes: dict):
     return f"http://127.0.0.1:{srv.server_port}", srv.shutdown
 
 
-def test_config_pack_resolve():
-    from spyhop.configpack import resolve, PackError
-    assert resolve("https://github.com/team/spyhop-config") == ("url", "https://api.github.com/repos/team/spyhop-config/zipball")
-    assert resolve("https://github.com/team/cfg/tree/main/aerial/pack") == \
-        ("url", "https://api.github.com/repos/team/cfg/zipball/main#aerial/pack")
-    # a zip committed to a repository, by its page or raw link, or a release download: the zip itself
-    assert resolve("https://github.com/team/spyhop/blob/main/configs/neaq-aerial.zip") == \
-        ("url", "https://raw.githubusercontent.com/team/spyhop/main/configs/neaq-aerial.zip")
-    assert resolve("https://github.com/team/spyhop/raw/v0.12.0/configs/neaq.zip")[1] == \
-        "https://raw.githubusercontent.com/team/spyhop/v0.12.0/configs/neaq.zip"
-    raw = "https://raw.githubusercontent.com/team/spyhop/main/configs/neaq.zip"
-    assert resolve(raw) == ("url", raw)
-    rel = "https://github.com/team/spyhop/releases/download/v0.12.0/neaq-config.zip"
-    assert resolve(rel) == ("url", rel)
-    k, u = resolve("https://www.dropbox.com/scl/fo/abc/xyz?rlkey=k&dl=0")
-    assert "dl=1" in u and "rlkey=k" in u
-    assert resolve("https://drive.google.com/file/d/FILEID/view?usp=sharing") == \
-        ("url", "https://drive.google.com/uc?export=download&id=FILEID")
-    with pytest.raises(PackError):
-        resolve("https://drive.google.com/drive/folders/abc")
-    with pytest.raises(PackError):
-        resolve("")
-    with pytest.raises(PackError):
-        resolve("not a link")
-
-
-def test_config_pack_check_pull_backup(tmp_path):
-    import json as _json, zipfile as _zf
-    from spyhop import configpack
-    from spyhop.config import Config
-    cfg = Config(tmp_path / "app")
-    from spyhop import reports as _reports
-    _reports.ensure_dir(cfg)
-    (cfg.root / "reports" / "mine.json").write_text(_json.dumps(
-        {"name": "Mine", "table": "events", "columns": ["time"]}))
-    species = "name,color,species_code\r\nNorth Atlantic right whale,red,RIWH\r\nHumpback whale,orange,HUWH\r\nSpyhop test whale,pink,SPTW\r\n"
-    observers = "name,full_name\r\nHJ,Hansen Johnson\r\n"
-    gear = _json.dumps({"name": "Gear (team)", "table": "events", "codes": ["GRPT"], "columns": ["time"]})
-    manifest = "Date,Changed by,Files,Notes\r\n2026-10-01,HJ,all,First version\r\n2026-11-06,HJ,species.csv,Added test whale\r\n"
-    good = _pack_zip({"spyhop-config.csv": manifest, "species.csv": species, "observers.csv": observers,
-                      "reports/team_gear.json": gear, "notes.txt": "hello"}, top="team-cfg-abc123/")
-    bad = _pack_zip({"species.csv": "colour\r\nred\r\n", "reports/x.json": "{nope"})
-    base, stop = _serve({"/good.zip": (200, "application/zip", good), "/bad.zip": (200, "application/zip", bad),
-                         "/page": (200, "text/html", b"<!DOCTYPE html><html>sign in</html>"),
-                         "/private": (403, "text/plain", b"no")})
-    try:
-        files, src = configpack.fetch(base + "/good.zip")
-        pack = configpack.read_pack(files)
-        assert not pack["problems"] and pack["ignored"] == ["notes.txt"]
-        assert [m["notes"] for m in pack["manifest"]] == ["Added test whale", "First version"]   # newest first
-        plan = {r["file"]: r for r in configpack.compare(cfg, pack)}
-        assert plan["species.csv"]["status"] == "changed" and plan["species.csv"]["pack"] == 3
-        assert plan["observers.csv"]["status"] == "changed"
-        assert plan["reports/team_gear.json"]["status"] == "new" and plan["reports/mine.json"]["status"] == "removed"
-
-        backup = configpack.save_backup(cfg, tmp_path / "bk")
-        with _zf.ZipFile(backup) as z:
-            names = set(z.namelist())
-            old_species = z.read("species.csv").decode()
-            assert "Backup" in z.read("spyhop-config.csv").decode("utf-8-sig")
-        assert {"species.csv", "shortcuts.csv", "reports/mine.json", "spyhop-config.csv"} <= names
-
-        changed = configpack.apply(cfg, pack)
-        assert "species.csv" in changed and "reports/mine.json" in changed
-        assert [s["name"] for s in cfg.lists["species"]] == ["North Atlantic right whale", "Humpback whale", "Spyhop test whale"]
-        assert not (cfg.root / "reports" / "mine.json").exists() and (cfg.root / "reports" / "team_gear.json").exists()
-        assert sorted(p.name for p in (cfg.root / "reports").glob("*.json")) == ["team_gear.json"]   # replaced as a set
-        assert (cfg.root / "spyhop-config.csv").read_bytes().decode() == manifest
-        assert cfg.shortcuts                                    # files not in the pack are untouched
-        assert all(r["status"] == "same" for r in configpack.compare(cfg, configpack.read_pack(files)))
-
-        # a backup made with no saved reports removes reports added since
-        cfg2 = Config(tmp_path / "app2")
-        for p in _reports.ensure_dir(cfg2).glob("*.json"):
-            p.unlink()
-        assert configpack.read_pack(configpack._unzip(configpack.make_zip(cfg2, "pack"), ""))["reports"] is None
-        empty = configpack.read_pack(configpack._unzip(configpack.make_zip(cfg2, "none", backup=True), ""))
-        assert empty["reports"] == {}
-        configpack.apply(cfg2, pack)
-        assert (cfg2.root / "reports" / "team_gear.json").exists()
-        configpack.apply(cfg2, empty)
-        assert not (cfg2.root / "reports" / "team_gear.json").exists()
-
-        # the backup is itself a pack: pulling it puts things back
-        restore = configpack.read_pack(configpack.fetch(str(backup))[0])
-        configpack.apply(cfg, restore)
-        assert (cfg.root / "species.csv").read_text(encoding="utf-8-sig").replace("\r\n", "\n") == old_species.replace("\r\n", "\n").lstrip("﻿")
-        assert (cfg.root / "reports" / "mine.json").exists() and not (cfg.root / "reports" / "team_gear.json").exists()
-
-        badpack = configpack.read_pack(configpack.fetch(base + "/bad.zip")[0])
-        assert any("species.csv needs the column name" in p for p in badpack["problems"])
-        assert any("x.json isn't valid JSON" in p for p in badpack["problems"])
-        before = (cfg.root / "species.csv").read_text()
-        with pytest.raises(configpack.PackError):
-            configpack.apply(cfg, badpack)
-        assert (cfg.root / "species.csv").read_text() == before          # nothing changed
-
-        for path, words in (("/page", "web page"), ("/private", "refused"), ("/missing.zip", "404")):
-            with pytest.raises(configpack.PackError, match=words):
-                configpack.fetch(base + path)
-        with pytest.raises(configpack.PackError, match="doesn't look like"):
-            configpack.read_pack({"readme.txt": b"hi"})
-
-        # a pack made on this computer, as a folder on disk (e.g. a USB stick), with an Excel-saved CSV
-        d = tmp_path / "usb"
-        (d / "reports").mkdir(parents=True)
-        (d / "observers.csv").write_bytes("name,full_name\r\nJM,José Martínez\r\n".encode("cp1252"))
-        p2 = configpack.read_pack(configpack.fetch(str(d))[0])
-        assert not p2["problems"] and "José" in p2["csv"]["observers.csv"] and p2["reports"] is None   # an empty reports folder leaves saved reports alone
-        assert configpack.compare(cfg, p2)[0]["file"] == "observers.csv"
-        z = configpack.make_zip(cfg, "made here")
-        assert "made here" in configpack.read_pack(configpack._unzip(z, ""))["manifest"][0]["notes"]
-    finally:
-        stop()
 
 
 def test_tile_sources_from_code_keep_extras(tmp_path):
@@ -1445,97 +1331,6 @@ def test_lists_locked_during_survey(tmp_path):
     asyncio.run(app.save_list(Req({"list": "species", "rows": [{"name": "X"}]})))
     assert [s["name"] for s in app.rec.cfg.lists["species"]] == ["X"]
 
-
-def test_config_packs_folder(tmp_path):
-    import asyncio, zipfile as _zf
-    from spyhop import configpack
-    from spyhop.server import App
-    app = App(tmp_path)
-    cfg = app.rec.cfg
-
-    class Req:
-        def __init__(self, body=None, query=None, match=None):
-            self.body, self.query, self.match_info = body or {}, query or {}, match or {}
-        can_read_body = True
-        async def json(self): return self.body
-    run = lambda coro: json.loads(asyncio.run(coro).text)          # noqa: E731
-    folder = cfg.data_dir / "config_packs"
-    assert run(app.configpacks_list(Req()))["packs"] == []
-    assert run(app.groupconfig_changes(Req()))["files"] is None     # nothing to compare with yet
-    with pytest.raises(ValueErrorMsg, match="your name"):
-        asyncio.run(app.configpacks_save(Req({"by": "", "notes": "x", "name": "a"})))
-
-    # save a new pack: <name>.spyhop.zip in the data folder's config_packs, with the change logged
-    r = run(app.configpacks_save(Req({"by": "H. Johnson", "notes": "First version", "name": "2026-NEA-CCB"})))
-    assert r["name"] == "2026-NEA-CCB.spyhop.zip" and (folder / r["name"]).is_file()
-    with _zf.ZipFile(folder / r["name"]) as z:
-        log = configpack.read_manifest(z.read("spyhop-config.csv").decode("utf-8-sig"))
-    assert log[0]["by"] == "H. Johnson" and log[0]["notes"] == "First version" and log[0]["files"] == "all"
-    with pytest.raises(ValueErrorMsg, match="already a pack"):
-        asyncio.run(app.configpacks_save(Req({"by": "H", "notes": "again", "name": "2026-NEA-CCB.spyhop.zip"})))
-    L = run(app.configpacks_list(Req()))
-    assert [p["name"] for p in L["packs"]] == ["2026-NEA-CCB.spyhop.zip"] and L["packs"][0]["matches"]
-    assert L["current"]["name"] == "2026-NEA-CCB.spyhop.zip" and L["current"]["how"] == "saved"
-    assert L["backups_folder"] == str(folder / "backups")
-    assert run(app.groupconfig_changes(Req()))["files"] == []
-
-    # change a list: the pack now differs; overwriting it continues the pack's own record
-    cfg.save_list("observers", [{"name": "JM", "full_name": "J. M."}])
-    L = run(app.configpacks_list(Req()))
-    assert L["packs"][0]["differs"] == ["observers.csv"] and not L["packs"][0]["matches"]
-    assert run(app.groupconfig_changes(Req(query={"name": "2026-NEA-CCB.spyhop.zip"})))["files"] == ["observers.csv"]
-    (cfg.root / "spyhop-config.csv").write_text("Date,Changed by,Files,Notes\r\n2020-01-01,X,all,unrelated\r\n", encoding="utf-8")
-    run(app.configpacks_save(Req({"by": "H. Johnson", "notes": "New observer JM", "files": "observers.csv",
-                                  "name": "2026-NEA-CCB.spyhop.zip", "overwrite": True})))
-    with _zf.ZipFile(folder / "2026-NEA-CCB.spyhop.zip") as z:
-        log = configpack.read_manifest(z.read("spyhop-config.csv").decode("utf-8-sig"))
-        assert "JM" in z.read("observers.csv").decode()
-    assert [x["notes"] for x in log] == ["New observer JM", "First version"]
-    with pytest.raises(ValueErrorMsg, match="no pack called"):
-        asyncio.run(app.configpacks_save(Req({"by": "H", "notes": "x", "name": "nope.spyhop.zip", "overwrite": True})))
-
-    # use a pack from the folder: a backup goes to config_packs/backups, no copy is made
-    run(app.configpacks_save(Req({"by": "H", "notes": "with JM", "name": "with-jm"})))
-    cfg.save_list("observers", [{"name": "ZZ", "full_name": "Z. Z."}])
-    chk = run(app.groupconfig_check(Req({"pack": "with-jm.spyhop.zip"})))
-    assert chk["kind"] == "folder" and [f["file"] for f in chk["files"] if f["status"] != "same"] == ["observers.csv"]
-    res = run(app.groupconfig_pull(Req({"token": chk["token"], "backup": True})))
-    assert res["changed"] == ["observers.csv"] and res["copy"] is None
-    assert Path(res["backup"]).parent == folder / "backups" and res["backup"].endswith(".spyhop.zip")
-    assert cfg.lists["observers"][0]["name"] == "JM"
-    L = run(app.configpacks_list(Req()))
-    assert L["current"] == {**L["current"], "name": "with-jm.spyhop.zip", "how": "loaded"}
-    assert [b["name"] for b in L["backups"]] == [Path(res["backup"]).name]
-    assert sorted(p["name"] for p in L["packs"]) == ["2026-NEA-CCB.spyhop.zip", "with-jm.spyhop.zip"]   # backups not listed
-
-    # restore the backup: ZZ again
-    chk = run(app.groupconfig_check(Req({"backup": Path(res["backup"]).name})))
-    assert chk["kind"] == "backup"
-    run(app.groupconfig_pull(Req({"token": chk["token"], "backup": False})))
-    assert cfg.lists["observers"][0]["name"] == "ZZ"
-    with pytest.raises(ValueErrorMsg, match="name of a"):
-        asyncio.run(app.groupconfig_check(Req({"pack": "../settings.json"})))
-
-    # a pack from elsewhere (a web address, or here a file outside the folder) is kept as a copy
-    outside = tmp_path / "team pack.zip"
-    outside.write_bytes((folder / "with-jm.spyhop.zip").read_bytes())
-    chk = run(app.groupconfig_check(Req({"url": str(outside)})))
-    assert chk["kind"] == "file"
-    res = run(app.groupconfig_pull(Req({"token": chk["token"], "backup": False})))
-    assert res["copy"] == "team pack.spyhop.zip" and (folder / "team pack.spyhop.zip").is_file()
-    assert run(app.configpacks_list(Req()))["current"]["name"] == "team pack.spyhop.zip"
-
-    # download from the folder; names outside it refused
-    resp = asyncio.run(app.configpacks_file(Req(match={"name": "with-jm.spyhop.zip"})))
-    assert resp.status == 200
-    from aiohttp import web as _web
-    with pytest.raises(_web.HTTPNotFound):
-        asyncio.run(app.configpacks_file(Req(match={"name": "../x.zip"})))
-    assert configpack.safe_pack_name('a/b:c') == "a_b_c.spyhop.zip" and configpack.safe_pack_name("  ") == ""
-    assert configpack.safe_pack_name("x.zip") == "x.spyhop.zip" and configpack.safe_pack_name("y.spyhop") == "y.spyhop.zip"
-    assert configpack._download_name("https://drive.google.com/uc?export=download&id=1",
-                                     {"Content-Disposition": 'attachment; filename="2026-NEA-CCB-spyhop_config.zip"'}) == "2026-NEA-CCB-spyhop_config.zip"
-    assert configpack._download_name("https://api.github.com/repos/team/spyhop-config/zipball", {}) == "spyhop-config"
 
 
 def _png_bytes():
@@ -1792,39 +1587,6 @@ def test_reports_presets_run_and_export(rec):
         rec.export(["report:nope.json"])
 
 
-def test_reports_travel_in_config_packs(tmp_path):
-    import json as _json
-    from spyhop import configpack, reports as filters
-    from spyhop.config import Config
-    cfg = Config(tmp_path / "app")
-    data = configpack.make_zip(cfg)
-    files = {}
-    import zipfile as _zf, io as _io
-    with _zf.ZipFile(_io.BytesIO(data)) as z:
-        files = {n: z.read(n) for n in z.namelist()}
-    assert "reports/right_whales.json" in files            # the starting reports are in a pack
-    files["reports/sea_state.json"] = _json.dumps({"name": "Rough", "table": "effort", "columns": ["time", "SeaState"],
-                                                   "rules": [{"column": "SeaState", "op": "gt", "value": "3"}]}).encode()
-    del files["reports/gear.json"]
-    pack = configpack.read_pack(files)
-    assert not pack["problems"]
-    plan = {r["file"]: r["status"] for r in configpack.compare(cfg, pack)}
-    assert plan["reports/sea_state.json"] == "new" and plan["reports/gear.json"] == "removed"
-    configpack.apply(cfg, pack)
-    names = sorted(f["name"] for f in filters.load(cfg)[0])
-    assert names == ["Blue whales", "Dead birds", "Right whales", "Rough"]
-    bad = configpack.read_pack({**files, "reports/x.json": b'{"table": "boats"}'})
-    assert any("reports/x.json" in p for p in bad["problems"])
-    # an 0.18 pack (saved filters in filters/) and an old pack (old-format templates) both work
-    old18 = {("filters/" + k.split("/", 1)[1] if k.startswith("reports/") else k): v for k, v in files.items()}
-    p18 = configpack.read_pack(old18)
-    assert not p18["problems"] and "sea_state.json" in p18["reports"]
-    old = {"species.csv": files["species.csv"], "reports/gear.json": _json.dumps(
-        {"id": "gear", "title": "Gear", "table": "events", "columns": [{"label": "Time", "value": "time"}]}).encode(),
-        "reports/_no_report_templates.txt": b"x"}
-    pold = configpack.read_pack(old)
-    assert not pold["problems"] and pold["reports"] is None and len(pold["ignored"]) == 2   # saved reports left alone
-
 
 def test_reports_folder_migrates_old_templates_and_filters(tmp_path):
     import json as _json
@@ -1947,98 +1709,392 @@ def test_online_feeds_fetch_and_cache(tmp_path):
     assert all(p["url"].startswith("https://services2.arcgis.com/") for p in feeds.PRESETS)
 
 
-def test_pack_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
-    """0.22.0: shared settings are replaced; feeds, waypoints, routes and overlays are only added;
-    serial inputs and the data folder stay; a minimum Spyhop version is checked; restoring the
-    backup takes away what the pack added."""
-    import asyncio, zipfile as _zf
-    from spyhop import configpack, feeds, packparts, __version__
-    from spyhop.server import App
 
-    class Req:
-        def __init__(self, body=None, query=None, match=None):
-            self.body, self.query, self.match_info = body or {}, query or {}, match or {}
-        can_read_body = True
-        async def json(self): return self.body
-    run = lambda coro: json.loads(asyncio.run(coro).text)          # noqa: E731
+
+# ---------------------------------------------------------------- templates (Settings → Templates)
+class _Req:
+    def __init__(self, body=None, query=None, match=None):
+        self.body, self.query, self.match_info = body or {}, query or {}, match or {}
+    can_read_body = True
+
+    async def json(self):
+        return self.body
+
+
+def _run(coro):
+    import asyncio
+    return json.loads(asyncio.run(coro).text)
+
+
+def test_template_resolve():
+    from spyhop.templates import resolve, TemplateError
+    assert resolve("https://github.com/team/spyhop-config") == ("url", "https://api.github.com/repos/team/spyhop-config/zipball")
+    assert resolve("https://github.com/team/cfg/tree/main/aerial/pack") == \
+        ("url", "https://api.github.com/repos/team/cfg/zipball/main#aerial/pack")
+    assert resolve("https://github.com/team/spyhop/blob/main/configs/neaq-aerial.zip") == \
+        ("url", "https://raw.githubusercontent.com/team/spyhop/main/configs/neaq-aerial.zip")
+    assert resolve("https://github.com/team/spyhop/raw/v0.12.0/configs/neaq.zip")[1] == \
+        "https://raw.githubusercontent.com/team/spyhop/v0.12.0/configs/neaq.zip"
+    raw = "https://raw.githubusercontent.com/team/spyhop/main/configs/neaq.zip"
+    assert resolve(raw) == ("url", raw)
+    rel = "https://github.com/team/spyhop/releases/download/v0.12.0/neaq-config.zip"
+    assert resolve(rel) == ("url", rel)
+    k, u = resolve("https://www.dropbox.com/scl/fo/abc/xyz?rlkey=k&dl=0")
+    assert "dl=1" in u and "rlkey=k" in u
+    assert resolve("https://drive.google.com/file/d/FILEID/view?usp=sharing") == \
+        ("url", "https://drive.google.com/uc?export=download&id=FILEID")
+    for bad in ("https://drive.google.com/drive/folders/abc", "", "not a link"):
+        with pytest.raises(TemplateError):
+            resolve(bad)
+
+
+def test_template_check_use_backup(tmp_path):
+    """An older template (CSVs, spyhop-config.csv, reports/) from the web: read, compared, used; a backup
+    (a new-style template) puts things back; problems stop it; a folder on disk works."""
+    import json as _json, zipfile as _zf
+    from spyhop import templates, reports as _reports
+    from spyhop.config import Config
+    cfg = Config(tmp_path / "app")
+    _reports.ensure_dir(cfg)
+    (cfg.root / "reports" / "mine.json").write_text(_json.dumps({"name": "Mine", "table": "events", "columns": ["time"]}))
+    species = "name,color,species_code\r\nNorth Atlantic right whale,red,RIWH\r\nHumpback whale,orange,HUWH\r\nSpyhop test whale,pink,SPTW\r\n"
+    observers = "name,full_name\r\nHJ,Hansen Johnson\r\n"
+    gear = _json.dumps({"name": "Gear (team)", "table": "events", "codes": ["GRPT"], "columns": ["time"]})
+    manifest = "Date,Changed by,Files,Notes\r\n2026-10-01,HJ,all,First version\r\n2026-11-06,HJ,species.csv,Added test whale\r\n"
+    good = _template_zip({"spyhop-config.csv": manifest, "species.csv": species, "observers.csv": observers,
+                          "display.csv": "key,value\r\nmarker_radius,11\r\n",
+                          "reports/team_gear.json": gear, "notes.txt": "hello"}, top="team-cfg-abc123/")
+    bad = _template_zip({"species.csv": "colour\r\nred\r\n", "reports/x.json": "{nope"})
+    base, stop = _serve({"/good.zip": (200, "application/zip", good), "/bad.zip": (200, "application/zip", bad),
+                         "/page": (200, "text/html", b"<!DOCTYPE html><html>sign in</html>"),
+                         "/private": (403, "text/plain", b"no")})
+    try:
+        files, src = templates.fetch(base + "/good.zip")
+        t = templates.read_template(files)
+        assert not t["problems"] and t["ignored"] == ["notes.txt"]
+        assert [m["notes"] for m in t["history"]] == ["Added test whale", "First version"]    # newest first
+        assert t["history"][0]["changed"] == "species.csv" and t["display"] == {"marker_radius": "11"}
+        plan = {r["file"]: r for r in templates.compare(cfg, t)}
+        assert plan["species.csv"]["status"] == "changed" and plan["species.csv"]["in_template"] == 3
+        assert plan["observers.csv"]["status"] == "changed"
+        assert plan["Map display"]["status"] == "changed" and "marker_radius: 8 → 11" in plan["Map display"]["detail"]
+        assert plan["Saved report: Gear (team)"]["status"] == "new" and plan["Saved report: Mine"]["status"] == "removed"
+
+        backup = templates.save_backup(cfg, tmp_path / "bk")
+        assert backup.name.startswith("spyhop-backup-") and backup.name.endswith(".spyhop-template.zip")
+        with _zf.ZipFile(backup) as z:
+            names = set(z.namelist())
+            old_species = z.read("species.csv").decode()
+            doc = _json.loads(z.read("spyhop-config.json"))
+        assert {"species.csv", "shortcuts.csv", "spyhop-config.json", "waypoints.csv"} <= names
+        assert not any(n.startswith(("reports/", "feeds/")) or n in ("display.csv", "spyhop-config.csv") for n in names)
+        assert "mine.json" in doc["reports"] and doc["map_display"]["marker_radius"] == "8"
+        assert "Backup" in doc["history"][-1]["notes"] and doc["includes"] == ["waypoints", "routes", "overlays"]
+
+        changed = templates.apply(cfg, t)
+        assert "species.csv" in changed and "Saved report: Mine" in changed and "Map display" in changed
+        assert [s["name"] for s in cfg.lists["species"]] == ["North Atlantic right whale", "Humpback whale", "Spyhop test whale"]
+        assert sorted(p.name for p in (cfg.root / "reports").glob("*.json")) == ["team_gear.json"]   # replaced as a set
+        assert cfg.display["marker_radius"] == "11" and cfg.display["label_size"] == "12"      # missing keys come back
+        assert [e["notes"] for e in templates.local_history(cfg)] == ["First version", "Added test whale"]
+        assert cfg.shortcuts                                    # tables not in the template are untouched
+        assert all(r["status"] == "same" for r in templates.compare(cfg, templates.read_template(files)))
+
+        # a computer with no saved reports: its templates leave reports alone, its backups remove them
+        cfg2 = Config(tmp_path / "app2")
+        for p in _reports.ensure_dir(cfg2).glob("*.json"):
+            p.unlink()
+        assert templates.read_template(templates.unzip(templates.make_zip(cfg2)))["reports"] is None
+        empty = templates.read_template(templates.unzip(templates.make_zip(cfg2, "none", backup=True)))
+        assert empty["reports"] == {}
+        templates.apply(cfg2, t)
+        assert (cfg2.root / "reports" / "team_gear.json").exists()
+        templates.apply(cfg2, empty)
+        assert not (cfg2.root / "reports" / "team_gear.json").exists()
+
+        # the backup is itself a template: using it puts things back
+        restore = templates.read_template(templates.fetch(str(backup))[0])
+        assert not restore["problems"]
+        templates.apply(cfg, restore)
+        assert (cfg.root / "species.csv").read_text(encoding="utf-8-sig").replace("\r\n", "\n") == old_species.replace("\r\n", "\n").lstrip("﻿")
+        assert (cfg.root / "reports" / "mine.json").exists() and not (cfg.root / "reports" / "team_gear.json").exists()
+        assert cfg.display["marker_radius"] == "8"
+
+        badt = templates.read_template(templates.fetch(base + "/bad.zip")[0])
+        assert any("species.csv needs the column name" in p for p in badt["problems"])
+        assert any("x.json isn't valid JSON" in p for p in badt["problems"])
+        before = (cfg.root / "species.csv").read_text()
+        with pytest.raises(templates.TemplateError):
+            templates.apply(cfg, badt)
+        assert (cfg.root / "species.csv").read_text() == before          # nothing changed
+
+        for path, words in (("/page", "web page"), ("/private", "refused"), ("/missing.zip", "404")):
+            with pytest.raises(templates.TemplateError, match=words):
+                templates.fetch(base + path)
+        with pytest.raises(templates.TemplateError, match="doesn't look like"):
+            templates.read_template({"readme.txt": b"hi"})
+
+        # a template as a folder on disk (e.g. a USB stick), with an Excel-saved CSV
+        d = tmp_path / "usb"
+        (d / "reports").mkdir(parents=True)
+        (d / "observers.csv").write_bytes("name,full_name\r\nJM,José Martínez\r\n".encode("cp1252"))
+        p2 = templates.read_template(templates.fetch(str(d))[0])
+        assert not p2["problems"] and "José" in p2["csv"]["observers.csv"] and p2["reports"] is None
+        assert templates.compare(cfg, p2)[0]["file"] == "observers.csv"
+        z = templates.make_zip(cfg, "made here")
+        assert "made here" in templates.read_template(templates.unzip(z))["history"][0]["notes"]
+
+        # a bad spyhop-config.json is a problem, not a crash
+        bj = templates.read_template({"spyhop-config.json": b"{not json", "species.csv": species.encode()})
+        assert any("spyhop-config.json isn't valid JSON" in p for p in bj["problems"])
+        br = templates.read_template({"spyhop-config.json": _json.dumps({"reports": {"x.json": {"table": "boats"}}}).encode()})
+        assert any("the saved report x.json" in p for p in br["problems"])
+    finally:
+        stop()
+
+
+def test_templates_folder(tmp_path):
+    import asyncio, zipfile as _zf
+    from spyhop import templates
+    from spyhop.server import App
+    app = App(tmp_path)
+    cfg = app.rec.cfg
+    folder = cfg.data_dir / "templates"
+    assert _run(app.templates_list(_Req()))["templates"] == []
+    assert _run(app.templates_changes(_Req()))["files"] is None     # nothing to compare with yet
+    with pytest.raises(ValueErrorMsg, match="your name"):
+        asyncio.run(app.templates_save(_Req({"by": "", "notes": "x", "name": "a"})))
+
+    # save a new template: <name>.spyhop-template.zip in the data folder's templates, with the change logged
+    r = _run(app.templates_save(_Req({"by": "H. Johnson", "notes": "First version", "name": "2026-NEA-CCB"})))
+    assert r["name"] == "2026-NEA-CCB.spyhop-template.zip" and (folder / r["name"]).is_file()
+    with _zf.ZipFile(folder / r["name"]) as z:
+        doc = json.loads(z.read("spyhop-config.json"))
+    assert doc["history"][-1] == {**doc["history"][-1], "by": "H. Johnson", "notes": "First version", "changed": "all"}
+    with pytest.raises(ValueErrorMsg, match="already a template"):
+        asyncio.run(app.templates_save(_Req({"by": "H", "notes": "again", "name": "2026-NEA-CCB.spyhop.zip"})))
+    L = _run(app.templates_list(_Req()))
+    assert [p["name"] for p in L["templates"]] == ["2026-NEA-CCB.spyhop-template.zip"] and L["templates"][0]["matches"]
+    assert L["current"]["name"] == "2026-NEA-CCB.spyhop-template.zip" and L["current"]["how"] == "saved"
+    assert L["backups_folder"] == str(folder / "backups")
+    assert _run(app.templates_changes(_Req()))["files"] == []
+
+    # change a list: the template now differs; updating it continues the template's own record
+    cfg.save_list("observers", [{"name": "JM", "full_name": "J. M."}])
+    L = _run(app.templates_list(_Req()))
+    assert L["templates"][0]["differs"] == ["observers.csv"] and not L["templates"][0]["matches"]
+    assert _run(app.templates_changes(_Req(query={"name": "2026-NEA-CCB.spyhop-template.zip"})))["files"] == ["observers.csv"]
+    assert _run(app.templates_changes(_Req()))["files"] == ["observers.csv"]
+    templates.save_local_history(cfg, [{"date": "2020-01-01", "by": "X", "changed": "all", "notes": "unrelated"}])
+    _run(app.templates_save(_Req({"by": "H. Johnson", "notes": "New observer JM", "changed": "observers.csv",
+                                  "name": "2026-NEA-CCB.spyhop-template.zip", "overwrite": True})))
+    t = templates.read_template_file(cfg, "2026-NEA-CCB.spyhop-template.zip")
+    assert [x["notes"] for x in t["history"]] == ["New observer JM", "First version"] and "JM" in t["csv"]["observers.csv"]
+    with pytest.raises(ValueErrorMsg, match="no template called"):
+        asyncio.run(app.templates_save(_Req({"by": "H", "notes": "x", "name": "nope.spyhop-template.zip", "overwrite": True})))
+
+    # use a template from the folder: a backup goes to templates/backups, no copy is made
+    _run(app.templates_save(_Req({"by": "H", "notes": "with JM", "name": "with-jm"})))
+    cfg.save_list("observers", [{"name": "ZZ", "full_name": "Z. Z."}])
+    chk = _run(app.templates_check(_Req({"template": "with-jm.spyhop-template.zip"})))
+    assert chk["kind"] == "folder" and [f["file"] for f in chk["files"] if f["status"] != "same"] == ["observers.csv"]
+    assert chk["history"][0]["notes"] == "with JM" and chk["info"]["min_spyhop"] == "0.24.0"
+    res = _run(app.templates_use(_Req({"token": chk["token"], "backup": True})))
+    assert res["changed"] == ["observers.csv"] and res["copy"] is None
+    assert Path(res["backup"]).parent == folder / "backups" and res["backup"].endswith(".spyhop-template.zip")
+    assert cfg.lists["observers"][0]["name"] == "JM"
+    L = _run(app.templates_list(_Req()))
+    assert L["current"] == {**L["current"], "name": "with-jm.spyhop-template.zip", "how": "loaded"}
+    assert [b["name"] for b in L["backups"]] == [Path(res["backup"]).name]
+    assert sorted(p["name"] for p in L["templates"]) == ["2026-NEA-CCB.spyhop-template.zip", "with-jm.spyhop-template.zip"]
+
+    # restore the backup: ZZ again
+    chk = _run(app.templates_check(_Req({"backup": Path(res["backup"]).name})))
+    assert chk["kind"] == "backup"
+    _run(app.templates_use(_Req({"token": chk["token"], "backup": False})))
+    assert cfg.lists["observers"][0]["name"] == "ZZ"
+    with pytest.raises(ValueErrorMsg, match="name of a"):
+        asyncio.run(app.templates_check(_Req({"template": "../settings.json"})))
+
+    # a template from elsewhere (a web address, or here a file outside the folder) is kept as a copy
+    outside = tmp_path / "team pack.zip"
+    outside.write_bytes((folder / "with-jm.spyhop-template.zip").read_bytes())
+    chk = _run(app.templates_check(_Req({"url": str(outside)})))
+    assert chk["kind"] == "file"
+    res = _run(app.templates_use(_Req({"token": chk["token"], "backup": False})))
+    assert res["copy"] == "team pack.spyhop-template.zip" and (folder / "team pack.spyhop-template.zip").is_file()
+    assert _run(app.templates_list(_Req()))["current"]["name"] == "team pack.spyhop-template.zip"
+
+    # download from the folder; names outside it refused
+    resp = asyncio.run(app.templates_file(_Req(match={"name": "with-jm.spyhop-template.zip"})))
+    assert resp.status == 200
+    from aiohttp import web as _web
+    with pytest.raises(_web.HTTPNotFound):
+        asyncio.run(app.templates_file(_Req(match={"name": "../x.zip"})))
+    assert templates.safe_template_name('a/b:c') == "a_b_c.spyhop-template.zip" and templates.safe_template_name("  ") == ""
+    assert templates.safe_template_name("x.zip") == "x.spyhop-template.zip"
+    assert templates.safe_template_name("y.spyhop.zip") == "y.spyhop-template.zip"
+    assert templates.template_stem("t.spyhop-template.zip") == "t" and templates.template_stem("t.spyhop") == "t"
+    assert templates._download_name("https://drive.google.com/uc?export=download&id=1",
+                                    {"Content-Disposition": 'attachment; filename="2026-NEA-CCB-spyhop_config.zip"'}) == "2026-NEA-CCB-spyhop_config.zip"
+    assert templates._download_name("https://api.github.com/repos/team/spyhop-config/zipball", {}) == "spyhop-config"
+
+
+def test_reports_travel_in_templates(tmp_path):
+    import json as _json, zipfile as _zf, io as _io
+    from spyhop import templates, reports
+    from spyhop.config import Config
+    cfg = Config(tmp_path / "app")
+    with _zf.ZipFile(_io.BytesIO(templates.make_zip(cfg))) as z:
+        files = {n: z.read(n) for n in z.namelist()}
+    doc = _json.loads(files["spyhop-config.json"])
+    assert "right_whales.json" in doc["reports"]                 # the starting reports are in a template
+    doc["reports"]["sea_state.json"] = {"name": "Rough", "table": "effort", "columns": ["time", "SeaState"],
+                                        "rules": [{"column": "SeaState", "op": "gt", "value": "3"}]}
+    del doc["reports"]["gear.json"]
+    files["spyhop-config.json"] = _json.dumps(doc).encode()
+    t = templates.read_template(files)
+    assert not t["problems"]
+    plan = {r["file"]: r["status"] for r in templates.compare(cfg, t)}
+    assert plan["Saved report: Rough"] == "new" and plan["Saved report: Gear"] == "removed"
+    templates.apply(cfg, t)
+    assert sorted(f["name"] for f in reports.load(cfg)[0]) == ["Blue whales", "Dead birds", "Right whales", "Rough"]
+    # older templates: 0.19–0.23 (reports/*.json), 0.18 (filters/*.json), and old report templates (ignored)
+    flat = {k: v for k, v in files.items() if k != "spyhop-config.json"}
+    flat.update({f"reports/{fn}": _json.dumps(spec).encode() for fn, spec in doc["reports"].items()})
+    assert set(templates.read_template(flat)["reports"]) == set(doc["reports"])
+    old18 = {("filters/" + k.split("/", 1)[1] if k.startswith("reports/") else k): v for k, v in flat.items()}
+    p18 = templates.read_template(old18)
+    assert not p18["problems"] and "sea_state.json" in p18["reports"]
+    old = {"species.csv": files["species.csv"], "reports/gear.json": _json.dumps(
+        {"id": "gear", "title": "Gear", "table": "events", "columns": [{"label": "Time", "value": "time"}]}).encode(),
+        "reports/_no_report_templates.txt": b"x"}
+    pold = templates.read_template(old)
+    assert not pold["problems"] and pold["reports"] is None and len(pold["ignored"]) == 2   # saved reports left alone
+
+
+def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
+    """Shared settings are replaced; feeds, waypoints, routes and overlays are only added; serial inputs and
+    the data folder stay; feeds travel as addresses only; a minimum Spyhop version is checked; restoring the
+    backup takes away what the template added; a 0.22 template is still read."""
+    import asyncio, zipfile as _zf
+    from spyhop import templates, feeds, __version__
+    from spyhop.server import App
 
     a, b = App(tmp_path / "a"), App(tmp_path / "b")
     ca, cb = a.rec.cfg, b.rec.cfg
-    # computer A: the team's setup
     ca.save_settings({"timezone": "UTC", "effort_reminder_min": 20,
                       "nmea_sources": [{"type": "serial", "port": "COM4", "baud": 4800}, {"type": "udp", "port": 2000}],
                       "online_feeds": [{"id": "abc12345", "name": "SMAs", "url": "https://example.org/FeatureServer/3",
                                         "color": "#ff0000", "refresh_min": 60}]})
-    feeds.save_cache(ca, "abc12345", [{"type": "Feature", "properties": {}, "geometry": None}])
+    feeds.save_cache(ca, "abc12345", [{"type": "Feature", "properties": {"big": "x" * 1000}, "geometry": None}])
     for n, lat in (("Buoy A", "41.5"), ("Harbor", "41.9")):
         a.rec.tables["marks"].add({"Name": n, "Lat": lat, "Lon": "-70.1", "Shape": "Circle", "Color": "red"})
     (ca.routes_dir / "Line 1.gpx").write_text('<?xml version="1.0"?><gpx><rte><rtept lat="41" lon="-70"/></rte></gpx>')
     (ca.overlays_dir / "zones.geojson").write_text('{"type":"FeatureCollection","features":[]}')
     (ca.overlays_dir / "Survey - old.geojson").write_text('{"type":"FeatureCollection","features":[]}')
 
-    info = run(a.groupconfig_changes(Req()))
-    assert (info["waypoints"], info["routes"], info["overlays"]) == (2, 1, 1) and info["min_default"] == "0.22.0"
+    info = _run(a.templates_changes(_Req()))
+    assert (info["waypoints"], info["routes"], info["overlays"]) == (2, 1, 1) and info["min_default"] == "0.24.0"
     with pytest.raises(ValueErrorMsg, match="can't be newer"):
-        asyncio.run(a.configpacks_save(Req({"by": "H", "notes": "x", "name": "t", "min_spyhop": "99.0.0"})))
-    r = run(a.configpacks_save(Req({"by": "H", "notes": "Team setup", "name": "team", "include": ["waypoints", "routes", "overlays"],
-                                    "online_display": {"ais": True, "radar_us": False, "feeds": ["https://example.org/FeatureServer/3"]}})))
-    pf = ca.data_dir / "config_packs" / r["name"]
-    with _zf.ZipFile(pf) as z:
+        asyncio.run(a.templates_save(_Req({"by": "H", "notes": "x", "name": "t", "min_spyhop": "99.0.0"})))
+    r = _run(a.templates_save(_Req({"by": "H", "notes": "Team setup", "name": "team", "include": ["waypoints", "routes", "overlays"],
+                                    "online": {"ais": True, "radar_us": False, "feeds": ["https://example.org/FeatureServer/3"]}})))
+    tf = ca.data_dir / "templates" / r["name"]
+    with _zf.ZipFile(tf) as z:
         names = set(z.namelist())
-        doc = json.loads(z.read("spyhop-settings.json"))
-        pinfo = json.loads(z.read("spyhop-pack.json"))
-    assert {"waypoints.csv", "routes/Line 1.gpx", "overlays/zones.geojson", "feeds/abc12345.geojson"} <= names
-    assert "overlays/Survey - old.geojson" not in names
-    assert pinfo["min_spyhop"] == "0.22.0" and pinfo["includes"] == ["waypoints", "routes", "overlays"]
-    assert doc["nmea_sources"] == [{"type": "udp", "port": 2000}] and "data_dir" not in doc["settings"]
-    assert doc["settings"]["timezone"] == "UTC" and doc["online_display"]["ais"] is True
-    assert run(a.groupconfig_changes(Req(query={"name": r["name"]})))["includes"] == ["waypoints", "routes", "overlays"]
-    # a pack without the optional parts
-    run(a.configpacks_save(Req({"by": "H", "notes": "lists only", "name": "lists"})))
-    with _zf.ZipFile(ca.data_dir / "config_packs" / "lists.spyhop.zip") as z:
+        doc = json.loads(z.read("spyhop-config.json"))
+    assert names == {"spyhop-config.json", "species.csv", "event_types.csv", "observers.csv", "behaviors.csv", "shortcuts.csv",
+                     "waypoints.csv", "routes/Line 1.gpx", "overlays/zones.geojson"}      # no feed data, no display.csv
+    assert doc["min_spyhop"] == "0.24.0" and doc["includes"] == ["waypoints", "routes", "overlays"] and doc["made_with"] == __version__
+    assert doc["nmea_inputs"] == [{"type": "udp", "port": 2000}] and "data_dir" not in doc["settings"]
+    assert doc["settings"]["timezone"] == "UTC" and doc["online_overlays"]["ais"] is True
+    assert doc["map_feeds"] == [{"id": "abc12345", "name": "SMAs", "url": "https://example.org/FeatureServer/3",
+                                 "color": "#ff0000", "refresh_min": 60}]
+    assert set(doc) >= {"history", "map_display", "reports"}
+    assert _run(a.templates_changes(_Req(query={"name": r["name"]})))["includes"] == ["waypoints", "routes", "overlays"]
+    _run(a.templates_save(_Req({"by": "H", "notes": "lists only", "name": "lists"})))
+    with _zf.ZipFile(ca.data_dir / "templates" / "lists.spyhop-template.zip") as z:
         assert "waypoints.csv" not in z.namelist() and not any(n.startswith("routes/") for n in z.namelist())
 
     # computer B: its own serial port, a waypoint called Harbor somewhere else, its own route of the same name
     cb.save_settings({"nmea_sources": [{"type": "serial", "port": "/dev/ttyUSB0"}, {"type": "udp", "port": 10110}]})
     b.rec.tables["marks"].add({"Name": "Harbor", "Lat": "42.0", "Lon": "-70.5"})
     (cb.routes_dir / "Line 1.gpx").write_text('<?xml version="1.0"?><gpx><rte/></gpx>')
-    chk = run(b.groupconfig_check(Req({"url": str(pf)})))
+    chk = _run(b.templates_check(_Req({"url": str(tf)})))
     st = {f["file"]: f for f in chk["files"]}
     assert st["waypoints.csv"]["status"] == "new" and st["waypoints.csv"]["add"] == 1 and "kept" in st["waypoints.csv"]["detail"]
     assert st["routes/Line 1.gpx"]["status"] == "kept" and st["overlays/zones.geojson"]["status"] == "new"
-    assert st["Map feed: SMAs"]["status"] == "new" and "UTC" in st["Settings (clock, units, tracking, keep awake, NMEA log)"]["detail"]
-    assert chk["info"]["min_spyhop"] == "0.22.0" and chk["display"]["ais"] is True
-    res = run(b.groupconfig_pull(Req({"token": chk["token"], "backup": True})))
+    assert st["Map feed: SMAs"]["status"] == "new" and "UTC" in st[templates.SETTINGS_LABEL]["detail"]
+    assert chk["info"]["min_spyhop"] == "0.24.0" and chk["online"]["ais"] is True and chk["online"]["feed_names"] == ["SMAs"]
+    res = _run(b.templates_use(_Req({"token": chk["token"], "backup": True})))
     assert res["added"] == {"waypoints": 1, "routes": 0, "overlays": 1, "feeds": 1}
     assert cb.settings["timezone"] == "UTC" and cb.settings["effort_reminder_min"] == 20
     assert cb.settings["nmea_sources"] == [{"type": "serial", "port": "/dev/ttyUSB0"}, {"type": "udp", "port": 2000}]
-    assert cb.settings["online_feeds"][0]["name"] == "SMAs" and feeds.cache_path(cb, "abc12345").is_file()
+    assert cb.settings["online_feeds"][0]["name"] == "SMAs" and not feeds.cache_path(cb, "abc12345").exists()
     assert cb.settings["online_display"]["stamp"] and cb.settings["online_display"]["ais"] is True
-    marks = {(m["Name"], m["Lat"]) for m in b.rec.tables["marks"].rows}
-    assert marks == {("Harbor", "42.0"), ("Buoy A", "41.5")}
+    assert {(m["Name"], m["Lat"]) for m in b.rec.tables["marks"].rows} == {("Harbor", "42.0"), ("Buoy A", "41.5")}
     assert "<rte/>" in (cb.routes_dir / "Line 1.gpx").read_text() and (cb.overlays_dir / "zones.geojson").is_file()
-    assert cb.data_dir == tmp_path / "b" / "data" or cb.settings.get("data_dir") == ""
-    # using it again changes nothing and adds nothing twice
-    chk2 = run(b.groupconfig_check(Req({"pack": r["name"]})))
+    chk2 = _run(b.templates_check(_Req({"template": r["name"]})))
     assert all(f["status"] in ("same", "kept") for f in chk2["files"])
-    # restoring the backup takes away what the pack added, and the settings go back
+    # restoring the backup takes away what the template added, and the settings go back
     bk = Path(res["backup"]).name
-    chk3 = run(b.groupconfig_check(Req({"backup": bk})))
+    chk3 = _run(b.templates_check(_Req({"backup": bk})))
     removed = {f["file"] for f in chk3["files"] if f["status"] == "removed"}
     assert {"waypoints.csv", "overlays/zones.geojson", "Map feed: SMAs"} <= removed
-    run(b.groupconfig_pull(Req({"token": chk3["token"], "backup": False})))
+    _run(b.templates_use(_Req({"token": chk3["token"], "backup": False})))
     assert cb.settings["timezone"] == "local" and cb.settings["online_feeds"] == []
     assert {m["Name"] for m in b.rec.tables["marks"].rows} == {"Harbor"} and not (cb.overlays_dir / "zones.geojson").exists()
     assert cb.settings["nmea_sources"] == [{"type": "serial", "port": "/dev/ttyUSB0"}, {"type": "udp", "port": 10110}]
 
-    # a pack that needs a newer Spyhop can't be used
-    with _zf.ZipFile(pf) as z:
+    # a template that needs a newer Spyhop can't be used
+    with _zf.ZipFile(tf) as z:
         files = {n: z.read(n) for n in z.namelist()}
-    files["spyhop-pack.json"] = json.dumps({"format": 2, "min_spyhop": "9.0.0"}).encode()
-    p = configpack.read_pack(files)
-    assert any("needs Spyhop 9.0.0" in x and __version__ in x for x in p["problems"])
-    with pytest.raises(configpack.PackError):
-        configpack.apply(cb, p)
-    assert packparts.clean_min_version("") == "0.22.0"
-    with pytest.raises(packparts.PartError):
-        packparts.clean_min_version("0.21.0")
+    files["spyhop-config.json"] = json.dumps({**doc, "min_spyhop": "9.0.0"}).encode()
+    t = templates.read_template(files)
+    assert any("needs Spyhop 9.0.0" in x and __version__ in x for x in t["problems"])
+    with pytest.raises(templates.TemplateError):
+        templates.apply(cb, t)
+    assert templates.clean_min_version("") == "0.24.0"
+    with pytest.raises(templates.TemplateError):
+        templates.clean_min_version("0.22.0")
+
+    # a template made by Spyhop 0.22–0.23 (spyhop-pack.json, spyhop-settings.json, feeds/) still works; its feed data is skipped
+    old = {"spyhop-pack.json": json.dumps({"format": 2, "min_spyhop": "0.22.0", "includes": []}).encode(),
+           "spyhop-settings.json": json.dumps({"settings": {"timezone": "UTC"}, "nmea_sources": [{"type": "udp", "port": 3000}],
+                                               "online_feeds": doc["map_feeds"], "online_display": {"ais": True}}).encode(),
+           "feeds/abc12345.geojson": b'{"type":"FeatureCollection","features":[]}',
+           "spyhop-config.csv": b"Date,Changed by,Files,Notes\r\n2026-11-07,H,all,0.22 pack\r\n",
+           "species.csv": files["species.csv"]}
+    t22 = templates.read_template(old)
+    assert not t22["problems"] and not t22["ignored"] and t22["settings"]["nmea_inputs"] == [{"type": "udp", "port": 3000}]
+    assert t22["history"][0]["notes"] == "0.22 pack" and t22["settings"]["online"] == {"ais": True}
+    copy = templates.read_template(templates.unzip(templates.template_to_zip(t22)))
+    assert copy["settings"] == t22["settings"] and copy["history"] == t22["history"]
+
+
+def test_templates_renamed_from_config_packs(tmp_path):
+    """0.24: settings group_config_* → template_*, the config_packs folder → templates, and this computer's
+    record of changes (spyhop-config.csv) → template_history.json."""
+    from spyhop import templates
+    from spyhop.config import Config
+    root = tmp_path / "app"
+    (root / "settings").mkdir(parents=True)
+    (root / "settings" / "settings.json").write_text(json.dumps({
+        "group_config_url": "https://example.org/t.zip", "group_config_author": "HJ", "group_config_pack_name": "x",
+        "group_config_current": {"name": "team.spyhop.zip", "how": "loaded"}, "template_backup": False}))
+    (root / "spyhop-config.csv").write_text("Date,Changed by,Files,Notes\r\n2026-11-01,HJ,species.csv,Old record\r\n")
+    old = root / "data" / "config_packs"
+    old.mkdir(parents=True)
+    (old / "team.spyhop.zip").write_bytes(b"PK")
+    cfg = Config(root)
+    st = cfg.settings
+    assert st["template_url"] == "https://example.org/t.zip" and st["template_author"] == "HJ"
+    assert st["template_current"]["name"] == "team.spyhop.zip" and st["template_backup"] is False
+    assert not any(k.startswith("group_config") for k in st)
+    cfg.save_settings()
+    assert "group_config_url" not in json.loads((root / "settings" / "settings.json").read_text())
+    assert templates.templates_dir(cfg) == root / "data" / "templates" and (root / "data" / "templates" / "team.spyhop.zip").is_file()
+    assert not old.exists()
+    assert templates.local_history(cfg) == [{"date": "2026-11-01", "by": "HJ", "changed": "species.csv", "notes": "Old record"}]
+    assert not (root / "spyhop-config.csv").exists()

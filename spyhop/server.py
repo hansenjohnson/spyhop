@@ -16,7 +16,7 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 
 from .recorder import Recorder, ValueErrorMsg
-from . import awake, configpack, __version__, diag, feeds, packparts, reports, routes, schema, updater
+from . import awake, __version__, diag, feeds, reports, routes, schema, templates, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports
 from .store import safe_name
@@ -508,10 +508,10 @@ class App:
                    "overlays": cfg.overlays_dir, "survey": cfg.data_dir, "datafolder": cfg.data_dir,
                    "nmealogs": cfg.data_dir / "nmea_logs", "logs": diag.log_dir(cfg.root),
                    "reports": reports.user_dir(cfg), "routes": cfg.routes_dir,
-                   "backups": configpack.backups_dir(cfg), "packs": configpack.packs_dir(cfg)}
+                   "backups": templates.backups_dir(cfg), "templates": templates.templates_dir(cfg)}
         if what in targets:
             p = targets[what]
-            if what in ("backups", "packs"):
+            if what in ("backups", "templates"):
                 p.mkdir(parents=True, exist_ok=True)
             if what == "reports":
                 reports.ensure_dir(cfg)
@@ -1037,73 +1037,72 @@ class App:
         self.last_reports_dir = folder
         return json_ok(folder=str(folder), files=saved)
 
-    # ---- config packs (Settings → Templates; configpack.py)
-    async def groupconfig_check(self, request):
-        """Check a pack before pulling it: from a web address ({url}), a pack in the config packs
-        folder ({pack: file name}) or a backup ({backup: file name})."""
+    # ---- templates (Settings → Templates; templates.py)
+    async def templates_check(self, request):
+        """Check a template before using it: from a web address ({url}), a template in the templates
+        folder ({template: file name}) or a backup ({backup: file name})."""
         b = await request.json() if request.can_read_body else {}
         cfg = self.rec.cfg
-        if b.get("pack") or b.get("backup"):
+        if b.get("template") or b.get("backup"):
             try:
-                if b.get("pack"):
-                    url, kind = str(configpack._pack_file(cfg, b["pack"])), "folder"
+                if b.get("template"):
+                    url, kind = str(templates._template_file(cfg, b["template"])), "folder"
                 else:
                     name = str(b["backup"])
-                    if "/" in name or "\\" in name or not configpack.is_pack_name(name):
-                        raise configpack.PackError("That isn't the name of a backup.")
-                    url, kind = str(configpack.backups_dir(cfg) / name), "backup"
-            except configpack.PackError as e:
+                    if "/" in name or "\\" in name or not templates.is_template_name(name):
+                        raise templates.TemplateError("That isn't the name of a backup.")
+                    url, kind = str(templates.backups_dir(cfg) / name), "backup"
+            except templates.TemplateError as e:
                 raise ValueErrorMsg(str(e))
         else:
             url, kind = str(b.get("url", "")).strip(), "web"
-            cfg.save_settings({"group_config_url": url})
+            cfg.save_settings({"template_url": url})
 
         def work():
-            files, source, name = configpack.fetch_named(url)
-            pack = configpack.read_pack(files)
-            if kind == "backup":       # restoring it also takes away what the pack used after it added
-                pack["_undo"] = (cfg.settings.get("group_config_added") or {}).get(Path(url).name)
-            return source, name, pack, configpack.compare(cfg, pack)
+            files, source, name = templates.fetch_named(url)
+            t = templates.read_template(files)
+            if kind == "backup":       # restoring it also takes away what the template used after it added
+                t["_undo"] = (cfg.settings.get("template_added") or {}).get(Path(url).name)
+            return source, name, t, templates.compare(cfg, t)
         try:
-            source, name, pack, plan = await asyncio.get_running_loop().run_in_executor(None, work)
-        except configpack.PackError as e:
+            source, name, t, plan = await asyncio.get_running_loop().run_in_executor(None, work)
+        except templates.TemplateError as e:
             raise ValueErrorMsg(str(e))
-        if kind == "web" and configpack.resolve(url)[0] == "file":
-            kind = "folder" if configpack.in_packs_dir(cfg, url) else "file"
-        pack["_kind"], pack["_name"] = kind, name
-        return json_ok(token=configpack.remember(url, pack), source=source, files=plan, kind=kind, name=name,
-                       manifest=pack["manifest"][:8], ignored=pack["ignored"], problems=pack["problems"],
-                       info=pack.get("info"), display=packparts.display_summary(pack),
+        if kind == "web" and templates.resolve(url)[0] == "file":
+            kind = "folder" if templates.in_templates_dir(cfg, url) else "file"
+        t["_kind"], t["_name"] = kind, name
+        return json_ok(token=templates.remember(url, t), source=source, files=plan, kind=kind, name=name,
+                       history=t["history"][:8], ignored=t["ignored"], problems=t["problems"],
+                       info=t.get("info"), online=templates.online_summary(t),
                        survey_active=self.rec.survey_active())
 
-    async def groupconfig_pull(self, request):
+    async def templates_use(self, request):
         b = await request.json() if request.can_read_body else {}
-        got = configpack.recall(b.get("token", ""))
+        got = templates.recall(b.get("token", ""))
         if not got:
-            raise ValueErrorMsg("That check is too old. Press Check for new config again.")
-        url, pack = got
+            raise ValueErrorMsg("That check is too old. Check the template again.")
+        url, t = got
         cfg = self.rec.cfg
         backup = bool(b.get("backup"))
         bdir = str(b.get("backup_dir", "") or "").strip()
-        cfg.save_settings({"group_config_backup": backup, "group_config_backup_dir": bdir})
-
-        kind = pack.get("_kind", "web")
+        cfg.save_settings({"template_backup": backup, "template_backup_dir": bdir})
+        kind = t.get("_kind", "web")
 
         def work():
-            saved = configpack.save_backup(cfg, bdir) if backup else None
-            changed, done = configpack.apply_all(cfg, pack)
+            saved = templates.save_backup(cfg, bdir) if backup else None
+            changed, done = templates.apply_all(cfg, t)
             copy = None
-            if kind in ("web", "file"):          # keep a copy in the config packs folder, for reuse offline
+            if kind in ("web", "file"):          # keep a copy in the templates folder, for use offline
                 try:
-                    copy = configpack.keep_copy(cfg, pack, pack.get("_name") or "")
+                    copy = templates.keep_copy(cfg, t, t.get("_name") or "")
                 except OSError as e:
-                    log.warning("couldn't keep a copy of the pack: %s", e)
+                    log.warning("couldn't keep a copy of the template: %s", e)
             return saved, changed, done, copy
         try:
             saved, changed, done, copy = await asyncio.get_running_loop().run_in_executor(None, work)
-        except configpack.PackError as e:
+        except templates.TemplateError as e:
             raise ValueErrorMsg(str(e))
-        added_ids = self.rec.pack_waypoints(done["waypoints"], done["remove_waypoints"])
+        added_ids = self.rec.template_waypoints(done["waypoints"], done["remove_waypoints"])
         if done["inputs"]:
             await self.sources.start(list(cfg.settings.get("nmea_sources") or []) + self.extra_sources)
         if done["settings"]:
@@ -1111,100 +1110,96 @@ class App:
             self.sync_awake()
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         current = copy.name if copy else (Path(url).name if kind == "folder" else None)
-        upd = {"group_config_fingerprints": {"from": "pull", "when": now, "files": configpack.fingerprints(cfg)},
-               "group_config_current": {"name": current, "how": "backup" if kind == "backup" else "loaded", "when": now}}
+        upd = {"template_fingerprints": {"from": "use", "when": now, "files": templates.fingerprints(cfg)},
+               "template_current": {"name": current, "how": "backup" if kind == "backup" else "loaded", "when": now}}
         record = {k: v for k, v in (("waypoints", added_ids), ("routes", done["routes"]),
                                     ("overlays", done["overlays"]), ("feeds", done["feeds"])) if v}
-        added = dict(cfg.settings.get("group_config_added") or {})
+        added = dict(cfg.settings.get("template_added") or {})
         if kind == "backup":
             added.pop(Path(url).name, None)
         if saved and record:
             added[saved.name] = {**record, "when": now}
-        upd["group_config_added"] = dict(sorted(added.items(), key=lambda kv: kv[1].get("when", ""))[-20:])
+        upd["template_added"] = dict(sorted(added.items(), key=lambda kv: kv[1].get("when", ""))[-20:])
         if kind in ("web", "file"):
-            upd["group_config_last"] = {"url": url, "pulled": now, "latest": pack["manifest"][0] if pack["manifest"] else None,
-                                        "changed": changed}
+            upd["template_last"] = {"url": url, "pulled": now, "latest": t["history"][0] if t["history"] else None,
+                                    "changed": changed}
         cfg.save_settings(upd)
-        log.info("group config loaded from %s: %s", url, ", ".join(changed) or "no changes")
-        for t in ("feeds", "routes", "overlays"):
-            self._broadcast_soon({"type": t})
+        log.info("template used from %s: %s", url, ", ".join(changed) or "no changes")
+        for kind_ in ("feeds", "routes", "overlays"):
+            self._broadcast_soon({"type": kind_})
         self._broadcast_soon({"type": "reload"})
         return json_ok(changed=changed, backup=str(saved) if saved else None, copy=copy.name if copy else None,
                        added={"waypoints": len(added_ids), "routes": len(done["routes"]),
                               "overlays": len(done["overlays"]), "feeds": len(done["feeds"])},
                        removed_waypoints=len(done["remove_waypoints"]))
 
-    async def groupconfig_backup(self, request):
+    async def templates_backup(self, request):
         b = await request.json() if request.can_read_body else {}
         try:
             p = await asyncio.get_running_loop().run_in_executor(
-                None, configpack.save_backup, self.rec.cfg, str(b.get("dir", "") or "").strip())
-        except configpack.PackError as e:
+                None, templates.save_backup, self.rec.cfg, str(b.get("dir", "") or "").strip())
+        except templates.TemplateError as e:
             raise ValueErrorMsg(str(e))
         return json_ok(path=str(p), folder=str(p.parent))
 
-    async def configpacks_list(self, request):
+    async def templates_list(self, request):
         cfg = self.rec.cfg
         try:
-            packs, backups = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: (configpack.list_packs(cfg), configpack.list_backups(cfg)))
+            items, backups = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: (templates.list_templates(cfg), templates.list_backups(cfg)))
         except OSError as e:
-            raise ValueErrorMsg(f"Couldn't read the config packs folder: {e}")
-        return json_ok(folder=str(configpack.packs_dir(cfg)), packs=packs, backups=backups,
-                       backups_folder=str(configpack.backups_dir(cfg)),
-                       current=cfg.settings.get("group_config_current") or None)
+            raise ValueErrorMsg(f"Couldn't read the templates folder: {e}")
+        return json_ok(folder=str(templates.templates_dir(cfg)), templates=items, backups=backups,
+                       backups_folder=str(templates.backups_dir(cfg)),
+                       current=cfg.settings.get("template_current") or None)
 
-    async def groupconfig_changes(self, request):
-        """What the record of changes' Files column should say: for a new pack, the files changed since the
-        last load, pull or save; for overwriting a pack ({name}), the files that differ from it."""
+    async def templates_changes(self, request):
+        """What the record of changes' "What changed" should say: for a new template, the parts changed since
+        the last time one was used or saved here; for updating a template ({name}), the parts that differ from it."""
         cfg = self.rec.cfg
         name = request.query.get("name", "")
-        info = {"by": cfg.settings.get("group_config_author", ""), **self.pack_counts()}
+        info = {"by": cfg.settings.get("template_author", ""), **templates.local_counts(cfg),
+                "version": __version__, "min_default": templates.FORMAT_MIN}
         if name:
             try:
-                p = configpack.read_pack_file(cfg, name)
-                pi = p.get("info") or {}
-                return json_ok(files=configpack.changed_from_pack(cfg, name), since="pack_file",
-                               includes=pi.get("includes"), min_spyhop=pi.get("min_spyhop"), **info)
-            except configpack.PackError as e:
+                t = templates.read_template_file(cfg, name)
+                ti = t.get("info") or {}
+                return json_ok(files=templates.changed_from_template(cfg, name), since="template_file",
+                               includes=ti.get("includes"), min_spyhop=ti.get("min_spyhop"), **info)
+            except templates.TemplateError as e:
                 raise ValueErrorMsg(str(e))
-        base = cfg.settings.get("group_config_fingerprints") or {}
-        return json_ok(files=configpack.changed_since(cfg, base.get("files")), since=base.get("from"),
+        base = cfg.settings.get("template_fingerprints") or {}
+        return json_ok(files=templates.changed_since(cfg, base.get("files")), since=base.get("from"),
                        when=base.get("when"), **info)
 
-    def pack_counts(self) -> dict:
-        cfg = self.rec.cfg
-        return {"waypoints": len(self.rec.tables["marks"].rows), "routes": len(packparts.local_routes(cfg)),
-                "overlays": len(packparts.local_overlays(cfg)), "version": __version__, "min_default": packparts.FORMAT_MIN}
-
-    async def configpacks_save(self, request):
+    async def templates_save(self, request):
         b = await request.json() if request.can_read_body else {}
-        by, notes, files, name = (str(b.get(k, "") or "").strip() for k in ("by", "notes", "files", "name"))
+        by, notes, changed, name = (str(b.get(k, "") or "").strip() for k in ("by", "notes", "changed", "name"))
         overwrite = bool(b.get("overwrite"))
         if not by or not notes:
-            raise ValueErrorMsg("Give your name and what changed, for the pack's record of changes.")
+            raise ValueErrorMsg("Give your name and what changed, for the template's record of changes.")
         cfg = self.rec.cfg
-        include = [k for k in packparts.OPTIONAL if k in (b.get("include") or [])]
-        min_v, display = b.get("min_spyhop"), b.get("online_display")
+        include = [k for k in templates.OPTIONAL if k in (b.get("include") or [])]
+        min_v, online = b.get("min_spyhop"), b.get("online")
         try:
             p = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: configpack.save_pack(cfg, name, by, files, notes, overwrite, include, min_v, display))
-        except configpack.PackError as e:
+                None, lambda: templates.save_template(cfg, name, by, changed, notes, overwrite, include, min_v, online))
+        except templates.TemplateError as e:
             raise ValueErrorMsg(str(e))
         except OSError as e:
-            raise ValueErrorMsg(f"Couldn't save the pack: {e}")
+            raise ValueErrorMsg(f"Couldn't save the template: {e}")
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        cfg.save_settings({"group_config_author": by,
-                           "group_config_fingerprints": {"from": "pack", "when": now, "files": configpack.fingerprints(cfg)},
-                           "group_config_current": {"name": p.name, "how": "saved", "when": now}})
-        log.info("config pack %s by %s: %s (%s)", "overwritten" if overwrite else "saved", by, notes, files or "all")
-        return json_ok(name=p.name, path=str(p), url=f"/api/configpacks/file/{quote(p.name)}")
+        cfg.save_settings({"template_author": by,
+                           "template_fingerprints": {"from": "save", "when": now, "files": templates.fingerprints(cfg)},
+                           "template_current": {"name": p.name, "how": "saved", "when": now}})
+        log.info("template %s by %s: %s (%s)", "updated" if overwrite else "saved", by, notes, changed or "all")
+        return json_ok(name=p.name, path=str(p), url=f"/api/templates/file/{quote(p.name)}")
 
-    async def configpacks_file(self, request):
-        """Download a pack from the config packs folder (to upload it for the group)."""
+    async def templates_file(self, request):
+        """Download a template from the templates folder (to upload it for the team)."""
         try:
-            p = configpack._pack_file(self.rec.cfg, request.match_info["name"])
-        except configpack.PackError as e:
+            p = templates._template_file(self.rec.cfg, request.match_info["name"])
+        except templates.TemplateError as e:
             raise web.HTTPNotFound(text=str(e))
         if not p.is_file():
             raise web.HTTPNotFound()
@@ -1317,13 +1312,13 @@ class App:
         r.add_post("/api/config/reload", self.reload_config)
         r.add_post("/api/config/list", self.save_list)
         r.add_post("/api/config/shortcuts", self.save_shortcuts)
-        r.add_post("/api/groupconfig/check", self.groupconfig_check)
-        r.add_post("/api/groupconfig/pull", self.groupconfig_pull)
-        r.add_post("/api/groupconfig/backup", self.groupconfig_backup)
-        r.add_get("/api/configpacks", self.configpacks_list)
-        r.add_post("/api/configpacks/save", self.configpacks_save)
-        r.add_get("/api/configpacks/file/{name}", self.configpacks_file)
-        r.add_get("/api/groupconfig/changes", self.groupconfig_changes)
+        r.add_get("/api/templates", self.templates_list)
+        r.add_post("/api/templates/check", self.templates_check)
+        r.add_post("/api/templates/use", self.templates_use)
+        r.add_post("/api/templates/backup", self.templates_backup)
+        r.add_post("/api/templates/save", self.templates_save)
+        r.add_get("/api/templates/file/{name}", self.templates_file)
+        r.add_get("/api/templates/changes", self.templates_changes)
         r.add_post("/api/open", self.open)
         r.add_get("/api/nmea", self.nmea)
         r.add_post("/api/nmea/sources", self.nmea_sources)

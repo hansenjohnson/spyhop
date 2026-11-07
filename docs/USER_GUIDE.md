@@ -53,13 +53,13 @@ The **current route** is drawn on the map with numbered waypoints and kept betwe
   Legs alternate direction, joined by crossings of the leg spacing.
 - **Systematic — sawtooth (zig-zag):** the platform zig-zags with no crossings. Choose:
   - the **start point**, as for parallel legs
-  - the **leg direction**: the bearing of leg 1
+  - the **survey direction**: the way the whole pattern advances (°T)
   - the **leg length** (nm)
-  - the **turning angle**: how far the platform turns at each waypoint (90° gives legs at right angles; smaller angles give a flatter zig-zag), and whether the **first turn** is to starboard or port
+  - the **angle between legs**: the angle where one leg meets the next (90° gives legs at right angles; a smaller angle gives a sharper, wider zig-zag), and whether the **first leg** goes to starboard or port of the survey direction
   - the **number of legs**
-  - **One way**, or **Return**: after the farthest waypoint the platform comes back on a reciprocal sawtooth, the outbound pattern mirrored about the line through the far end, so the legs cross back and together make a chain of diamonds. With an even number of legs it ends back at the start.
+  - **One way**, or **Return**: at the far end a short **crossover** leg, at a right angle to the last leg, leads onto a reciprocal sawtooth that comes back through the outbound one, crossing each outbound leg at its middle. The return ends level with the start, on the far side of the pattern. Times and distances count the crossover separately (like a crossing).
 
-  The legs alternate between the leg direction and the leg direction plus (or minus) the turning angle; Spyhop shows the direction the pattern advances, and how long and wide it is.
+  Spyhop shows the two courses the legs alternate between, and how long and wide the pattern is. Sawtooth routes saved in 0.23 open as the same pattern.
 - **Route** box at the top:
   - **Activate route** locks the waypoints where they are (no dragging or editing, and a vessel start is frozen at the position it had) and keeps the route on the map from every tab. **Deactivate** to edit it again.
   - **Close route** empties the editor and takes the route off the map (asking first if it has unsaved changes or is active). **Clear waypoints** removes its waypoints but keeps it open (saved routes and GPX files are kept).
@@ -150,7 +150,7 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
     - **Inputs:** the GPS / NMEA inputs, and the **online overlays** (AIS, weather radar, map feeds; see *Online overlays* below).
     - **Shortcuts:** every keyboard shortcut and what it does.
     - **Dropdowns:** the species, event, behaviour and observer lists.
-    - **Templates:** config packs (see *Config packs* below).
+    - **Templates:** a team's setup in one file (see *Templates* below).
     - **About:** the version, the tutorial, the changelog, the diagnostic logs (**Save diagnostics…**), and **Updates**: **Check for updates** looks on GitHub for a newer Spyhop and can install it (with a backup of the old version) and restart. Tick *Check when Spyhop starts* to be told automatically when there's internet.
   - Clicking **Tools** or **Settings** returns to the one of its tabs you used last.
 - **Summary** (Tools → Summary, or Ctrl/Cmd+4) shows:
@@ -227,7 +227,7 @@ The **Species**, **Events**, **Behaviors** and **Observers** tabs edit the drop-
 - **↑ ↓** set the order of the drop-down, **✕** removes an entry, **Add entry** and **Sort A–Z** do what they say, and **Save** keeps the changes.
 - Names and codes must be unique. Spyhop shows what's wrong and saves nothing until it's fixed.
 - Renaming or removing an entry doesn't change rows already recorded; Quality Control flags values that are no longer in the list.
-- **While a survey is under way the lists are greyed out and can't be changed**, so they stay the same for the whole survey. End the survey to edit them. (Pulling a group config pack during a survey is still possible, after a warning.)
+- **While a survey is under way the lists are greyed out and can't be changed**, so they stay the same for the whole survey. End the survey to edit them. (Using a template during a survey is still possible, after a warning.)
 - For many changes at once, the files (`species.csv` and so on) can still be edited in a spreadsheet and reloaded.
 
 ## Reports (Tools → Reports)
@@ -242,7 +242,7 @@ A report is a chosen part of one table: some rows, some columns. It updates as y
 - **Export CSV…** (for R, Excel or a database), **HTML…** and **PDF…** save the report on screen in the `exports` folder and download a copy. The HTML and PDF pages have the survey name, its date (or first and last dates, if it ran over more than one day), the platform, organization, chief scientist and their email, then the table and its totals.
 - **Saved reports:** **Save report…** keeps the current report by name; it then appears under *Saved reports*, one click away. A saved report that you change is marked • until you **Save changes** (or **Undo changes**); **Save as new…**, **Rename…** and **Delete…** do what they say.
   - Spyhop starts you off with **Right whales**, **Blue whales**, **Dead birds** and **Gear**.
-  - Saved reports are files in the `reports` folder in Spyhop's folder (**Open the reports folder**), one `.json` file each. They travel in config packs (Settings → Templates), so a team can hand out its standard reports.
+  - Saved reports are files in the `reports` folder in Spyhop's folder (**Open the reports folder**), one `.json` file each. They travel in templates (Settings → Templates), so a team can hand out its standard reports.
 - **Run Reports…** (top of the tab) saves several saved reports at once: tick the reports, the formats (CSV, HTML, PDF; any or all) and where to save them (the exports folder, or a folder you choose). It remembers your choices, and lists the files it saved with a button to open the folder.
 - Each saved report is also offered in **Export Data…**, as a CSV.
 - **PDFs** are printed by Google Chrome or Microsoft Edge, which Spyhop finds by itself. Set `SPYHOP_CHROME` to the path of another Chromium-based browser if needed.
@@ -325,7 +325,7 @@ If you used Spyhop under its earlier name (Whale Survey Recorder), the old `Whal
 
 Both folders are shown in **Settings → General → Folders**, each with an **Open folder** link.
 
-**Config packs:** a config pack is one small file (`<name>.spyhop.zip`) holding a team's setup: the lists, shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log), the network GPS / NMEA inputs, map feeds and which online overlays are on, and optionally waypoints, routes and overlays (ticked when saving). Settings are replaced; map feeds, waypoints, routes and overlays are only added, keeping any the computer already has. Serial GPS ports, the data folder, survey data and offline charts are never in a pack. A pack names the oldest Spyhop that can use it. **Settings → Templates** lists the packs in the `config_packs` folder of the survey data folder, with each one's latest change, whether it matches this computer, and which one is in use. **Use this pack…** shows what would change and then overwrites this computer's lists, shortcuts, display, reports and settings with the pack's, with no merging (a backup is saved first in `config_packs/backups`; **Restore…** undoes it). **Overwrite…** replaces a pack with this computer's config, and **Save this computer's config as a new pack…** makes a new one; both ask for your name and what changed and add it to the pack's record of changes. A team's pack on the web is pulled with **Get a pack from the web** → **Check**, and a copy is kept in the folder for offline use. Using a pack during a survey is allowed after a warning. See [CONFIG_PACKS.md](CONFIG_PACKS.md) for sharing and hosting packs.
+**Templates:** a template is one small file (`<name>.spyhop-template.zip`) holding a team's setup: the lists and shortcuts (as CSV files) and a `spyhop-config.json` with the map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log), the network GPS / NMEA inputs, the map feeds (their addresses, not their data) and which online overlays are on, the record of changes and the oldest Spyhop that can use it; and optionally waypoints, routes and overlays (ticked when saving). Settings are replaced; map feeds, waypoints, routes and overlays are only added, keeping any the computer already has. Serial GPS ports, the data folder, survey data and offline charts are never in a template. **Settings → Templates** lists the templates in the `templates` folder of the survey data folder, with each one's latest change, whether it matches this computer, and which one is in use. **Use this template…** shows what would change and then replaces this computer's lists, shortcuts, display, reports and settings with the template's, with no merging (a backup is saved first in `templates/backups`; **Restore…** undoes it). **Update…** replaces a template with this computer's setup, and **Save as a new template…** makes a new one; both ask for your name and what changed and add it to the template's record of changes. A team's template on the web is fetched with **Get a template from the web** → **Check**, and a copy is kept in the folder for offline use. Using a template during a survey is allowed after a warning. Templates used to be called config packs; older ones are still read. See [TEMPLATES.md](TEMPLATES.md) for sharing and hosting templates.
 
 The **survey data folder** holds the survey files, waypoints and exports. It's `data/` inside Spyhop's folder unless you choose another one under **Settings → General → Folders** (the Survey tab links there; **Choose folder…** opens your computer's folder chooser, or type/paste a path). It's remembered between sessions. If it isn't found at start-up (e.g. an unplugged drive), Spyhop uses the default for that session and tells you. Switching folders closes the open survey first.
 
@@ -338,14 +338,13 @@ Spyhop/                                   (Spyhop's own folder)
   routes/    saved routes (Tools → Routes), one GPX file each
   feeds/     the last copy of each map feed (Settings → Inputs)
   reports/   saved reports (Tools → Reports), one *.json each
-  spyhop-config.csv   the record of changes of the config pack last used or saved
   logs/      diagnostic logs (spyhop.log, crash.log, diagnostics zips)
   data/                                   (default survey data folder — or the one you chose)
     <survey name>_sightings.csv   _effort.csv   _events.csv   _track.csv   _metadata.csv   _instruments.csv
     waypoints.csv                 <- kept across surveys (an older marks.csv is renamed to this)
     exports/   <survey>_export_<time>.zip, or a single exported file; saved summaries and reports (.html, .pdf)
     nmea_logs/ <survey>_nmea_<time>.nmea  <- raw NMEA, when recording is on
-    config_packs/  <name>.spyhop.zip config packs; backups/ holds the backups saved before using one
+    templates/     <name>.spyhop-template.zip templates; backups/ holds the backups saved before using one
 ```
 
 - The track CSV's **Effort** column is `Start` (from the Start row until the first ON or OFF), then `ON`/`OFF`, and `End` on the final point, written when you end the survey. A script can tell the start and end of the track apart from off-effort periods.
@@ -394,7 +393,7 @@ New or different:
 - The keyboard opens dropdowns on Windows too. This was a known limitation in the plugin.
 - Per-row bearing reference and distance unit.
 - FieldID on Sightings and ID on Events.
-- A clock in local time, UTC, any UTC offset, or the zone at the platform's position; a live Summary with environmental-condition ranges; reports of any table, saved by name and shared in config packs.
+- A clock in local time, UTC, any UTC offset, or the zone at the platform's position; a live Summary with environmental-condition ranges; reports of any table, saved by name and shared in templates.
 - The Surfacings tab was dropped.
 - An extra Glare column on Effort.
 - **Check these before relying on old pipelines:**

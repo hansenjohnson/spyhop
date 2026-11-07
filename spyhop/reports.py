@@ -19,7 +19,7 @@ A report is a small JSON object:
 
 Saved reports are files in the `reports` folder in Spyhop's own folder, one per report. Spyhop
 puts the starting ones from `spyhop/report_defs/` (Gear, Dead birds, Right whales, Blue whales)
-there once. Config packs carry the folder as `reports/*.json`.
+there once. Templates carry the saved reports in their spyhop-config.json (older ones as `reports/*.json`).
 
 Older versions left other things in that folder, moved aside by `ensure_dir`: report templates
 of the old format (0.9–0.18) go to `old_report_templates/`, and saved filters from 0.18's
@@ -400,7 +400,7 @@ def file_name(name: str) -> str:
     return (s[:50] or "report") + ".json"
 
 
-def is_old_template(d) -> bool:
+def is_old_report_template(d) -> bool:
     """A report template of the format used before 0.19 (it has "id"/"title" and column objects)."""
     return isinstance(d, dict) and ("where" in d or "id" in d or
                                     any(isinstance(c, dict) for c in d.get("columns") or []))
@@ -417,7 +417,7 @@ def ensure_dir(cfg) -> Path:
             data = json.loads(p.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError):
             continue
-        if is_old_template(data):
+        if is_old_report_template(data):
             old.mkdir(exist_ok=True)
             p.replace(old / p.name)
     for extra in ("README.md", "examples"):
@@ -470,7 +470,7 @@ def load(cfg) -> tuple[list[dict], list[str]]:
 
 
 def validate(d) -> str | None:
-    """None if a saved report (e.g. in a config pack) is usable, else what's wrong."""
+    """None if a saved report (e.g. in a template) is usable, else what's wrong."""
     try:
         clean(d)
     except ReportError as e:

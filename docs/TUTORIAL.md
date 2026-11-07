@@ -45,7 +45,7 @@ Behind the scenes they are plain CSV files, which you can also edit in Excel, Nu
 
 After editing a file, save it and press **Reload config files**. Keep the header row as it is. Spyhop adds new columns and entries itself when it is updated.
 
-If your team shares its config files, use **Settings → Templates** instead. Paste the address of the team's pack under **Get a pack from the web** and press **Check** to see what would change, then **Pull and overwrite**; or press **Use this pack…** on a pack already in the list. This overwrites this computer's copies of the pack's files, so keep the backup option ticked. To save your own setup as a pack, press **Save this computer's config as a new pack…**. See docs/CONFIG_PACKS.md.
+If your team shares a template, use **Settings → Templates** instead. Paste the address of the team's template under **Get a template from the web** and press **Check** to see what would change, then **Pull it**; or press **Use this template…** on a template already in the list. This replaces this computer's lists, shortcuts, map display, saved reports and shared settings, so keep the backup option ticked. To save your own setup as a template, press **Save as a new template…**. See docs/TEMPLATES.md.
 
 ## Plan a route
 
@@ -53,7 +53,7 @@ If your team shares its config files, use **Settings → Templates** instead. Pa
 2. Set the **survey speed**, and choose **Manual**, **Systematic — parallel legs** or **Systematic — sawtooth**:
    - **Manual:** press **Add points on the map** and click each waypoint. Drag them to adjust.
    - **Systematic — parallel legs:** set the start, the direction of the first leg, the number of legs, leg length and spacing. Spyhop draws back-and-forth lines.
-   - **Systematic — sawtooth:** set the start, the direction of the first leg, leg length, turning angle and number of legs, one way or with a return. Spyhop draws a zig-zag.
+   - **Systematic — sawtooth:** set the start, the survey direction (the way the pattern advances), leg length, the angle between legs and the number of legs, one way or with a return back through it. Spyhop draws a zig-zag.
 3. The tables show each leg's course, distance and time, the totals and the finish time.
 4. Press **Activate route**. The waypoints lock, the route stays on the map from every tab, and clicking a waypoint shows its distance and bearing from the vessel.
 5. **Save route** keeps it in the routes folder. **Saved routes**, at the top of the tab, lists every saved route: **Show** puts one on the map, **Open** brings it back to edit or activate, and **Close** puts it away again. **Export GPX…** downloads a copy for a chart plotter.
