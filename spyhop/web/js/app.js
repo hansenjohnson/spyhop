@@ -5,7 +5,7 @@ import { MapView, SHAPES } from './map.js';
 import { buildSummaryHtml } from './summary_html.js';
 import { openInstrumentPlot } from './plot.js';
 import { Planner } from './planning.js';
-import { FilterTool } from './filter.js';
+import { ReportsTool } from './reports.js';
 
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = IS_MAC ? '⌘' : 'Ctrl';
@@ -23,7 +23,7 @@ class App {
     this.buildLayout();
     this.map = new MapView(this, $('#map'));
     this.planner = new Planner(this);
-    this.filterTool = new FilterTool(this);
+    this.reportsTool = new ReportsTool(this);
     this.applyDisplay();
     this.renderAll();
     try { this.logSize = localStorage.getItem('wsr.logsize') || 'normal'; } catch { this.logSize = 'normal'; }
@@ -139,7 +139,7 @@ class App {
   topTabs() { return ['sightings', 'effort', 'events']; }
   tabGroups() {
     return [
-      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Route'], ['nmea', 'Instruments'], ['qc', 'Quality Control'], ['summary', 'Summary'], ['filter', 'Filter'], ['reports', 'Reports']]],
+      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Route'], ['nmea', 'Instruments'], ['qc', 'Quality Control'], ['summary', 'Summary'], ['reports', 'Reports']]],
       ['config', 'Settings', [['settings', 'General'], ['basemap', 'Basemap'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'],
         ['templates', 'Templates'], ['about', 'About']]]];
   }
@@ -151,8 +151,8 @@ class App {
     if (!t) return tab === 'survey' ? 'Survey' : (this.S.schema.tabs[tab]?.title || tab);
     return `${this.tabGroups().find(([g]) => g === t[2])[1]} → ${t[1]}`;
   }
-  // tabs that were renamed: Planning → Route (0.7.0). Summary was in Reports from 0.7.0 to 0.17; its own tab again from 0.18.
-  tabAlias(tab) { return { planning: 'route' }[tab] || tab; }
+  // tabs that were renamed: Planning → Route (0.7.0); Filter → Reports (0.19, when the old Reports went).
+  tabAlias(tab) { return { planning: 'route', filter: 'reports' }[tab] || tab; }
   allTabs() { return [...this.topTabs(), 'survey', ...this.groupTabs().map(([k]) => k)]; }
 
   // ---------------------------------------------------------------- layout
@@ -367,7 +367,7 @@ class App {
   renderPane(tab) {
     const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, dropdowns: this.renderDropdowns, nmea: this.renderNmea,
       inputs: this.renderInputs, templates: this.renderTemplates, overlays: this.renderOverlays, basemap: this.renderBasemap,
-      qc: this.renderQc, summary: this.renderSummaryPane, filter: () => this.filterTool.render(), reports: this.renderReports, about: this.renderAbout,
+      qc: this.renderQc, summary: this.renderSummaryPane, reports: () => this.reportsTool.render(), about: this.renderAbout,
       route: () => this.planner.render() }[tab];
     if (f) f.call(this);
   }
@@ -454,9 +454,8 @@ class App {
         this.renderTab(m.tab);
         this.map.drawMarkers(m.tab);
         if (m.tab === 'effort') this.map.drawTrack();        // ERROR rows break the line
-        if (this.tab === 'reports' && this.reportTab) this.renderReportTable(this.reportTab);
         if (this.tab === 'summary') this.renderSummary();
-        this.filterTool.onData(m.tab);
+        this.reportsTool.onData(m.tab);
         this.updateStatus();
         break;
       case 'track':
@@ -502,7 +501,7 @@ class App {
         break;
       case 'overlays': api('/api/bootstrap').then((d) => { this.S.overlays = d.overlays; this.S.surveys = d.surveys; this.map.loadOverlays(d.overlays); this.renderOverlays(); }); break;
       case 'reload': this.reload(); break;
-      case 'filters': this.filterTool.onDefsChanged(); break;
+      case 'reports': this.reportsTool.onDefsChanged(); break;
       default: break;
     }
   }
@@ -838,7 +837,7 @@ class App {
       el('h4', {}, 'Spyhop folder'),
       el('p', {}, 'Spyhop’s own files are in ', el('span', { class: 'mono' }, S.config.root), '. ',
         el('a', { href: '#', id: 'open-app-folder', onclick: (e) => { e.preventDefault(); this.open('app'); } }, 'Open folder')),
-      el('p', { class: 'hint' }, 'It holds the config files (lists and shortcuts, edited in Settings → Dropdowns and Shortcuts; map display), report templates, settings, offline charts, map overlays and the tile cache, logs, and config backups. Spyhop always uses this folder.'));
+      el('p', { class: 'hint' }, 'It holds the config files (lists and shortcuts, edited in Settings → Dropdowns and Shortcuts; map display), saved reports, settings, offline charts, map overlays and the tile cache, logs, and config backups. Spyhop always uses this folder.'));
     pane.replaceChildren(...[current, list, folder].filter(Boolean));
   }
 
@@ -852,11 +851,9 @@ class App {
       ['geojson', 'GeoJSON file', 'Track (split by effort) and points with all their columns, for QGIS or ArcGIS.'],
       ['html', 'Summary report', 'Tools → Summary, with an interactive map (in the HTML file).'],
     ];
-    if (!this.reportDefsLoaded) { try { this.reportDefs = await api('/api/reports'); this.reportDefsLoaded = true; } catch {} }
-    const REPORTS = (this.reportDefs?.reports || []).map((d) => [`report:${d.id}`, `Report: ${d.title}`, d.description || '']);
-    const FILTERS = (await this.filterTool.loadDefs())
-      .map((f) => [`filter:${f.file}`, `Filter: ${f.name}`, `${this.filterTool.describe(f)} Saved as CSV.`]);
-    const pdfOk = !!this.reportDefs?.pdf;
+    const REPORTS = (await this.reportsTool.loadDefs(true))
+      .map((f) => [`report:${f.file}`, `Report: ${f.name}`, `${this.reportsTool.describe(f)} Saved as CSV.`]);
+    const pdfOk = !!this.reportsTool.defs?.pdf;
     let reportAs;
     try { reportAs = localStorage.getItem('wsr.exportReportAs') || 'html'; } catch { reportAs = 'html'; }
     if (!pdfOk) reportAs = 'html';
@@ -870,7 +867,7 @@ class App {
     const okBtn = () => document.querySelector('.modal-buttons button.primary');
     const update = () => {
       const n = Object.values(boxes).filter((b) => b.checked).length;
-      const both = asSel.value === 'both' && Object.entries(boxes).some(([k, b]) => b.checked && (k === 'html' || k.startsWith('report:')));
+      const both = asSel.value === 'both' && boxes.html.checked;
       note.textContent = !n ? 'Choose at least one format.'
         : n > 1 || boxes.csv.checked || both ? 'The files are saved together in one zip file.' : 'Saved as a single file.';
       const b = okBtn(); if (b) b.disabled = !n;
@@ -881,28 +878,23 @@ class App {
         boxes[k] = el('input', { type: 'checkbox', checked: chosen.includes(k), onchange: update });
         return el('label', { class: 'check' }, boxes[k], el('span', {}, el('b', {}, label), el('br'), el('span', { class: 'hint' }, hint)));
       }),
-      REPORTS.length ? el('h4', {}, 'Reports') : null,
+      REPORTS.length ? el('h4', {}, 'Saved reports (Tools → Reports)') : null,
       ...REPORTS.map(([k, label, hint]) => {
-        boxes[k] = el('input', { type: 'checkbox', checked: chosen.includes(k), onchange: update });
-        return el('label', { class: 'check' }, boxes[k], el('span', {}, el('b', {}, label), hint ? el('br') : null, hint ? el('span', { class: 'hint' }, hint) : null));
-      }),
-      FILTERS.length ? el('h4', {}, 'Saved filters (Tools → Filter)') : null,
-      ...FILTERS.map(([k, label, hint]) => {
         boxes[k] = el('input', { type: 'checkbox', checked: chosen.includes(k), onchange: update });
         return el('label', { class: 'check' }, boxes[k], el('span', {}, el('b', {}, label), el('br'), el('span', { class: 'hint' }, hint)));
       }),
-      el('label', { class: 'row' }, 'Save the summary and reports as ', asSel,
+      el('label', { class: 'row' }, 'Save the summary as ', asSel,
         pdfOk ? null : el('span', { class: 'hint' }, ' (PDF needs Google Chrome or Microsoft Edge)')),
       note);
     const ok = await modal({ title: 'Export data', body, width: '34em',
       onOpen: () => { setTimeout(update, 0); return false; },
       buttons: [{ label: 'Cancel', value: false }, { label: 'Export', primary: true, value: true }] });
     if (!ok) return;
-    const formats = [...FORMATS, ...REPORTS, ...FILTERS].map(([k]) => k).filter((k) => boxes[k].checked);
+    const formats = [...FORMATS, ...REPORTS].map(([k]) => k).filter((k) => boxes[k].checked);
     if (!formats.length) return;
     const report_as = asSel.value === 'both' ? ['html', 'pdf'] : [asSel.value];
     try { localStorage.setItem('wsr.exportFormats', JSON.stringify(formats)); localStorage.setItem('wsr.exportReportAs', asSel.value); } catch {}
-    if (report_as.includes('pdf') && formats.some((k) => k === 'html' || k.startsWith('report:'))) toast('Making the PDFs (a few seconds each)…', 'info', 4000);
+    if (report_as.includes('pdf') && formats.includes('html')) toast('Making the PDF (a few seconds)…', 'info', 4000);
     let html, html_pdf;
     if (formats.includes('html')) {
       this.renderSummaryPane();
@@ -1312,7 +1304,7 @@ class App {
         el('h2', {}, `Survey: ${sv.name}${sv.ended ? ' (ended)' : ''}`),
         el('div', { class: 'summary-actions no-print' },
           el('button', { onclick: () => this.saveSummaryHtml(), title: 'Save this summary and a map of the survey as one HTML file that opens in any browser, even offline' }, 'Save as HTML…'),
-          el('button', { disabled: this.reportDefs && this.reportDefsLoaded && !this.reportDefs.pdf, title: 'Save this summary, with its map, as a PDF (needs Google Chrome or Microsoft Edge)',
+          el('button', { disabled: this.reportsTool.defs && !this.reportsTool.defs.pdf, title: 'Save this summary, with its map, as a PDF (needs Google Chrome or Microsoft Edge)',
             onclick: () => this.saveSummaryHtml('pdf') }, 'Save as PDF…'))),
       el('p', { class: 'print-only hint' }, `Spyhop summary · generated ${gen.date} ${gen.time} ${gen.abbr}`),
       el('div', { class: 'cards' },
@@ -1351,7 +1343,7 @@ class App {
     let html, r;
     try { html = await buildSummaryHtml(this, { pdf: format === 'pdf' }); } catch (e) { toast(`Couldn't build the summary: ${e.message}`, 'error'); return; }
     if (format === 'pdf') {
-      try { r = await api('/api/reports/save', { id: 'summary', format: 'pdf', html }); } catch { return; }
+      try { r = await api('/api/summary/pdf', { html }); } catch { return; }
       const a = el('a', { href: r.url, download: r.name });
       document.body.append(a); a.click(); a.remove();
       toast(`Saved ${r.name} in the exports folder (a copy is downloading).`, 'info', 6000);
@@ -1388,7 +1380,7 @@ class App {
 
     // ---- this computer's config and the packs in the folder
     const kids = [
-      el('p', {}, 'A template (config pack) holds the team’s config files in one file: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and report templates. Packs are kept in the config packs folder in the survey data folder; share one by uploading it (or copying it to a USB stick) and use it on another computer.'),
+      el('p', {}, 'A template (config pack) holds the team’s config files in one file: the species, event types, observers and behaviours lists, keyboard shortcuts, map display and saved reports. Packs are kept in the config packs folder in the survey data folder; share one by uploading it (or copying it to a USB stick) and use it on another computer.'),
     ];
     if (!L) kids.push(el('p', { class: 'hint' }, gc.loading ? 'Reading the config packs folder…' : ''));
     else {
@@ -1478,7 +1470,7 @@ class App {
     const title = r.kind === 'backup' ? `Restoring the backup ${r.name}` : r.kind === 'folder' ? `Using the pack ${r.name}` : 'The pack from the web';
     const box = [el('h4', {}, `${title}: what would change`), el('p', { class: 'hint' }, `From ${r.source}`)];
     box.push(el('p', { class: 'warnbox' }, el('b', {}, 'This overwrites this computer’s config files. '),
-      'Every file in the pack replaces the one here; nothing is merged. If the pack has report templates, they replace all of this computer’s templates. Survey data, waypoints and your own settings (data folder, GPS inputs, clock and the rest of Settings → General) are never changed.'));
+      'Every file in the pack replaces the one here; nothing is merged. If the pack has saved reports, they replace all of this computer’s saved reports. Survey data, waypoints and your own settings (data folder, GPS inputs, clock and the rest of Settings → General) are never changed.'));
     if (r.problems.length) {
       box.push(el('div', { class: 'errbox' }, el('b', {}, 'The pack has problems, so it can’t be used. Ask whoever looks after it to fix:'),
         el('ul', {}, r.problems.map((p) => el('li', {}, p)))));
@@ -1971,78 +1963,6 @@ class App {
     this.refreshFormats();
     this.updateStatus();
     if (this.tab === 'settings') this.renderSettings();
-  }
-
-  // ---------------------------------------------------------------- reports tab
-  // One tab per report definition (spyhop/report_defs/*.json and the user's reports folder; run
-  // by the server, reports.py). Summary has its own tab (Tools → Summary) since 0.18, and
-  // Tools → Filter may replace these reports.
-  renderReports() {
-    const pane = $('#pane-reports');
-    if (!pane) return;
-    if (!$('#report-custom')) {
-      pane.replaceChildren(el('p', { class: 'hint' }, 'Tools → Filter does what these reports do, and more: try it, and these reports may be removed in a later version.'),
-        el('div', { id: 'report-tabs', class: 'report-tabs' }), el('div', { id: 'report-custom' }));
-    }
-    if (!this.reportDefs) { this.reportDefs = { reports: [], errors: [] }; this.loadReportDefs(); }
-    if (this.reportTab === undefined) { try { this.reportTab = localStorage.getItem('wsr.reporttab') || ''; } catch { this.reportTab = ''; } }
-    const defs = this.reportDefs.reports;
-    if (this.reportDefsLoaded && !defs.some((d) => d.id === this.reportTab)) this.reportTab = defs[0]?.id || '';
-    $('#report-tabs').replaceChildren(...defs.map((d) => el('button', {
-      class: `report-tab${d.id === this.reportTab ? ' active' : ''}`, 'data-report': d.id,
-      onclick: () => { this.reportTab = d.id; try { localStorage.setItem('wsr.reporttab', d.id); } catch {} this.renderReports(); },
-    }, d.title)));
-    if (this.reportTab) this.renderReportTable(this.reportTab);
-    else if (this.reportDefsLoaded) $('#report-custom').replaceChildren(el('p', { class: 'hint' }, 'No reports.'));
-  }
-
-  async loadReportDefs() {
-    try { this.reportDefs = await api('/api/reports'); this.reportDefsLoaded = true; } catch { return; }
-    if (this.tab === 'reports') this.renderReports();
-  }
-
-  async renderReportTable(id) {
-    const box = $('#report-custom');
-    if (!box) return;
-    const d = this.reportDefs.reports.find((x) => x.id === id);
-    if (!d) { box.replaceChildren(el('p', { class: 'hint' }, 'Loading…')); return; }
-    if (!this.S.survey) { box.replaceChildren(el('section', { class: 'settings-sec' }, el('h3', {}, d.title), el('p', { class: 'hint' }, 'Open a survey (in Survey) to see this report.'))); return; }
-    let r;
-    try { r = (await api(`/api/reports/${encodeURIComponent(id)}`)).report; } catch { return; }
-    if (this.reportTab !== id) return;
-    const pdf = this.reportDefs.pdf;
-    const head = el('div', { class: 'summary-head' },
-      el('h2', {}, `${r.title}`, el('span', { class: 'hint' }, ` · ${r.survey}`)),
-      el('div', { class: 'btnrow' },
-        el('button', { onclick: () => this.saveReport(id, 'html') }, 'Save as HTML…'),
-        el('button', { disabled: !pdf, title: pdf ? '' : 'Needs Google Chrome or Microsoft Edge', onclick: () => this.saveReport(id, 'pdf') }, 'Save as PDF…')));
-    const right = (i) => r.columns[i].align === 'right' ? 'num' : '';
-    const nowrap = (i) => ['time', 'date', 'position'].includes(r.columns[i].label.toLowerCase()) ? ' nowrap' : '';
-    const table = r.rows.length ? el('div', { class: 'table-scroll' }, el('table', { class: 'summary report-table' },
-      el('thead', {}, el('tr', {}, r.columns.map((c, i) => el('th', { class: right(i) }, c.label)))),
-      el('tbody', {}, r.rows.map((row) => el('tr', {}, row.map((v, i) => el('td', { class: right(i) + nowrap(i) }, v))))),
-      r.totals ? el('tfoot', {}, el('tr', {}, r.totals.map((v, i) => el('td', { class: right(i) }, i === 0 && !v ? `Total (${r.count})` : v)))) : null))
-      : el('p', { class: 'hint' }, r.empty);
-    const errs = this.reportDefs.errors || [];
-    box.replaceChildren(head,
-      r.description ? el('p', {}, r.description) : null,
-      table,
-      r.rows.length ? el('p', { class: 'hint' }, `${r.count} record${r.count === 1 ? '' : 's'}.`) : null,
-      el('section', { class: 'settings-sec report-config' },
-        el('p', { class: 'hint' }, d.source === 'custom' ? `This report is your own: ${d.file}. ` : 'A built-in report. ',
-          'Reports are defined in JSON files: add your own, or change or hide these, in the reports folder (its README explains how).'),
-        errs.length ? el('p', { class: 'warn-text' }, `Skipped: ${errs.join('; ')}`) : null,
-        el('div', { class: 'btnrow' },
-          el('button', { onclick: () => this.open('reports') }, 'Open the reports folder'),
-          el('button', { onclick: () => { this.reportDefsLoaded = false; this.loadReportDefs(); toast('Reports reloaded.'); } }, 'Reload reports'))));
-  }
-
-  async saveReport(id, format) {
-    let r;
-    try { r = await api('/api/reports/save', { id, format }); } catch { return; }
-    const a = el('a', { href: r.url, download: r.name });
-    document.body.append(a); a.click(); a.remove();
-    toast(`Saved ${r.name} in the exports folder (a copy is downloading).`, 'info', 6000);
   }
 
   nmeaSection() {

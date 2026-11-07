@@ -1,17 +1,7 @@
 {
-  "id": "dead_birds",
-  "title": "Dead Birds",
-  "order": 30,
-  "description": "Dead birds recorded as sightings (species “Dead bird”, code DEBI).",
+  "name": "Dead birds",
   "table": "sightings",
-  "where": [
-    {"species_code": ["DEBI"]},
-    {"column": "Species", "regex": "dead bird"}
-  ],
-  "columns": [
-    {"label": "Time", "value": "time"},
-    {"label": "Position", "value": "position"},
-    {"label": "Notes", "column": "Notes"}
-  ],
-  "empty": "No dead birds recorded."
+  "codes": ["DEBI"],
+  "columns": ["time", "position", "Notes"],
+  "on_effort": false, "time_from": "", "time_to": "", "rules": []
 }

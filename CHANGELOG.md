@@ -6,6 +6,17 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.19.0 — 2026-11-07
+
+- **Tools → Filter is now Tools → Reports**, and the old Reports tab, its JSON report templates and the code behind them are gone. Tools: Waypoints, Overlays, Route, Instruments, Quality Control, Summary, Reports.
+  - Saved filters are now **saved reports**, kept in the `reports` folder in Spyhop's folder (0.18's `filters` folder is moved in). Old report templates there are moved to `reports/old_report_templates` and no longer used.
+  - Config packs carry saved reports as `reports/*.json`; 0.18 packs (`filters/`) still work, and old templates in older packs are ignored.
+- **Run Reports…** at the top of the tab saves several saved reports at once: choose the reports, the formats (CSV, HTML, PDF) and the folder (the exports folder or one you pick). It remembers your choices.
+- New column **Time (formatted)**: `2026-11-07 10:54 EST` (to the minute, with the time zone).
+- The tab no longer shows "n of N sightings" or the "Sightings: …" line, and saved HTML/PDF pages no longer have that line.
+- Saved pages show one **Date** for a one-day survey (a range only when it runs over several days) and include the **chief scientist's email**.
+- Export Data… lists saved reports (as CSV); its PDF/HTML choice is now for the summary only.
+
 ## 0.18.0 — 2026-11-07
 
 - **Tools → Summary** is its own tab again (after Quality Control); Ctrl/Cmd+4 opens it. Reports no longer has a Summary tab.

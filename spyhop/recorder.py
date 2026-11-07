@@ -1114,22 +1114,19 @@ class Recorder:
 
         One file comes back as itself; several files come back as one zip.
         formats: any of EXPORT_FORMATS (default: all but the summary, which the browser builds),
-        plus "report:<id>" for each report in Tools → Reports and "filter:<file>" for each
-        saved filter in Tools → Filter (saved as CSV).
-        report_as: how the summary and the reports are saved: "html", "pdf" or both.
+        plus "report:<file>" for each saved report in Tools → Reports (saved as CSV).
+        report_as: how the summary is saved: "html", "pdf" or both.
         html_pdf: the summary page made for printing (map fitted to the survey, a legend);
         the PDF of the summary uses it when given.
         """
-        from . import filters as _filters, reports as _reports
+        from . import reports as _reports
         if self.survey is None:
             raise ValueErrorMsg(self.NO_SURVEY)
         formats = list(formats) if formats is not None else ["csv", "merged", "gpx", "geojson"]
-        report_defs = {d["id"]: d for d in _reports.load_definitions(self.cfg)[0]}
-        filter_defs = {f["file"]: f for f in _filters.load(self.cfg)[0]} if any(
-            f.startswith("filter:") for f in formats) else {}
+        report_defs = {f["file"]: f for f in _reports.load(self.cfg)[0]} if any(
+            f.startswith("report:") for f in formats) else {}
         bad = [f for f in formats if f not in self.EXPORT_FORMATS
-               and not (f.startswith("report:") and f.split(":", 1)[1] in report_defs)
-               and not (f.startswith("filter:") and f.split(":", 1)[1] in filter_defs)]
+               and not (f.startswith("report:") and f.split(":", 1)[1] in report_defs)]
         report_as = [x for x in (report_as or ["html"]) if x in self.REPORT_AS] or ["html"]
         if bad:
             raise ValueErrorMsg(f"Unknown export format: {', '.join(bad)}")
@@ -1172,16 +1169,12 @@ class Recorder:
         if "geojson" in formats:
             files[f"{prefix}.geojson"] = json.dumps(self.geojson(pts)).encode("utf-8")
         for f in formats:
-            if f.startswith("filter:"):
-                fd = filter_defs[f.split(":", 1)[1]]
-                files[f"{prefix}_filter_{fd['file'][:-5]}.csv"] = _filters.to_csv(_filters.run(self, fd)).encode("utf-8")
+            if f.startswith("report:"):
+                fd = report_defs[f.split(":", 1)[1]]
+                files[f"{prefix}_report_{fd['file'][:-5]}.csv"] = _reports.to_csv(_reports.run(self, fd)).encode("utf-8")
         pages: dict[str, str] = {}
         if "html" in formats:
             pages[f"{prefix}_summary"] = html
-        for f in formats:
-            if f.startswith("report:"):
-                d = report_defs[f.split(":", 1)[1]]
-                pages[f"{prefix}_report_{d['id']}"] = _reports.to_html(self, _reports.run(self, d))
         for stem, page in pages.items():
             if "html" in report_as:
                 files[f"{stem}.html"] = page.encode("utf-8")

@@ -31,4 +31,4 @@ packages = ["spyhop"]
 version = {attr = "spyhop.__version__"}
 
 [tool.setuptools.package-data]
-spyhop = ["report_defs/*", "filter_defs/*", "web/*.html", "web/css/*", "web/js/*", "web/img/*", "web/vendor/*", "web/vendor/*/*", "web/vendor/*/*/*"]
+spyhop = ["report_defs/*", "web/*.html", "web/css/*", "web/js/*", "web/img/*", "web/vendor/*", "web/vendor/*/*", "web/vendor/*/*/*"]

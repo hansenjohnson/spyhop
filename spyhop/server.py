@@ -16,7 +16,7 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 
 from .recorder import Recorder, ValueErrorMsg
-from . import awake, configpack, __version__, diag, filters, reports, schema, updater
+from . import awake, configpack, __version__, diag, reports, schema, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports
 from .store import safe_name
@@ -143,6 +143,7 @@ async def no_cache(request, handler):
 class App:
     def __init__(self, data_dir: Path, extra_sources: list[dict] | None = None):
         self.rec = Recorder(data_dir)
+        self.last_reports_dir: Path | None = None      # where Run Reports last saved
         self.sources = SourceManager(self.rec.decoder)
         self.tiles = TileService(self.rec.cfg)
         self.tiles.on_charts_changed = lambda: self._broadcast_soon({"type": "charts", "mbtiles": self.tiles.mbtiles_info()})
@@ -506,16 +507,14 @@ class App:
         targets = {"data": cfg.root, "app": cfg.root, "exports": cfg.export_dir, "charts": cfg.charts_dir,
                    "overlays": cfg.overlays_dir, "survey": cfg.data_dir, "datafolder": cfg.data_dir,
                    "nmealogs": cfg.data_dir / "nmea_logs", "logs": diag.log_dir(cfg.root),
-                   "reports": reports.user_dir(cfg), "filters": filters.user_dir(cfg),
+                   "reports": reports.user_dir(cfg),
                    "backups": configpack.backups_dir(cfg), "packs": configpack.packs_dir(cfg)}
         if what in targets:
             p = targets[what]
             if what in ("backups", "packs"):
                 p.mkdir(parents=True, exist_ok=True)
             if what == "reports":
-                reports.prepare_user_dir(cfg)
-            if what == "filters":
-                filters.ensure_dir(cfg)
+                reports.ensure_dir(cfg)
             if what in ("nmealogs", "logs"):
                 p.mkdir(parents=True, exist_ok=True)
         elif what.startswith("config:"):
@@ -523,6 +522,10 @@ class App:
             if name not in ("species", "event_types", "observers", "behaviors", "shortcuts", "display"):
                 raise ValueErrorMsg("Unknown config file")
             p = cfg.root / f"{name}.csv"
+        elif what == "reportsout":                       # the folder Run Reports last saved to
+            if not self.last_reports_dir:
+                raise ValueErrorMsg("No reports have been saved yet.")
+            p = self.last_reports_dir
         elif what.startswith("export:"):
             p = cfg.export_dir / Path(what.split(":", 1)[1]).name
         else:
@@ -732,111 +735,133 @@ class App:
         dest.write_text(gpx, encoding="utf-8")
         return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}")
 
-    # ---- reports (Tools → Reports; definitions in reports.py / report_defs/)
-    async def reports_list(self, request):
-        defs, errors = reports.load_definitions(self.rec.cfg)
-        return json_ok(reports=[{k: d.get(k) for k in ("id", "title", "description", "order", "table", "source", "file")}
-                                for d in defs], errors=errors, folder=str(reports.user_dir(self.rec.cfg)),
-                       pdf=find_chrome() is not None)
-
-    async def report_data(self, request):
-        d = reports.get_definition(self.rec.cfg, request.match_info["id"])
-        if d is None:
-            raise ValueErrorMsg("There's no report with that name (check the reports folder).")
-        return json_ok(report=reports.run(self.rec, d))
-
-    async def report_save(self, request):
-        """Save a report as HTML or PDF in the exports folder. The Summary's page comes from the window."""
+    # ---- the summary as a PDF (Tools → Summary; the page is built by the window)
+    async def summary_pdf(self, request):
         b = await request.json()
-        rid, fmt = str(b.get("id", "")), b.get("format", "html")
-        if fmt not in ("html", "pdf"):
-            raise ValueErrorMsg("Save as html or pdf.")
-        if rid == "summary":
-            page = str(b.get("html") or "")
-            if not page.startswith("<!DOCTYPE html>"):
-                raise ValueErrorMsg("The summary page is missing.")
-        else:
-            d = reports.get_definition(self.rec.cfg, rid)
-            if d is None:
-                raise ValueErrorMsg("There's no report with that name.")
-            page = reports.to_html(self.rec, reports.run(self.rec, d))
+        page = str(b.get("html") or "")
+        if not page.startswith("<!DOCTYPE html>"):
+            raise ValueErrorMsg("The summary page is missing.")
         prefix = safe_name((self.rec.survey or {}).get("prefix") or "no-survey")
-        dest = self.rec.cfg.export_dir / f"{prefix}_{rid}_{time.strftime('%Y%m%d-%H%M%S')}.{fmt}"
+        dest = self.rec.cfg.export_dir / f"{prefix}_summary_{time.strftime('%Y%m%d-%H%M%S')}.pdf"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        if fmt == "pdf":
-            try:
-                await asyncio.get_running_loop().run_in_executor(
-                    None, html_to_pdf, page, dest, 6000 if rid == "summary" else 3000)
-            except PdfError as e:
-                raise ValueErrorMsg(str(e))
-        else:
-            tmp = dest.with_name(dest.name + ".tmp")
-            tmp.write_text(page, encoding="utf-8")
-            os.replace(tmp, dest)
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, html_to_pdf, page, dest, 6000)
+        except PdfError as e:
+            raise ValueErrorMsg(str(e))
         return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}")
 
-    # ---- filters (Tools → Filter; filters.py)
-    async def filters_list(self, request):
+    # ---- reports (Tools → Reports; reports.py)
+    async def reports_list(self, request):
         cfg = self.rec.cfg
-        saved, errors = filters.load(cfg)
-        return json_ok(filters=saved, errors=errors, folder=str(filters.user_dir(cfg)),
-                       columns={t: filters.columns(t) for t in filters.TABLES}, ops=filters.OPS,
+        saved, errors = reports.load(cfg)
+        return json_ok(reports=saved, errors=errors, folder=str(reports.user_dir(cfg)),
+                       exports=str(cfg.export_dir), last_folder=str(self.last_reports_dir or ""),
+                       columns={t: reports.columns(t) for t in reports.TABLES}, ops=reports.OPS,
                        pdf=find_chrome() is not None)
 
     @staticmethod
-    def _filter_spec(b) -> dict:
+    def _report_spec(b) -> dict:
         try:
-            return filters.clean(b.get("spec"))
-        except filters.FilterError as e:
+            return reports.clean(b.get("spec"))
+        except reports.ReportError as e:
             raise ValueErrorMsg(str(e))
 
-    async def filter_run(self, request):
+    async def report_run(self, request):
         b = await request.json()
-        spec = self._filter_spec(b)
-        return json_ok(result=filters.run(self.rec, spec), counts=filters.counts(self.rec, spec["table"]))
+        spec = self._report_spec(b)
+        return json_ok(result=reports.run(self.rec, spec), counts=reports.counts(self.rec, spec["table"]))
 
-    async def filter_save(self, request):
+    async def report_save(self, request):
         b = await request.json()
         try:
-            f = filters.save(self.rec.cfg, b.get("spec") or {}, b.get("replace") or None)
-        except filters.FilterError as e:
+            f = reports.save(self.rec.cfg, b.get("spec") or {}, b.get("replace") or None)
+        except reports.ReportError as e:
             raise ValueErrorMsg(str(e))
-        self._broadcast_soon({"type": "filters"})
-        return json_ok(filter=f)
+        self._broadcast_soon({"type": "reports"})
+        return json_ok(report=f)
 
-    async def filter_delete(self, request):
+    async def report_delete(self, request):
         b = await request.json()
         try:
-            filters.delete(self.rec.cfg, str(b.get("file", "")))
-        except filters.FilterError as e:
+            reports.delete(self.rec.cfg, str(b.get("file", "")))
+        except reports.ReportError as e:
             raise ValueErrorMsg(str(e))
-        self._broadcast_soon({"type": "filters"})
+        self._broadcast_soon({"type": "reports"})
         return json_ok()
 
-    async def filter_export(self, request):
-        """Save a filter's result as CSV, HTML or PDF in the exports folder."""
+    def _write_report(self, res: dict, fmt: str, dest: Path):
+        if fmt == "pdf":
+            html_to_pdf(reports.to_html(self.rec, res), dest, 3000)
+            return
+        text = reports.to_csv(res) if fmt == "csv" else reports.to_html(self.rec, res)
+        tmp = dest.with_name(dest.name + ".tmp")
+        tmp.write_text(text, encoding="utf-8", newline="")
+        os.replace(tmp, dest)
+
+    async def report_export(self, request):
+        """Save one report (the one on screen) as CSV, HTML or PDF in the exports folder."""
         b = await request.json()
-        spec, fmt = self._filter_spec(b), b.get("format", "csv")
+        spec, fmt = self._report_spec(b), b.get("format", "csv")
         if fmt not in ("csv", "html", "pdf"):
             raise ValueErrorMsg("Save as csv, html or pdf.")
         if self.rec.survey is None:
             raise ValueErrorMsg("Open a survey first.")
-        res = filters.run(self.rec, spec)
+        res = reports.run(self.rec, spec)
         prefix = safe_name(self.rec.survey.get("prefix") or "no-survey")
-        stem = filters.file_name(spec["name"] or "filter")[:-5]
+        stem = reports.file_name(spec["name"] or "report")[:-5]
         dest = self.rec.cfg.export_dir / f"{prefix}_{stem}_{time.strftime('%Y%m%d-%H%M%S')}.{fmt}"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        if fmt == "pdf":
-            try:
-                await asyncio.get_running_loop().run_in_executor(None, html_to_pdf, filters.to_html(self.rec, res), dest, 3000)
-            except PdfError as e:
-                raise ValueErrorMsg(str(e))
-        else:
-            text = filters.to_csv(res) if fmt == "csv" else filters.to_html(self.rec, res)
-            tmp = dest.with_name(dest.name + ".tmp")
-            tmp.write_text(text, encoding="utf-8", newline="")
-            os.replace(tmp, dest)
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, self._write_report, res, fmt, dest)
+        except PdfError as e:
+            raise ValueErrorMsg(str(e))
         return json_ok(name=dest.name, path=str(dest), url=f"/api/download/{quote(dest.name)}", count=res["count"])
+
+    async def reports_batch(self, request):
+        """Run Reports: save the chosen saved reports, in the chosen formats, into a folder
+        (the exports folder if none is given)."""
+        b = await request.json()
+        if self.rec.survey is None:
+            raise ValueErrorMsg("Open a survey first.")
+        cfg = self.rec.cfg
+        files = [str(x) for x in (b.get("files") or [])]
+        formats = [f for f in ("csv", "html", "pdf") if f in (b.get("formats") or [])]
+        if not files:
+            raise ValueErrorMsg("Choose at least one report.")
+        if not formats:
+            raise ValueErrorMsg("Choose at least one format.")
+        if "pdf" in formats and find_chrome() is None:
+            raise ValueErrorMsg("PDFs need Google Chrome or Microsoft Edge.")
+        by_file = {f["file"]: f for f in reports.load(cfg)[0]}
+        missing = [f for f in files if f not in by_file]
+        if missing:
+            raise ValueErrorMsg(f"There's no saved report {', '.join(missing)}.")
+        raw = str(b.get("folder") or "").strip()
+        folder = Path(raw).expanduser() if raw else cfg.export_dir
+        if raw and not folder.is_absolute():
+            raise ValueErrorMsg("Give the full path of the folder.")
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise ValueErrorMsg(f"Can't save in {folder}: {e}")
+        prefix = safe_name(self.rec.survey.get("prefix") or "no-survey")
+        stamp = time.strftime('%Y%m%d-%H%M%S')
+        loop = asyncio.get_running_loop()
+        saved = []
+        for fn in files:
+            spec = by_file[fn]
+            res = reports.run(self.rec, spec)
+            for fmt in formats:
+                dest = folder / f"{prefix}_{fn[:-5]}_{stamp}.{fmt}"
+                try:
+                    await loop.run_in_executor(None, self._write_report, res, fmt, dest)
+                except PdfError as e:
+                    raise ValueErrorMsg(f"{spec['name']}: {e}")
+                except OSError as e:
+                    raise ValueErrorMsg(f"Can't write {dest}: {e}")
+                saved.append({"report": spec["name"], "format": fmt, "name": dest.name, "count": res["count"]})
+        self.last_reports_dir = folder
+        return json_ok(folder=str(folder), files=saved)
 
     # ---- config packs (Settings → Templates; configpack.py)
     async def groupconfig_check(self, request):
@@ -1062,14 +1087,13 @@ class App:
         r.add_post("/api/update/check", self.update_check)
         r.add_post("/api/update/install", self.update_install)
         r.add_post("/api/update/restart", self.update_restart)
+        r.add_post("/api/summary/pdf", self.summary_pdf)
         r.add_get("/api/reports", self.reports_list)
-        r.add_get("/api/reports/{id}", self.report_data)
+        r.add_post("/api/reports/run", self.report_run)
         r.add_post("/api/reports/save", self.report_save)
-        r.add_get("/api/filters", self.filters_list)
-        r.add_post("/api/filters/run", self.filter_run)
-        r.add_post("/api/filters/save", self.filter_save)
-        r.add_post("/api/filters/delete", self.filter_delete)
-        r.add_post("/api/filters/export", self.filter_export)
+        r.add_post("/api/reports/delete", self.report_delete)
+        r.add_post("/api/reports/export", self.report_export)
+        r.add_post("/api/reports/batch", self.reports_batch)
         r.add_post("/api/survey/start", self.survey_start)
         r.add_post("/api/survey/end", self.survey_end)
         r.add_post("/api/survey/meta", self.survey_meta)

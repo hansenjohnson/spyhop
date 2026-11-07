@@ -1,7 +1,0 @@
-{
-  "name": "Gear",
-  "table": "events",
-  "codes": ["GRPT", "GRCV"],
-  "columns": ["time", "EventType", "position", "Notes"],
-  "on_effort": false, "time_from": "", "time_to": "", "rules": []
-}

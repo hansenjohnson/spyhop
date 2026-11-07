@@ -195,7 +195,7 @@ NEW_ACTIONS = {"toggle-log", "add-current"}
 REMOVED_ACTIONS = {"cycle-latlon", "add:surfacings"}
 # tabs renamed in 0.7.0: existing shortcuts are pointed at the new tab. (Summary was merged into
 # Reports in 0.7.0 and is its own tab again from 0.18: Mod+4 is moved back once, below.)
-RENAMED_ACTIONS = {"tab:planning": "tab:route"}
+RENAMED_ACTIONS = {"tab:planning": "tab:route", "tab:filter": "tab:reports"}
 
 DEFAULT_DISPLAY = {
     "marker_radius": "8",

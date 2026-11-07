@@ -1048,59 +1048,13 @@ def test_na_observer_in_several_positions(rec):
     assert any(o["name"] == "NA" for o in rec.cfg.lists["observers"])
 
 
-def test_reports_builtin(rec):
-    from spyhop import reports
-    defs, errors = reports.load_definitions(rec.cfg)
-    assert not errors
-    assert [d["id"] for d in defs] == ["gear", "dead_birds", "right_whales", "blue_whales"]
-    assert any(s["name"] == "Dead bird" and s["species_code"] == "DEBI" for s in rec.cfg.lists["species"])
-    rec.new_row("sightings", {"Species": "North Atlantic right whale", "Count": "3", "Calves": "1", "Notes": "mom & calf"})
-    rec.new_row("sightings", {"Species": "North Atlantic right whale", "Count": "2"})
-    rec.new_row("sightings", {"Species": "Blue whale", "Count": "1"})
-    rec.new_row("sightings", {"Species": "Dead bird", "Count": "1", "Notes": "shearwater"})
-    rec.new_row("events", {"EventType": "Gear Reported", "Notes": "buoy line"})
-    rec.new_row("events", {"EventType": "CTD cast"})
-    res = {d["id"]: reports.run(rec, d) for d in defs}
-    assert res["right_whales"]["count"] == 2 and res["right_whales"]["totals"] == ["", "", "5", "1", ""]
-    assert res["right_whales"]["rows"][0][4] == "mom & calf" and "°" in res["right_whales"]["rows"][0][1]
-    assert res["blue_whales"]["count"] == 1 and res["dead_birds"]["rows"][0][2] == "shearwater"
-    assert res["gear"]["count"] == 1 and res["gear"]["rows"][0][1] == "Gear Reported"
-    page = reports.to_html(rec, res["right_whales"])
-    assert page.startswith("<!DOCTYPE html>") and "mom &amp; calf" in page and "Total (2)" in page
-    # chosen in Export Data
-    f = rec.export(["report:right_whales", "report:gear"], report_as=["html"])
-    with zipfile.ZipFile(f) as z:
-        names = [n.split("/")[-1] for n in z.namelist()]
-    assert names == ["Test_report_gear.html", "Test_report_right_whales.html"]
-    with pytest.raises(ValueErrorMsg):
-        rec.export(["report:nope"])
-
-
-def test_reports_custom_folder(rec):
-    from spyhop import reports
-    d = reports.prepare_user_dir(rec.cfg)
-    assert (d / "README.md").exists() and (d / "examples" / "gear.json").exists()
-    (d / "hide.json").write_text('{"id": "blue_whales", "enabled": false}')
-    (d / "fins.json").write_text(json.dumps({"id": "fins", "title": "Fin whales", "order": 1, "table": "sightings",
-        "where": [{"column": "Species", "equals": "fin whale"}],
-        "columns": [{"label": "When", "value": "clock"}, {"label": "N", "column": "Count", "align": "right"}],
-        "totals": {"N": "sum"}}))
-    (d / "bad.json").write_text('{"id": "bad", "title": "Bad", "table": "sightings", "columns": [{"label": "X", "column": "Nope"}]}')
-    defs, errors = reports.load_definitions(rec.cfg)
-    ids = [x["id"] for x in defs]
-    assert ids[0] == "fins" and "blue_whales" not in ids and "bad" not in ids
-    assert len(errors) == 1 and "bad.json" in errors[0] and "Nope" in errors[0]
-    rec.new_row("sightings", {"Species": "Fin whale", "Count": "4"})
-    r = reports.run(rec, defs[0])
-    assert r["count"] == 1 and r["totals"] == ["", "4"]
-
-
 def test_report_pdf_when_a_browser_is_available(rec, tmp_path):
     from spyhop import browser, reports
     import os
     if not os.environ.get("SPYHOP_CHROME") or browser.find_chrome() is None:
         pytest.skip("set SPYHOP_CHROME to a Chrome / Edge / headless-shell binary to test PDFs")
-    page = reports.to_html(rec, reports.run(rec, reports.get_definition(rec.cfg, "gear")))
+    gear = next(f for f in reports.load(rec.cfg)[0] if f["name"] == "Gear")
+    page = reports.to_html(rec, reports.run(rec, gear))
     p = browser.html_to_pdf(page, tmp_path / "gear.pdf", 300)
     assert p.read_bytes()[:5] == b"%PDF-"
 
@@ -1334,16 +1288,16 @@ def test_config_pack_check_pull_backup(tmp_path):
     from spyhop import configpack
     from spyhop.config import Config
     cfg = Config(tmp_path / "app")
-    (cfg.root / "reports").mkdir(exist_ok=True)
+    from spyhop import reports as _reports
+    _reports.ensure_dir(cfg)
     (cfg.root / "reports" / "mine.json").write_text(_json.dumps(
-        {"id": "mine", "title": "Mine", "table": "events", "columns": [{"label": "Time", "value": "time"}]}))
+        {"name": "Mine", "table": "events", "columns": ["time"]}))
     species = "name,color,species_code\r\nNorth Atlantic right whale,red,RIWH\r\nHumpback whale,orange,HUWH\r\nSpyhop test whale,pink,SPTW\r\n"
     observers = "name,full_name\r\nHJ,Hansen Johnson\r\n"
-    gear = _json.dumps({"id": "gear", "title": "Gear (team)", "table": "events",
-                        "where": [{"event_code": ["GRPT"]}], "columns": [{"label": "Time", "value": "time"}]})
+    gear = _json.dumps({"name": "Gear (team)", "table": "events", "codes": ["GRPT"], "columns": ["time"]})
     manifest = "Date,Changed by,Files,Notes\r\n2026-10-01,HJ,all,First version\r\n2026-11-06,HJ,species.csv,Added test whale\r\n"
     good = _pack_zip({"spyhop-config.csv": manifest, "species.csv": species, "observers.csv": observers,
-                      "reports/gear.json": gear, "notes.txt": "hello"}, top="team-cfg-abc123/")
+                      "reports/team_gear.json": gear, "notes.txt": "hello"}, top="team-cfg-abc123/")
     bad = _pack_zip({"species.csv": "colour\r\nred\r\n", "reports/x.json": "{nope"})
     base, stop = _serve({"/good.zip": (200, "application/zip", good), "/bad.zip": (200, "application/zip", bad),
                          "/page": (200, "text/html", b"<!DOCTYPE html><html>sign in</html>"),
@@ -1356,7 +1310,7 @@ def test_config_pack_check_pull_backup(tmp_path):
         plan = {r["file"]: r for r in configpack.compare(cfg, pack)}
         assert plan["species.csv"]["status"] == "changed" and plan["species.csv"]["pack"] == 3
         assert plan["observers.csv"]["status"] == "changed"
-        assert plan["reports/gear.json"]["status"] == "new" and plan["reports/mine.json"]["status"] == "removed"
+        assert plan["reports/team_gear.json"]["status"] == "new" and plan["reports/mine.json"]["status"] == "removed"
 
         backup = configpack.save_backup(cfg, tmp_path / "bk")
         with _zf.ZipFile(backup) as z:
@@ -1368,26 +1322,29 @@ def test_config_pack_check_pull_backup(tmp_path):
         changed = configpack.apply(cfg, pack)
         assert "species.csv" in changed and "reports/mine.json" in changed
         assert [s["name"] for s in cfg.lists["species"]] == ["North Atlantic right whale", "Humpback whale", "Spyhop test whale"]
-        assert not (cfg.root / "reports" / "mine.json").exists() and (cfg.root / "reports" / "gear.json").exists()
+        assert not (cfg.root / "reports" / "mine.json").exists() and (cfg.root / "reports" / "team_gear.json").exists()
+        assert sorted(p.name for p in (cfg.root / "reports").glob("*.json")) == ["team_gear.json"]   # replaced as a set
         assert (cfg.root / "spyhop-config.csv").read_bytes().decode() == manifest
         assert cfg.shortcuts                                    # files not in the pack are untouched
         assert all(r["status"] == "same" for r in configpack.compare(cfg, configpack.read_pack(files)))
 
-        # a backup made with no templates removes templates added since
+        # a backup made with no saved reports removes reports added since
         cfg2 = Config(tmp_path / "app2")
+        for p in _reports.ensure_dir(cfg2).glob("*.json"):
+            p.unlink()
         assert configpack.read_pack(configpack._unzip(configpack.make_zip(cfg2, "pack"), ""))["reports"] is None
         empty = configpack.read_pack(configpack._unzip(configpack.make_zip(cfg2, "none", backup=True), ""))
         assert empty["reports"] == {}
         configpack.apply(cfg2, pack)
-        assert (cfg2.root / "reports" / "gear.json").exists()
+        assert (cfg2.root / "reports" / "team_gear.json").exists()
         configpack.apply(cfg2, empty)
-        assert not (cfg2.root / "reports" / "gear.json").exists()
+        assert not (cfg2.root / "reports" / "team_gear.json").exists()
 
         # the backup is itself a pack: pulling it puts things back
         restore = configpack.read_pack(configpack.fetch(str(backup))[0])
         configpack.apply(cfg, restore)
         assert (cfg.root / "species.csv").read_text(encoding="utf-8-sig").replace("\r\n", "\n") == old_species.replace("\r\n", "\n").lstrip("﻿")
-        assert (cfg.root / "reports" / "mine.json").exists() and not (cfg.root / "reports" / "gear.json").exists()
+        assert (cfg.root / "reports" / "mine.json").exists() and not (cfg.root / "reports" / "team_gear.json").exists()
 
         badpack = configpack.read_pack(configpack.fetch(base + "/bad.zip")[0])
         assert any("species.csv needs the column name" in p for p in badpack["problems"])
@@ -1408,7 +1365,7 @@ def test_config_pack_check_pull_backup(tmp_path):
         (d / "reports").mkdir(parents=True)
         (d / "observers.csv").write_bytes("name,full_name\r\nJM,José Martínez\r\n".encode("cp1252"))
         p2 = configpack.read_pack(configpack.fetch(str(d))[0])
-        assert not p2["problems"] and "José" in p2["csv"]["observers.csv"] and p2["reports"] is None   # an empty reports folder leaves templates alone
+        assert not p2["problems"] and "José" in p2["csv"]["observers.csv"] and p2["reports"] is None   # an empty reports folder leaves saved reports alone
         assert configpack.compare(cfg, p2)[0]["file"] == "observers.csv"
         z = configpack.make_zip(cfg, "made here")
         assert "made here" in configpack.read_pack(configpack._unzip(z, ""))["manifest"][0]["notes"]
@@ -1761,8 +1718,8 @@ def test_offline_backoff_is_per_server(tmp_path):
         stop()
 
 
-def test_filters_presets_run_and_export(rec):
-    from spyhop import filters
+def test_reports_presets_run_and_export(rec):
+    from spyhop import reports as filters
     saved, errors = filters.load(rec.cfg)                     # first use: the starting presets
     assert not errors
     assert [f["name"] for f in saved] == ["Blue whales", "Dead birds", "Gear", "Right whales"]
@@ -1802,11 +1759,18 @@ def test_filters_presets_run_and_export(rec):
     # time range in the survey clock
     later = filters.run(rec, {**spec, "rules": [], "time_from": "2999-01-01T00:00"})
     assert later["count"] == 0
-    with pytest.raises(filters.FilterError):
+    with pytest.raises(filters.ReportError):
         filters.clean({**spec, "columns": ["Nope"]})
-    with pytest.raises(filters.FilterError):
+    with pytest.raises(filters.ReportError):
         filters.clean({**spec, "rules": [{"column": "Count", "op": "gt", "value": "lots"}]})
-    assert "Big groups" in filters.to_html(rec, filters.run(rec, spec))
+    page = filters.to_html(rec, filters.run(rec, spec))
+    assert "Big groups" in page and "Sightings:" not in page
+    import datetime as _dt
+    assert f"<th>Date</th><td>{_dt.date.today().isoformat()}</td>" in page        # one day: one date, no range
+    rec.set_meta({"chief_scientist_email": "chief@example.org"})
+    assert 'href="mailto:chief@example.org"' in filters.to_html(rec, filters.run(rec, spec))
+    tf = filters.run(rec, {**spec, "rules": [], "columns": ["time_fmt"]})
+    assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d [A-Z+\-0-9]+", tf["rows"][0][0]), tf["rows"][0][0]
     csv_text = filters.to_csv(filters.run(rec, spec))
     assert csv_text.startswith("﻿Species code,Num\r\n")
     # save, rename (replace), delete
@@ -1815,22 +1779,22 @@ def test_filters_presets_run_and_export(rec):
     g = filters.save(rec.cfg, {**spec, "name": "Groups"}, replace=f["file"])
     assert g["file"] == "groups.json" and not (filters.user_dir(rec.cfg) / "big_groups.json").exists()
     filters.delete(rec.cfg, "groups.json")
-    with pytest.raises(filters.FilterError):
+    with pytest.raises(filters.ReportError):
         filters.delete(rec.cfg, "../species.csv")
     # deleting every preset doesn't bring them back
     for x in filters.load(rec.cfg)[0]:
         filters.delete(rec.cfg, x["file"])
     assert filters.load(rec.cfg)[0] == []
     filters.save(rec.cfg, {**spec, "name": "Right whales", "codes": ["RIWH"]})
-    out = rec.export(["filter:right_whales.json"])
-    assert out.name.startswith("Test_filter_right_whales") and out.suffix == ".csv"
+    out = rec.export(["report:right_whales.json"])
+    assert out.name.startswith("Test_report_right_whales") and out.suffix == ".csv"
     with pytest.raises(ValueErrorMsg):
-        rec.export(["filter:nope.json"])
+        rec.export(["report:nope.json"])
 
 
-def test_filters_travel_in_config_packs(tmp_path):
+def test_reports_travel_in_config_packs(tmp_path):
     import json as _json
-    from spyhop import configpack, filters
+    from spyhop import configpack, reports as filters
     from spyhop.config import Config
     cfg = Config(tmp_path / "app")
     data = configpack.make_zip(cfg)
@@ -1838,16 +1802,48 @@ def test_filters_travel_in_config_packs(tmp_path):
     import zipfile as _zf, io as _io
     with _zf.ZipFile(_io.BytesIO(data)) as z:
         files = {n: z.read(n) for n in z.namelist()}
-    assert "filters/right_whales.json" in files            # the starting presets are in a pack
-    files["filters/sea_state.json"] = _json.dumps({"name": "Rough", "table": "effort", "columns": ["time", "SeaState"],
+    assert "reports/right_whales.json" in files            # the starting reports are in a pack
+    files["reports/sea_state.json"] = _json.dumps({"name": "Rough", "table": "effort", "columns": ["time", "SeaState"],
                                                    "rules": [{"column": "SeaState", "op": "gt", "value": "3"}]}).encode()
-    del files["filters/gear.json"]
+    del files["reports/gear.json"]
     pack = configpack.read_pack(files)
     assert not pack["problems"]
     plan = {r["file"]: r["status"] for r in configpack.compare(cfg, pack)}
-    assert plan["filters/sea_state.json"] == "new" and plan["filters/gear.json"] == "removed"
+    assert plan["reports/sea_state.json"] == "new" and plan["reports/gear.json"] == "removed"
     configpack.apply(cfg, pack)
     names = sorted(f["name"] for f in filters.load(cfg)[0])
     assert names == ["Blue whales", "Dead birds", "Right whales", "Rough"]
-    bad = configpack.read_pack({**files, "filters/x.json": b'{"table": "boats"}'})
-    assert any("filters/x.json" in p for p in bad["problems"])
+    bad = configpack.read_pack({**files, "reports/x.json": b'{"table": "boats"}'})
+    assert any("reports/x.json" in p for p in bad["problems"])
+    # an 0.18 pack (saved filters in filters/) and an old pack (old-format templates) both work
+    old18 = {("filters/" + k.split("/", 1)[1] if k.startswith("reports/") else k): v for k, v in files.items()}
+    p18 = configpack.read_pack(old18)
+    assert not p18["problems"] and "sea_state.json" in p18["reports"]
+    old = {"species.csv": files["species.csv"], "reports/gear.json": _json.dumps(
+        {"id": "gear", "title": "Gear", "table": "events", "columns": [{"label": "Time", "value": "time"}]}).encode(),
+        "reports/_no_report_templates.txt": b"x"}
+    pold = configpack.read_pack(old)
+    assert not pold["problems"] and pold["reports"] is None and len(pold["ignored"]) == 2   # saved reports left alone
+
+
+def test_reports_folder_migrates_old_templates_and_filters(tmp_path):
+    import json as _json
+    from spyhop import reports
+    from spyhop.config import Config
+    cfg = Config(tmp_path / "app")
+    (cfg.root / "reports" / "examples").mkdir(parents=True)
+    (cfg.root / "reports" / "README.md").write_text("old")
+    (cfg.root / "reports" / "mine.json").write_text(_json.dumps(
+        {"id": "mine", "title": "Mine", "table": "events", "columns": [{"label": "Time", "value": "time"}]}))
+    (cfg.root / "filters").mkdir()
+    (cfg.root / "filters" / "big.json").write_text(_json.dumps({"name": "Big", "table": "sightings", "columns": ["Count"]}))
+    saved, errors = reports.load(cfg)
+    assert not errors and [f["name"] for f in saved] == ["Big"]          # 0.18 user: no starting reports re-added
+    old = cfg.root / "reports" / reports.OLD_DIR
+    assert (old / "mine.json").exists() and (old / "README.md").exists() and (old / "examples").is_dir()
+    assert not (cfg.root / "filters").exists()
+    cfg2 = Config(tmp_path / "fresh")
+    assert len(reports.load(cfg2)[0]) == 4
+    for f in reports.load(cfg2)[0]:
+        reports.delete(cfg2, f["file"])
+    assert reports.load(cfg2)[0] == []                                   # not put back

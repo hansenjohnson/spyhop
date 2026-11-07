@@ -11,7 +11,7 @@ Spyhop records a vessel-based whale survey: sightings, effort and conditions, ev
 - **Tabs** (right):
   - **Sightings**, **Effort** and **Events** are the data tables.
   - **Survey** starts, ends, opens and exports surveys.
-  - **Tools** holds Waypoints, Overlays, Route, Instruments, Quality Control, Summary, Filter and Reports.
+  - **Tools** holds Waypoints, Overlays, Route, Instruments, Quality Control, Summary and Reports.
   - **Settings** holds General, Basemap, Inputs, Shortcuts, Dropdowns, Templates and About.
 - **Status bar** (top): time, position, speed, survey name, tracking and effort state.
   - If the GPS fix is lost, it says **NO GPS** or **GPS LOST**.
@@ -34,7 +34,7 @@ Edit the drop-down lists in **Settings → Dropdowns** (Species, Events, Behavio
 
 Behind the scenes they are plain CSV files, which you can also edit in Excel, Numbers or a text editor for big changes. Each editor has an **Open** button for its file and a **Reload from the file** button:
 
-- **species.csv:** species names, map colours and codes (e.g. `RIWH`). The code labels sightings on the map, and Filter and the reports use it.
+- **species.csv:** species names, map colours and codes (e.g. `RIWH`). The code labels sightings on the map, and Reports use it.
 - **observers.csv:** observer codes and full names. `NA` (None) is a placeholder for an empty watch position, and can fill several positions at once.
 - **event_types.csv:** event names, colours and codes (e.g. `GRPT` for Gear Reported).
 - **behaviors.csv**, and **display.csv** (the map's look, also set in Settings → General).
@@ -96,18 +96,17 @@ Open **Tools → Quality Control** and press **Run quality control check**. It l
 
 **Show** takes you to the row. A GPS jump or gap has a **Fix** button, which marks that stretch with an ERROR row in the Effort table so it's left out of the trackline and the effort totals. **Save report…** keeps the list as a CSV.
 
-## Summary, Filter and Reports
+## Summary and Reports
 
 - **Tools → Summary** (Ctrl/⌘+4): totals, survey details, species, observers, conditions, a map, and right whale sightings. **Save as HTML…** or **Save as PDF…** (PDF needs Google Chrome or Microsoft Edge).
-- **Tools → Filter** picks part of a table and exports it:
+- **Tools → Reports** picks part of a table and saves it:
   1. Choose **Sightings**, **Events** or **Effort**.
   2. Click the species (or event types) you want; the chips show how many of each are in this survey.
   3. Open **Columns** to tick the columns and set their order.
   4. **More conditions** adds *on effort only*, a time range, or rules such as *Num is more than 5*.
   5. **Export CSV…**, **HTML…** or **PDF…**.
 
-  **Save filter…** keeps it by name for next time. Spyhop starts you off with Right whales, Blue whales, Dead birds and Gear.
-- **Tools → Reports** has the older reports (Gear, Dead Birds, Right whales and Blue whales), which Filter now does too.
+  **Save report…** keeps it by name for next time. Spyhop starts you off with Right whales, Blue whales, Dead birds and Gear. **Run Reports…** saves any of your saved reports at once, in the formats and folder you choose: handy at the end of the day.
 
 ## Export the data
 
@@ -117,8 +116,8 @@ In **Survey**, press **Export Data…** and choose any of:
 - a merged CSV (sightings, effort, events and track points in time order, with the conditions on every row)
 - GPX
 - GeoJSON
-- the summary and the reports, as HTML, PDF or both
-- your saved filters, as CSV
+- the summary, as HTML, PDF or both
+- your saved reports, as CSV
 
 Several files are saved together as one zip. Everything goes in the `exports` folder inside the survey data folder, and a copy downloads.
 

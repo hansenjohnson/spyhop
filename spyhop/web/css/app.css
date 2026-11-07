@@ -337,9 +337,8 @@ table.kv td button { margin-left: 0.6em; }
 .report-table td.num, .report-table th.num { text-align: right; }
 .report-table td.nowrap { white-space: nowrap; }
 .report-table tfoot td { font-weight: 600; border-top: 2px solid var(--line); }
-.report-config { margin-top: 1.5em; }
 .warn-text { color: #b03a2e; }
-@media print { .report-tabs, .report-config { display: none !important; } }
+@media print { .report-tabs { display: none !important; } }
 
 .tutorial { max-width: 60em; line-height: 1.5; }
 .tutorial h3 { margin-top: 0; }
@@ -450,3 +449,8 @@ table.overlay-table td { vertical-align: middle; }
 .flt-colsec summary { cursor: pointer; margin: 0.2em 0 0.4em; }
 .flt-colnames { display: block; color: var(--muted); font-size: 0.92em; margin: 0.15em 0 0 1.1em; }
 .flt-colsec[open] .flt-colnames { display: none; }
+.flt-top { margin: 0 0 0.6em; padding-bottom: 0.6em; border-bottom: 1px solid var(--line); }
+.rr-formats { display: flex; gap: 1.2em; }
+.run-reports label.check { margin: 0.4em 0; }
+.rr-folder { display: flex; gap: 0.4em; margin-top: 0.3em; }
+.rr-done { margin: 0.4em 0; padding-left: 1.2em; max-height: 18em; overflow: auto; }

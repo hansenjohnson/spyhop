@@ -1,20 +1,7 @@
 {
-  "id": "right_whales",
-  "title": "Right whales",
-  "order": 40,
-  "description": "Every North Atlantic right whale sighting. Positions are the whales’ (SigLat/SigLon), or the vessel’s if none was worked out.",
+  "name": "Right whales",
   "table": "sightings",
-  "where": [
-    {"species_code": ["RIWH"]},
-    {"column": "Species", "regex": "^(north atlantic right whale|eubalaena glacialis)$"}
-  ],
-  "columns": [
-    {"label": "Time", "value": "time"},
-    {"label": "Position", "value": "position"},
-    {"label": "Number", "column": "Count", "align": "right"},
-    {"label": "Calves", "column": "Calves", "align": "right"},
-    {"label": "Notes", "column": "Notes"}
-  ],
-  "totals": {"Number": "sum", "Calves": "sum"},
-  "empty": "No right whales sighted."
+  "codes": ["RIWH"],
+  "columns": ["time", "position", "Count", "Calves", "Notes"],
+  "on_effort": false, "time_from": "", "time_to": "", "rules": []
 }

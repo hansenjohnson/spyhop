@@ -1,7 +1,7 @@
-"""Config packs: a set of lists, shortcuts, map settings, report templates and saved filters in one file.
+"""Config packs: a set of lists, shortcuts, map settings and saved reports in one file.
 
-A pack is a zip (or a folder) holding any of the files in PACK_CSV, report templates in
-`reports/*.json`, saved filters (Tools → Filter) in `filters/*.json`, and `spyhop-config.csv`, a log of changes in plain CSV:
+A pack is a zip (or a folder) holding any of the files in PACK_CSV, saved reports (Tools →
+Reports) in `reports/*.json`, and `spyhop-config.csv`, a log of changes in plain CSV:
 
     Date,Changed by,Files,Notes
     2026-11-06,Hansen Johnson,species.csv,Added Dead bird
@@ -11,10 +11,12 @@ and .spyhop are read too) and listed in Settings → Templates, where one can be
 overwritten with this computer's config, or saved new. A team also puts its pack on the web (a
 GitHub repository, a Dropbox or Google Drive link, any website); pulling it keeps a copy in the
 folder. Using a pack replaces this computer's copy of each file the pack has; it
-never merges. Report templates, and saved filters, are each replaced as a set when the pack has any. A backup zip of
+never merges. Saved reports are replaced as a set when the pack has any. (0.18 packs kept them
+in `filters/`, which is read the same way; report templates of the format used before 0.19
+are listed as ignored.) A backup zip of
 the current files (itself a valid pack) can be saved first, in config_packs/backups.
 
-Nothing in a pack is run: CSVs are checked for their columns, report templates are checked
+Nothing in a pack is run: CSVs are checked for their columns, saved reports are checked
 like any other, and files Spyhop doesn't know are listed and left alone.
 """
 from __future__ import annotations
@@ -35,7 +37,7 @@ import zipfile
 from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 
-from . import __version__, filters, reports
+from . import __version__, reports
 
 MANIFEST = "spyhop-config.csv"
 MANIFEST_HEADER = ["Date", "Changed by", "Files", "Notes"]
@@ -48,22 +50,22 @@ PACK_CSV = {
     "shortcuts.csv": ["combo", "action"],
     "display.csv": ["key", "value"],
 }
-# in a backup made when there were no report templates, so pulling it removes any added since
-NO_REPORTS = "reports/_no_report_templates.txt"
-NO_FILTERS = "filters/_no_saved_filters.txt"
+# in a pack or backup with no saved reports, so pulling it removes any on the computer
+NO_REPORTS = "reports/_no_saved_reports.txt"
+# read as if they were the above: 0.18 kept saved reports (then "saved filters") in filters/
+OLD_FOLDERS = {"filters": "reports"}
+OLD_MARKERS = {"filters/_no_saved_filters.txt": NO_REPORTS,
+               "reports/_no_report_templates.txt": None}     # old-format templates: nothing to do
 
 
-def _report_ok(d):
-    if isinstance(d, dict) and d.get("enabled") is False:
-        return None
-    return reports._validate(d, "pack")
+def _user_reports_dir(cfg):
+    return reports.ensure_dir(cfg)        # old templates moved aside first, so they're never compared
 
 
 # folders of JSON files a pack carries as a set: pack key -> (folder in the pack, folder here,
 # check, marker meaning "none", what one is called)
 SETS = {
-    "reports": ("reports", reports.user_dir, _report_ok, NO_REPORTS, "report template"),
-    "filters": ("filters", filters.user_dir, filters.validate, NO_FILTERS, "saved filter"),
+    "reports": ("reports", _user_reports_dir, reports.validate, NO_REPORTS, "saved report"),
 }
 PACK_SUFFIX = ".spyhop.zip"     # what Spyhop names packs it saves; it reads .zip and .spyhop too
 PACKS_DIR = "config_packs"      # in the survey data folder
@@ -213,13 +215,12 @@ def _root(files: dict[str, bytes]) -> str:
         parts = n.split("/")
         if parts[-1] in known:
             cands.append("/".join(parts[:-1]))
-        elif len(parts) >= 2 and any(parts[-2] == st[0] and (parts[-1].endswith(".json") or parts[-1] == st[3].split("/")[1])
-                                     for st in SETS.values()):
+        elif len(parts) >= 2 and parts[-2] in ("reports", "filters") and parts[-1].endswith((".json", ".txt")):
             cands.append("/".join(parts[:-2]))
     if not cands:
         raise PackError("That doesn't look like a Spyhop config pack: it has none of spyhop-config.csv, "
                         "species.csv, observers.csv, event_types.csv, behaviors.csv, shortcuts.csv, display.csv "
-                        "reports/*.json or filters/*.json.")
+                        "or reports/*.json.")
     return min(cands, key=lambda c: (c.count("/") if c else -1, c))
 
 
@@ -257,7 +258,7 @@ def read_pack(files: dict[str, bytes]) -> dict:
     root = _root(files)
     pre = root + "/" if root else ""
     inside = {n[len(pre):]: b for n, b in files.items() if n.startswith(pre)}
-    pack = {"csv": {}, "reports": None, "filters": None, "manifest": [], "manifest_text": "", "ignored": [], "problems": []}
+    pack = {"csv": {}, "reports": None, "manifest": [], "manifest_text": "", "ignored": [], "problems": []}
     for name, b in sorted(inside.items()):
         if name == MANIFEST:
             try:
@@ -282,9 +283,12 @@ def read_pack(files: dict[str, bytes]) -> dict:
         elif _set_of(name):
             key, kind = _set_of(name)
             st = SETS[key]
-            if pack[key] is None:
-                pack[key] = {}
+            if kind == "old-marker":
+                pack["ignored"].append(name)
+                continue
             if kind == "marker":
+                if pack[key] is None:
+                    pack[key] = {}
                 continue
             fn = name.split("/", 1)[1]
             try:
@@ -293,10 +297,15 @@ def read_pack(files: dict[str, bytes]) -> dict:
             except (PackError, ValueError) as e:
                 pack["problems"].append(f"{name} isn't valid JSON ({e}).")
                 continue
+            if reports.is_old_template(d):           # before 0.19: no longer used, left alone
+                pack["ignored"].append(f"{name} (a report template of the old format)")
+                continue
             why = st[2](d)
             if why:
                 pack["problems"].append(f"{name}: {why}.")
                 continue
+            if pack[key] is None:
+                pack[key] = {}
             pack[key][fn] = text
         elif name.startswith("reports/") and (name.endswith("README.md") or "/examples/" in name):
             continue
@@ -306,11 +315,16 @@ def read_pack(files: dict[str, bytes]) -> dict:
 
 
 def _set_of(name: str):
-    """(set key, "file" | "marker") if a path in a pack belongs to one of SETS, else None."""
+    """(set key, "file" | "marker" | "old-marker") if a path in a pack belongs to one of SETS, else None.
+    0.18's filters/ folder counts as reports/."""
+    if name in OLD_MARKERS:
+        return ("reports", "marker") if OLD_MARKERS[name] else ("reports", "old-marker")
+    top, _, rest = name.partition("/")
+    top = OLD_FOLDERS.get(top, top)
     for key, st in SETS.items():
-        if name == st[3]:
+        if f"{top}/{rest}" == st[3]:
             return key, "marker"
-        if name.startswith(st[0] + "/") and name.count("/") == 1 and name.endswith(".json"):
+        if top == st[0] and rest and "/" not in rest and rest.endswith(".json"):
             return key, "file"
     return None
 
@@ -365,7 +379,7 @@ def _json_eq(a: str, b: str) -> bool:
 def config_files(cfg) -> dict[str, Path]:
     """This computer's config files that a pack can hold, as {path in a pack: file}."""
     out = {n: cfg.root / n for n in PACK_CSV if (cfg.root / n).is_file()}
-    filters.ensure_dir(cfg)            # so a pack has the starting filters, not "none"
+    reports.ensure_dir(cfg)            # so a pack has the starting reports, not "none"
     for folder, user_dir, *_ in SETS.values():
         rdir = user_dir(cfg)
         if rdir.is_dir():
@@ -550,7 +564,7 @@ def log_change(cfg, by: str, files: str, notes: str) -> list[str]:
 
 def make_zip(cfg, note: str = "", backup: bool = False) -> bytes:
     """A zip of this computer's config files: a backup, and a pack another computer can pull.
-    A backup also records "no report templates" when there were none, so pulling it undoes exactly."""
+    A backup also records "no saved reports" when there were none, so pulling it undoes exactly."""
     buf = io.BytesIO()
     files = config_files(cfg)
     manifest = files.pop(MANIFEST, None)

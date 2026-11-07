@@ -32,10 +32,8 @@ spyhop/
   nmea.py         NMEA 0183 parser, vessel state, instrument readings, raw log
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
   qc.py           the quality control check (thresholds in LIMITS)
-  reports.py      the report engine: report definitions → tables, HTML pages
-  report_defs/    the built-in report definitions (JSON) and their README
-  filters.py      Tools → Filter: filter specs → rows and columns, CSV/HTML; saved filters in <Spyhop>/filters
-  filter_defs/    the starting saved filters, copied into that folder the first time it's needed
+  reports.py      Tools → Reports: report specs → rows and columns, CSV/HTML pages; saved reports in <Spyhop>/reports
+  report_defs/    the starting saved reports, copied into that folder once
   browser.py      finds Chrome/Edge for the app window and for PDF printing (headless --print-to-pdf)
   tzguess.py      the clock's time zone from the platform's position (tzfpy)
   diag.py         diagnostic logs, crash capture, performance snapshots, the diagnostics bundle
@@ -49,7 +47,7 @@ spyhop/
     js/map.js            the Leaflet map, markers, track, tools
     js/depth.js          the water depth at the cursor, read from Seascape's depth tiles
     js/planning.js       Tools → Route
-    js/filter.js         Tools → Filter (runs filters on the server, /api/filters*)
+    js/reports.js        Tools → Reports and Run Reports (runs reports on the server, /api/reports*)
     js/plot.js           instrument time-series plots
     js/summary_html.js   the self-contained Summary page (HTML export)
     js/util.js           formatting, geodesy and small helpers
@@ -69,7 +67,7 @@ CHANGELOG.md     changes in each version (shown in Settings → About)
 - **Validation** happens on the server (`recorder.py`), never only in the browser.
 - **State in the window:** settings panes redraw on every settings broadcast. Keep half-typed values in JS, not only in the DOM.
 - **Map markers:** never set CSS `position` on a marker's icon class; it breaks Leaflet's placement.
-- **Reports:** a group-specific report is a JSON definition, not code. Keep `reports.py` independent of the rest; it reads the open survey through `rec.tables`, `rec.cfg` and `rec.tz()`.
+- **Reports:** a group's report is a saved JSON spec (table, codes, columns, conditions), made in the app, not code. Keep `reports.py` independent of the rest; it reads the open survey through `rec.tables`, `rec.cfg` and `rec.tz()`.
 - **Launchers** (`Start Spyhop (Mac).command`, `Start Spyhop (Windows).bat`, `start-spyhop.sh`) make `.venv` on first run. They reinstall `requirements.txt` when it changes, so a new dependency reaches existing installs.
 
 ## Publishing an update
@@ -95,6 +93,6 @@ A git checkout is updated with `git pull --ff-only` instead. `SPYHOP_UPDATE_API`
 
 ## Tests
 
-- `python -m pytest tests` covers parsing, storage and undo, the survey lifecycle, migrations, export, QC, the reports and filters, the clock and the trackline-break fix.
+- `python -m pytest tests` covers parsing, storage and undo, the survey lifecycle, migrations, export, QC, the reports, the clock and the trackline-break fix.
 - A PDF test runs when Chrome/Edge is found (or `SPYHOP_CHROME` points at one).
 - The interface was tested with Playwright walkthroughs during development. Those scripts aren't in the repository, except `tests/ui_marker_positions.js`.

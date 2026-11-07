@@ -1,7 +1,0 @@
-{
-  "name": "Dead birds",
-  "table": "sightings",
-  "codes": ["DEBI"],
-  "columns": ["time", "position", "Notes"],
-  "on_effort": false, "time_from": "", "time_to": "", "rules": []
-}

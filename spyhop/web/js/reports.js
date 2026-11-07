@@ -1,7 +1,8 @@
-// Tools → Filter: pick rows of Sightings, Events or Effort and some of their columns, see the
-// result as you go, and export it (CSV, HTML, PDF). Filters can be saved by name ("saved
-// filters", files in the filters folder in Spyhop's folder; the server's filters.py runs them).
-import { $, el, api, toast, confirmBox, promptBox } from './util.js';
+// Tools → Reports (Tools → Filter in 0.18): pick rows of Sightings, Events or Effort and some of
+// their columns, see the result as you go, and save it (CSV, HTML, PDF). Reports are saved by
+// name (files in the reports folder in Spyhop's folder; the server's reports.py runs them).
+// Run Reports saves several saved reports at once.
+import { $, el, api, toast, confirmBox, promptBox, modal } from './util.js';
 
 const TABLES = [['sightings', 'Sightings'], ['events', 'Events'], ['effort', 'Effort']];
 const NOUN = { sightings: ['sighting', 'sightings'], events: ['event', 'events'], effort: ['effort row', 'effort rows'] };
@@ -15,15 +16,15 @@ function strip(f) {
   return { name, table, codes, columns, on_effort: !!on_effort, time_from: time_from || '', time_to: time_to || '', rules: rules || [] };
 }
 
-export class FilterTool {
+export class ReportsTool {
   constructor(app) {
     this.app = app;
-    this.defs = null;          // {filters, errors, columns, ops, folder, pdf}
+    this.defs = null;          // {reports, errors, columns, ops, folder, exports, last_folder, pdf}
     this.res = null;           // the last result
     this.counts = [];
     this.seq = 0;
     try {
-      const saved = JSON.parse(localStorage.getItem('wsr.filter') || 'null');
+      const saved = JSON.parse(localStorage.getItem('wsr.report') || localStorage.getItem('wsr.filter') || 'null');
       if (saved?.spec?.table) { this.spec = saved.spec; this.file = saved.file || null; }
     } catch {}
     if (!this.spec) { this.spec = null; this.file = null; }
@@ -31,9 +32,9 @@ export class FilterTool {
 
   async loadDefs(force = false) {
     if (!this.defs || force) {
-      try { this.defs = await api('/api/filters'); } catch { return this.defs?.filters || []; }
+      try { this.defs = await api('/api/reports'); } catch { return this.defs?.reports || []; }
     }
-    return this.defs.filters;
+    return this.defs.reports;
   }
 
   describe(f) {
@@ -46,11 +47,11 @@ export class FilterTool {
     return `${what}${bits.length ? `: ${bits.join('; ')}` : ' (all)'}.`;
   }
 
-  // the saved filter that's open, if any
-  savedOne() { return this.file ? this.defs?.filters.find((f) => f.file === this.file) : null; }
+  // the saved report that's open, if any
+  savedOne() { return this.file ? this.defs?.reports.find((f) => f.file === this.file) : null; }
   changed() { const s = this.savedOne(); return !s || !same(s, this.spec); }
 
-  remember() { try { localStorage.setItem('wsr.filter', JSON.stringify({ spec: this.spec, file: this.file })); } catch {} }
+  remember() { try { localStorage.setItem('wsr.report', JSON.stringify({ spec: this.spec, file: this.file })); } catch {} }
 
   set(patch) {
     this.spec = { ...this.spec, ...patch };
@@ -66,30 +67,33 @@ export class FilterTool {
   }
 
   onDefsChanged() {
-    this.loadDefs(true).then(() => { if (this.app.tab === 'filter') this.render(); });
+    this.loadDefs(true).then(() => { if (this.app.tab === 'reports') this.render(); });
   }
 
   onData(tab) {
-    if (this.app.tab === 'filter' && (tab === this.spec?.table || (this.spec?.on_effort && tab === 'effort'))) this.run();
+    if (this.app.tab === 'reports' && (tab === this.spec?.table || (this.spec?.on_effort && tab === 'effort'))) this.run();
   }
 
   // ---------------------------------------------------------------- drawing
   async render() {
-    const pane = $('#pane-filter');
+    const pane = $('#pane-reports');
     if (!pane) return;
     if (!this.defs) {
       pane.replaceChildren(el('p', { class: 'hint' }, 'Loading…'));
       await this.loadDefs();
       if (!this.defs) return;
-      if (!this.spec) { const first = this.defs.filters[0]; this.spec = first ? strip(first) : blank(); this.file = first?.file || null; }
+      if (!this.spec) { const first = this.defs.reports[0]; this.spec = first ? strip(first) : blank(); this.file = first?.file || null; }
     }
     if (!this.spec) this.spec = blank();
     if (!this.$result) {
       this.$side = el('div', { class: 'flt-side' });
       this.$result = el('div', { class: 'flt-result' });
-      pane.replaceChildren(el('div', { class: 'flt' }, this.$side, this.$result));
+      this.$top = el('div', { class: 'btnrow flt-top no-print' },
+        el('button', { type: 'button', class: 'primary', onclick: () => this.runReports(),
+          title: 'Save several saved reports at once, in the formats and folder you choose' }, 'Run Reports…'));
+      pane.replaceChildren(this.$top, el('div', { class: 'flt' }, this.$side, this.$result));
     } else if (!pane.contains(this.$result)) {
-      pane.replaceChildren(el('div', { class: 'flt' }, this.$side, this.$result));
+      pane.replaceChildren(this.$top, el('div', { class: 'flt' }, this.$side, this.$result));
     }
     this.drawSide();
     this.drawResult();
@@ -99,9 +103,9 @@ export class FilterTool {
   drawSide() {
     const f = this.spec, cols = this.defs.columns[f.table] || [];
     const chip = (label, on, onclick, title) => el('button', { type: 'button', class: `flt-chip${on ? ' on' : ''}`, onclick, title }, label);
-    const saved = this.defs.filters.map((x) => chip(x.file === this.file && this.changed() ? `${x.name} •` : x.name, x.file === this.file,
+    const saved = this.defs.reports.map((x) => chip(x.file === this.file && this.changed() ? `${x.name} •` : x.name, x.file === this.file,
       () => this.open(x), `${this.describe(x)}${x.file === this.file && this.changed() ? ' Changed, not saved.' : ''}`));
-    saved.push(chip('+ New', !this.file, () => this.open(null), 'Start a new filter'));
+    saved.push(chip('+ New', !this.file, () => this.open(null), 'Start a new report'));
 
     const tables = el('div', { class: 'seg', role: 'group', 'aria-label': 'Table' }, TABLES.map(([k, l]) => el('button', {
       type: 'button', class: k === f.table ? 'on' : '', 'aria-pressed': String(k === f.table),
@@ -178,7 +182,7 @@ export class FilterTool {
 
     const errs = this.defs.errors || [];
     this.$side.replaceChildren(
-      el('div', { class: 'flt-sec' }, el('h4', {}, 'Saved filters'), el('div', { class: 'flt-chips' }, saved)),
+      el('div', { class: 'flt-sec' }, el('h4', {}, 'Saved reports'), el('div', { class: 'flt-chips' }, saved)),
       el('div', { class: 'flt-sec' }, el('h4', {}, 'Table'), tables),
       codeSec, colSec, more,
       errs.length ? el('p', { class: 'warn-text' }, `Skipped: ${errs.join('; ')}`) : null);
@@ -187,23 +191,22 @@ export class FilterTool {
   drawResult() {
     const f = this.spec, r = this.res, s = this.savedOne();
     const pdf = !!this.defs.pdf, survey = !!this.app.S.survey;
-    const title = s ? s.name : (f.name || 'New filter');
-    const count = r && r.table === f.table ? `${r.count} of ${r.total} ${NOUN[f.table][r.total === 1 ? 0 : 1]}` : '';
+    const title = s ? s.name : (f.name || 'New report');
     const btn = (label, onclick, attrs = {}) => el('button', { type: 'button', onclick, ...attrs }, label);
     const head = el('div', { class: 'summary-head' },
-      el('h2', {}, title, s && this.changed() ? el('span', { class: 'hint' }, ' (changed)') : null, el('span', { class: 'hint flt-count' }, count ? ` · ${count}` : '')),
+      el('h2', {}, title, s && this.changed() ? el('span', { class: 'hint' }, ' (changed)') : null),
       el('div', { class: 'btnrow no-print' },
         btn('Export CSV…', () => this.export('csv'), { class: 'primary', disabled: !survey, title: 'For R, Excel or a database' }),
         btn('HTML…', () => this.export('html'), { disabled: !survey, title: 'A page with the survey details, the table and its totals' }),
         btn('PDF…', () => this.export('pdf'), { disabled: !survey || !pdf, title: pdf ? 'The same page as a PDF' : 'Needs Google Chrome or Microsoft Edge' })));
     const saveRow = el('div', { class: 'btnrow no-print' },
       s ? btn('Save changes', () => this.save(false), { disabled: !this.changed() }) : null,
-      btn(s ? 'Save as new…' : 'Save filter…', () => this.save(true)),
+      btn(s ? 'Save as new…' : 'Save report…', () => this.save(true)),
       s ? btn('Rename…', () => this.rename()) : null,
       s ? btn('Delete…', () => this.remove(), { class: 'danger-outline' }) : null,
       s && this.changed() ? btn('Undo changes', () => this.open(s)) : null);
     let body;
-    if (!survey) body = el('p', { class: 'hint' }, 'Open a survey (in Survey) to see the rows this filter picks.');
+    if (!survey) body = el('p', { class: 'hint' }, 'Open a survey (in Survey) to see the rows this report picks.');
     else if (!f.columns.length) body = el('p', { class: 'hint' }, 'Tick at least one column.');
     else if (!r || r.table !== f.table) body = el('p', { class: 'hint' }, 'Working…');
     else if (!r.rows.length) body = el('p', { class: 'hint' }, `No ${NOUN[f.table][1]} match.`);
@@ -216,10 +219,10 @@ export class FilterTool {
           row.map((v, i) => el('td', { class: right(i) + nowrap(i) }, v))))),
         r.totals ? el('tfoot', {}, el('tr', {}, r.totals.map((v, i) => el('td', { class: right(i) }, i === 0 && !v ? `Total (${r.count})` : v)))) : null));
     }
-    this.$result.replaceChildren(head, el('p', { class: 'hint' }, this.describe(f)), body, saveRow,
+    this.$result.replaceChildren(head, body, saveRow,
       el('p', { class: 'hint' }, survey && r?.rows?.length ? 'Click a row to show it in its table. Number columns get a total. Exports are saved in the exports folder. ' : '',
-        'Saved filters are files in the filters folder in Spyhop’s folder, and travel in config packs (Settings → Templates). ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.app.open('filters'); } }, 'Open the filters folder')));
+        'Saved reports are files in the reports folder in Spyhop’s folder, and travel in config packs (Settings → Templates). ',
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.app.open('reports'); } }, 'Open the reports folder')));
   }
 
   // ---------------------------------------------------------------- server
@@ -227,19 +230,19 @@ export class FilterTool {
     const n = ++this.seq;
     if (!this.app.S.survey || !this.spec.columns.length) { this.counts = []; this.res = null; this.drawResult(); return; }
     let r;
-    try { r = await api('/api/filters/run', { spec: this.spec }); } catch { return; }
+    try { r = await api('/api/reports/run', { spec: this.spec }); } catch { return; }
     if (n !== this.seq) return;           // a newer change is on its way
     const before = JSON.stringify(this.counts);
     this.res = r.result; this.counts = r.counts;
-    if (JSON.stringify(this.counts) !== before && this.app.tab === 'filter') this.drawSide();
-    if (this.app.tab === 'filter') this.drawResult();
+    if (JSON.stringify(this.counts) !== before && this.app.tab === 'reports') this.drawSide();
+    if (this.app.tab === 'reports') this.drawResult();
   }
 
   async export(format) {
     if (format === 'pdf') toast('Making the PDF (a few seconds)…', 'info', 3000);
-    const name = this.savedOne()?.name || this.spec.name || 'filter';
+    const name = this.savedOne()?.name || this.spec.name || 'report';
     let r;
-    try { r = await api('/api/filters/export', { spec: { ...this.spec, name }, format }); } catch { return; }
+    try { r = await api('/api/reports/export', { spec: { ...this.spec, name }, format }); } catch { return; }
     const a = el('a', { href: r.url, download: r.name });
     document.body.append(a); a.click(); a.remove();
     toast(`Saved ${r.name} (${r.count} row${r.count === 1 ? '' : 's'}) in the exports folder (a copy is downloading).`, 'info', 6000);
@@ -247,16 +250,16 @@ export class FilterTool {
 
   async save(asNew) {
     const s = this.savedOne();
-    let name = s && !asNew ? s.name : await promptBox(asNew && s ? 'Save as a new filter' : 'Save this filter', 'Name', asNew && s ? `${s.name} (copy)` : (this.spec.name || ''), 'Save');
+    let name = s && !asNew ? s.name : await promptBox(asNew && s ? 'Save as a new report' : 'Save this report', 'Name', asNew && s ? `${s.name} (copy)` : (this.spec.name || ''), 'Save');
     if (name === null) return;
     name = name.trim();
-    if (!name) { toast('Give the filter a name.', 'warn'); return; }
-    const clash = this.defs.filters.find((x) => x.name.toLowerCase() === name.toLowerCase() && x.file !== (asNew ? null : s?.file));
-    if (clash && !(await confirmBox('Replace the saved filter?', `There's already a filter called “${clash.name}”. Replace it with this one?`, 'Replace', true))) return;
+    if (!name) { toast('Give the report a name.', 'warn'); return; }
+    const clash = this.defs.reports.find((x) => x.name.toLowerCase() === name.toLowerCase() && x.file !== (asNew ? null : s?.file));
+    if (clash && !(await confirmBox('Replace the saved report?', `There's already a report called “${clash.name}”. Replace it with this one?`, 'Replace', true))) return;
     let r;
-    try { r = await api('/api/filters/save', { spec: { ...this.spec, name }, replace: !asNew && s ? s.file : (clash?.file || null) }); } catch { return; }
-    this.file = r.filter.file;
-    this.spec = strip(r.filter);
+    try { r = await api('/api/reports/save', { spec: { ...this.spec, name }, replace: !asNew && s ? s.file : (clash?.file || null) }); } catch { return; }
+    this.file = r.report.file;
+    this.spec = strip(r.report);
     this.remember();
     await this.loadDefs(true);
     toast(`Saved “${name}”.`);
@@ -266,11 +269,11 @@ export class FilterTool {
   async rename() {
     const s = this.savedOne();
     if (!s) return;
-    const name = (await promptBox('Rename the filter', 'Name', s.name, 'Rename'))?.trim();
+    const name = (await promptBox('Rename the report', 'Name', s.name, 'Rename'))?.trim();
     if (!name || name === s.name) return;
     let r;
-    try { r = await api('/api/filters/save', { spec: { ...s, name }, replace: s.file }); } catch { return; }
-    this.file = r.filter.file;
+    try { r = await api('/api/reports/save', { spec: { ...s, name }, replace: s.file }); } catch { return; }
+    this.file = r.report.file;
     this.spec = { ...this.spec, name };
     this.remember();
     await this.loadDefs(true);
@@ -279,12 +282,83 @@ export class FilterTool {
 
   async remove() {
     const s = this.savedOne();
-    if (!s || !(await confirmBox('Delete the saved filter?', `Delete “${s.name}”? This removes ${s.file} from the filters folder.`, 'Delete', true))) return;
-    try { await api('/api/filters/delete', { file: s.file }); } catch { return; }
+    if (!s || !(await confirmBox('Delete the saved report?', `Delete “${s.name}”? This removes ${s.file} from the reports folder.`, 'Delete', true))) return;
+    try { await api('/api/reports/delete', { file: s.file }); } catch { return; }
     this.file = null;
     this.spec = { ...this.spec, name: '' };
     this.remember();
     await this.loadDefs(true);
     this.render();
+  }
+
+  // ---------------------------------------------------------------- Run Reports
+  // Save several saved reports at once: which ones, in which formats, and where.
+  async runReports() {
+    await this.loadDefs(true);
+    const list = this.defs?.reports || [];
+    if (!this.app.S.survey) { toast('Open a survey first (in Survey).', 'warn'); return; }
+    if (!list.length) { toast('There are no saved reports yet: make one and press Save report…', 'warn'); return; }
+    let last = {};
+    try { last = JSON.parse(localStorage.getItem('wsr.runReports') || '{}') || {}; } catch {}
+    const pdf = !!this.defs.pdf;
+    const known = new Set(list.map((x) => x.file));
+    const picked = Array.isArray(last.files) && last.files.some((f) => known.has(f)) ? new Set(last.files) : new Set(known);
+    const boxes = {};
+    const fmts = {};
+    const note = el('p', { class: 'hint' });
+    const folderIn = el('input', { type: 'text', value: last.folder || this.defs.last_folder || '', placeholder: 'Full path of a folder', style: { flex: '1', minWidth: '14em' },
+      oninput: () => { whereOther.checked = true; update(); } });
+    const whereExports = el('input', { type: 'radio', name: 'rr-where', checked: last.where !== 'folder', onchange: () => update() });
+    const whereOther = el('input', { type: 'radio', name: 'rr-where', checked: last.where === 'folder', onchange: () => update() });
+    const okBtn = () => document.querySelector('.modal-buttons button.primary');
+    const update = () => {
+      const n = Object.values(boxes).filter((b) => b.checked).length;
+      const k = Object.values(fmts).filter((b) => b.checked).length;
+      const noFolder = whereOther.checked && !folderIn.value.trim();
+      note.textContent = !n ? 'Choose at least one report.' : !k ? 'Choose at least one format.'
+        : noFolder ? 'Choose the folder to save them in.' : `${n * k} file${n * k === 1 ? '' : 's'} will be saved.`;
+      const b = okBtn(); if (b) b.disabled = !n || !k || noFolder;
+    };
+    const setAll = (on) => { Object.values(boxes).forEach((b) => { b.checked = on; }); update(); };
+    const body = el('div', { class: 'export-choices run-reports' },
+      el('h4', {}, 'Reports ', el('span', { class: 'hint' },
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); setAll(true); } }, 'all'), ' · ',
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); setAll(false); } }, 'none'))),
+      ...list.map((x) => {
+        boxes[x.file] = el('input', { type: 'checkbox', checked: picked.has(x.file), onchange: update });
+        return el('label', { class: 'check' }, boxes[x.file], el('span', {}, el('b', {}, x.name), el('br'), el('span', { class: 'hint' }, this.describe(x))));
+      }),
+      el('h4', {}, 'Formats'),
+      el('div', { class: 'rr-formats' }, [['csv', 'CSV'], ['html', 'HTML'], ['pdf', 'PDF']].map(([k, l]) => {
+        fmts[k] = el('input', { type: 'checkbox', checked: (last.formats || ['csv']).includes(k) && (k !== 'pdf' || pdf), disabled: k === 'pdf' && !pdf, onchange: update });
+        return el('label', { class: 'check', title: k === 'pdf' && !pdf ? 'Needs Google Chrome or Microsoft Edge' : '' }, fmts[k], ` ${l}`);
+      })),
+      el('h4', {}, 'Save them in'),
+      el('label', { class: 'check' }, whereExports, el('span', {}, 'The exports folder', el('br'), el('span', { class: 'hint' }, this.defs.exports))),
+      el('label', { class: 'check' }, whereOther, el('span', { style: { flex: '1' } }, 'This folder:',
+        el('span', { class: 'rr-folder' }, folderIn,
+          el('button', { type: 'button', onclick: async (e) => {
+            e.preventDefault();
+            let r; try { r = await api('/api/pick-folder', {}); } catch { return; }
+            if (r.path) { folderIn.value = r.path; whereOther.checked = true; update(); }
+          } }, 'Choose…')))),
+      note);
+    const ok = await modal({ title: 'Run Reports', body, width: '36em',
+      onOpen: () => { setTimeout(update, 0); return false; },
+      buttons: [{ label: 'Cancel', value: false }, { label: 'Save reports', primary: true, value: true }] });
+    if (!ok) return;
+    const files = list.map((x) => x.file).filter((f) => boxes[f].checked);
+    const formats = Object.keys(fmts).filter((k) => fmts[k].checked);
+    const where = whereOther.checked ? 'folder' : 'exports';
+    const folder = where === 'folder' ? folderIn.value.trim() : '';
+    try { localStorage.setItem('wsr.runReports', JSON.stringify({ files, formats, where, folder: folderIn.value.trim() })); } catch {}
+    if (formats.includes('pdf')) toast('Making the PDFs (a few seconds each)…', 'info', 4000);
+    let r;
+    try { r = await api('/api/reports/batch', { files, formats, folder }); } catch { return; }
+    this.defs.last_folder = r.folder;
+    await modal({ title: 'Reports saved', width: '34em', body: el('div', {},
+      el('p', {}, `${r.files.length} file${r.files.length === 1 ? '' : 's'} saved in `, el('b', {}, r.folder), ':'),
+      el('ul', { class: 'rr-done' }, r.files.map((x) => el('li', {}, x.name, el('span', { class: 'hint' }, ` · ${x.count} row${x.count === 1 ? '' : 's'}`))))),
+      buttons: [{ label: 'Open the folder', value: () => { this.app.open('reportsout'); return true; } }, { label: 'OK', primary: true, value: true }] });
   }
 }

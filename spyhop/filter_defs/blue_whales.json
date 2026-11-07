@@ -1,7 +1,0 @@
-{
-  "name": "Blue whales",
-  "table": "sightings",
-  "codes": ["BLWH"],
-  "columns": ["time", "position", "Count", "Calves", "Notes"],
-  "on_effort": false, "time_from": "", "time_to": "", "rules": []
-}

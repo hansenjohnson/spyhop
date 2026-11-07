@@ -32,12 +32,11 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
 - **Quality control:**
   - required fields, list values, plausible numbers and bearings
   - positions on land, sightings beyond the visibility, GPS jumps and gaps (with a one-click Fix), observer rules, and more
-- **Summary and filters:**
+- **Summary and reports:**
   - a Summary (totals, conditions, observers, a map), saved as HTML or PDF
-  - **Filter:** pick species or event types, conditions and columns from any table, see the result live, and export it as CSV, HTML or PDF; save filters by name and share them in config packs
-  - the older JSON-defined reports (gear, dead birds, right whales, blue whales) are still there for now
-- **Config packs:** save the lists, shortcuts, map settings, report templates and saved filters as one `.spyhop.zip` file, switch between packs, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer pulls the latest with one button, keeping a backup.
-- **Export:** separate CSVs, a merged time-ordered CSV (sightings, effort, events and track) with the conditions on every row, GPX, GeoJSON, the summary, reports and saved filters, in one zip.
+  - **Reports:** pick species or event types, conditions and columns from any table, see the result live, and save it as CSV, HTML or PDF; save reports by name, share them in config packs, and run them all at once
+- **Config packs:** save the lists, shortcuts, map settings and saved reports as one `.spyhop.zip` file, switch between packs, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer pulls the latest with one button, keeping a backup.
+- **Export:** separate CSVs, a merged time-ordered CSV (sightings, effort, events and track) with the conditions on every row, GPX, GeoJSON, the summary and saved reports, in one zip.
 
 ## System requirements
 
@@ -112,8 +111,7 @@ The **tutorial** in **Settings → About** (also [docs/TUTORIAL.md](docs/TUTORIA
 
 - [docs/TUTORIAL.md](docs/TUTORIAL.md): a short tour of the main tasks.
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md): the full reference, covering every tab, the files Spyhop writes, export formats, offline maps, and the differences from the OpenCPN plugin.
-- [spyhop/report_defs/README.md](spyhop/report_defs/README.md): writing your own reports.
-- [docs/CONFIG_PACKS.md](docs/CONFIG_PACKS.md): sharing config files and report templates across a team.
+- [docs/CONFIG_PACKS.md](docs/CONFIG_PACKS.md): sharing config files and saved reports across a team.
 - [docs/DEVELOPERS.md](docs/DEVELOPERS.md): running from source, the code layout and the tests.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
 

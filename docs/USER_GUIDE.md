@@ -127,8 +127,7 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
     - **Instruments:** instrument readings (click one to plot it) and the raw NMEA log.
     - **Quality Control**
     - **Summary:** the survey summary (below).
-    - **Filter:** pick rows of Sightings, Events or Effort and some of their columns, and export them (see *Filter* below).
-    - **Reports:** the built-in and your own reports (below). Filter does what they do; they may be removed in a later version.
+    - **Reports:** pick rows of Sightings, Events or Effort and some of their columns, and save them as CSV, HTML or PDF; **Run Reports…** saves several at once (see *Reports* below).
   - **Settings** has a second row of tabs:
     - **General:** map display, text size, tracking and reminders, bearings, distances and the clock, and sleep.
     - **Basemap:** downloading areas for offline use, and the charts folder (see *Maps offline* below).
@@ -215,37 +214,23 @@ The **Species**, **Events**, **Behaviors** and **Observers** tabs edit the drop-
 - **While a survey is under way the lists are greyed out and can't be changed**, so they stay the same for the whole survey. End the survey to edit them. (Pulling a group config pack during a survey is still possible, after a warning.)
 - For many changes at once, the files (`species.csv` and so on) can still be edited in a spreadsheet and reloaded.
 
-## Filter (Tools → Filter)
+## Reports (Tools → Reports)
 
-Filter shows a chosen part of one table and exports it. It updates as you change it and as records are added.
+A report is a chosen part of one table: some rows, some columns. It updates as you change it and as records are added, and can be saved as CSV, HTML or PDF.
 
 - **Table:** Sightings, Events or Effort.
 - **Species** (Sightings) or **Event types** (Events): the codes in this survey, with how many rows each has. Click one or more to keep only those; none picked keeps all. **Add a species…** finds any entry in the list, by code or name. A row matches when its species (or event type) has that code in the Dropdowns list, or was typed as the code itself; a name with no code is shown, and matched, by its name.
-- **Columns:** tick the columns to show; **▲ ▼** set their order. Besides the table's own columns there are **Time** (date and time), **Date**, **Clock time**, **Position**, **Latitude**, **Longitude** (in the lat/lon format of Settings → General; for sightings the animals' position, SigLat/SigLon, or the vessel's if there is none) and the **Species code** or **Event code**.
+- **Columns:** tick the columns to show; **▲ ▼** set their order. Besides the table's own columns there are **Time** (date and time to the second), **Time (formatted)** (`2026-11-07 10:54 EST`: to the minute, with the time zone), **Date**, **Clock time**, **Position**, **Latitude**, **Longitude** (in the lat/lon format of Settings → General; for sightings the animals' position, SigLat/SigLon, or the vessel's if there is none) and the **Species code** or **Event code**.
 - **More conditions:** **On effort only** (made while effort was ON), a **time range** (in the survey clock), and any number of conditions on a column: *is*, *is not*, *contains*, *doesn't contain*, *is blank*, *isn't blank*, *is more than*, *is less than*. All must hold.
 - The result is in time order, with a **total** under number columns (Num, Calves). Click a row to show it in its table.
-- **Export CSV…** (for R, Excel or a database), **HTML…** and **PDF…** (a page with the survey details, what the filter picks, the table and its totals) save the result in the `exports` folder and download a copy.
-- **Saved filters:** **Save filter…** keeps the current filter by name; it then appears under *Saved filters*, one click away. A saved filter that you change is marked • until you **Save changes** (or **Undo changes**); **Save as new…**, **Rename…** and **Delete…** do what they say.
-  - Spyhop starts you off with **Right whales**, **Blue whales**, **Dead birds** and **Gear**, the same as the reports of those names.
-  - Saved filters are files in the `filters` folder in Spyhop's folder (**Open the filters folder**), one `.json` file each. They travel in config packs (Settings → Templates), so a team can hand out its standard extracts.
-  - Each saved filter is offered in **Export Data…**, as a CSV.
-
-## Reports (Tools → Reports)
-
-- Tools → Filter does what these reports do, and more. Try it: these reports, and their JSON templates, may be removed in a later version.
-- The built-in reports are simple tables of selected records, in time order:
-  - **Gear:** Gear Reported and Gear Recovered events (time, event, position, notes)
-  - **Dead Birds:** sightings of the species *Dead bird* (code DEBI; time, position, notes)
-  - **Right whales:** North Atlantic right whale sightings (time, position, number, calves, notes, with totals)
-  - **Blue whales:** the same for blue whales
-- They update as you add records. Each has **Save as HTML…** and **Save as PDF…**, and each is offered in **Export Data…**.
+- **Export CSV…** (for R, Excel or a database), **HTML…** and **PDF…** save the report on screen in the `exports` folder and download a copy. The HTML and PDF pages have the survey name, its date (or first and last dates, if it ran over more than one day), the platform, organization, chief scientist and their email, then the table and its totals.
+- **Saved reports:** **Save report…** keeps the current report by name; it then appears under *Saved reports*, one click away. A saved report that you change is marked • until you **Save changes** (or **Undo changes**); **Save as new…**, **Rename…** and **Delete…** do what they say.
+  - Spyhop starts you off with **Right whales**, **Blue whales**, **Dead birds** and **Gear**.
+  - Saved reports are files in the `reports` folder in Spyhop's folder (**Open the reports folder**), one `.json` file each. They travel in config packs (Settings → Templates), so a team can hand out its standard reports.
+- **Run Reports…** (top of the tab) saves several saved reports at once: tick the reports, the formats (CSV, HTML, PDF; any or all) and where to save them (the exports folder, or a folder you choose). It remembers your choices, and lists the files it saved with a button to open the folder.
+- Each saved report is also offered in **Export Data…**, as a CSV.
 - **PDFs** are printed by Google Chrome or Microsoft Edge, which Spyhop finds by itself. Set `SPYHOP_CHROME` to the path of another Chromium-based browser if needed.
-- **Your own reports:**
-  - Every report is a JSON file, read by `spyhop/reports.py`, which is separate from the rest of Spyhop.
-  - Groups that need different reports don't need to change Spyhop's code: press **Open the reports folder** and add a `.json` file there.
-  - A file with the same `id` replaces a built-in report, and `{"id": "…", "enabled": false}` hides one.
-  - Press **Reload reports** afterwards.
-  - The folder's README, the same as [spyhop/report_defs/README.md](../spyhop/report_defs/README.md), describes the format. Copies of the built-in reports are in its `examples` subfolder.
+- Until 0.18, Tools → Reports held report templates of a different kind (JSON files with `id` and `where`), and 0.18 called this tab Filter. Old templates are moved to `reports/old_report_templates` and no longer used; 0.18's saved filters become saved reports.
 
 ## Maps offline
 
@@ -309,7 +294,7 @@ If you used Spyhop under its earlier name (Whale Survey Recorder), the old `Whal
 
 Both folders are shown in **Survey → Folders**, each with an **Open folder** link.
 
-**Config packs:** a config pack is one file (`<name>.spyhop.zip`) holding the lists, shortcuts, map display, report templates and saved filters. **Settings → Templates** lists the packs in the `config_packs` folder of the survey data folder, with each one's latest change, whether it matches this computer, and which one is in use. **Use this pack…** shows what would change and then overwrites this computer's config files with the pack's, with no merging (a backup is saved first in `config_packs/backups`; **Restore…** undoes it). **Overwrite…** replaces a pack with this computer's config, and **Save this computer's config as a new pack…** makes a new one; both ask for your name and what changed and add it to the pack's record of changes. A team's pack on the web is pulled with **Get a pack from the web** → **Check**, and a copy is kept in the folder for offline use. Using a pack during a survey is allowed after a warning. See [CONFIG_PACKS.md](CONFIG_PACKS.md) for sharing and hosting packs.
+**Config packs:** a config pack is one file (`<name>.spyhop.zip`) holding the lists, shortcuts, map display and saved reports. **Settings → Templates** lists the packs in the `config_packs` folder of the survey data folder, with each one's latest change, whether it matches this computer, and which one is in use. **Use this pack…** shows what would change and then overwrites this computer's config files with the pack's, with no merging (a backup is saved first in `config_packs/backups`; **Restore…** undoes it). **Overwrite…** replaces a pack with this computer's config, and **Save this computer's config as a new pack…** makes a new one; both ask for your name and what changed and add it to the pack's record of changes. A team's pack on the web is pulled with **Get a pack from the web** → **Check**, and a copy is kept in the folder for offline use. Using a pack during a survey is allowed after a warning. See [CONFIG_PACKS.md](CONFIG_PACKS.md) for sharing and hosting packs.
 
 The **survey data folder** holds the survey files, waypoints and exports. It's `data/` inside Spyhop's folder unless you choose another one under **Survey → Folders** (**Choose folder…** opens your computer's folder chooser, or type/paste a path). It's remembered between sessions. If it isn't found at start-up (e.g. an unplugged drive), Spyhop uses the default for that session and tells you. Switching folders closes the open survey first.
 
@@ -319,8 +304,7 @@ Spyhop/                                   (Spyhop's own folder)
   shortcuts.csv  display.csv
   settings/  settings.json  current_survey.txt
   charts/    *.mbtiles      overlays/  imported GeoJSON/GPX/KML
-  reports/   your own report definitions (*.json), with a README and examples/
-  filters/   saved filters (Tools → Filter), one *.json each
+  reports/   saved reports (Tools → Reports), one *.json each
   spyhop-config.csv   the record of changes of the config pack last used or saved
   logs/      diagnostic logs (spyhop.log, crash.log, diagnostics zips)
   data/                                   (default survey data folder — or the one you chose)
@@ -339,8 +323,8 @@ Spyhop/                                   (Spyhop's own folder)
   - **Merged CSV file** (`<survey>_merged.csv`): sightings, effort, events and the track points in one table, in time order, one row per record. `Record` says which it is (Sighting, Effort, Event or Track). Track rows have the position, `SOG` and `COG`, and their Effort label from the track file (Start, ON, OFF, End or ERROR). Every row also has the Spyhop version (SpyhopVersion) and the survey details (Survey, PlatformName, PlatformType, Organization, ChiefScientist, ChiefScientistEmail) and the effort and conditions in force at that time (Effort, Visibility, SeaState, Weather, Glare, Port, Recorder, Starboard, from the latest Effort row at or before it; "no effort row yet" before the first). So each sighting can be analysed with its conditions without a join. `Lat`/`Lon` is the vessel position (the event position for events); sightings keep SigLat/SigLon too, and the event ID is `EventID`.
   - **GPX file:** the track and waypoints, for GPS units and mapping apps.
   - **GeoJSON file:** the track split by effort, and points with all their columns, for QGIS or ArcGIS.
-  - **Summary report** and each **Report:** the same pages as in Summary and Reports, as HTML, PDF or both (*Save the summary and reports as*).
-  - each **Filter:** a saved filter's result, as CSV.
+  - **Summary report:** the same page as Tools → Summary, as HTML, PDF or both (*Save the summary as*).
+  - each saved **Report:** as CSV. (To save reports as HTML or PDF, or somewhere else, use **Run Reports…** in Tools → Reports.)
 
   One format is saved and downloaded as that file. Several (or the separate CSVs) come as **one zip**. Everything is also kept in the data folder's `exports/`.
 - When a new version adds or removes columns, existing survey files are updated automatically: data is carried over by column name and a copy of the original is kept as `*.csv.bak-<time>`. A CSV that isn't one of this app's files is renamed `*.csv.bak-<time>` and the tab starts empty. Nothing is overwritten.
@@ -377,7 +361,7 @@ New or different:
 - The keyboard opens dropdowns on Windows too. This was a known limitation in the plugin.
 - Per-row bearing reference and distance unit.
 - FieldID on Sightings and ID on Events.
-- A clock in local time, UTC, any UTC offset, or the zone at the platform's position; a live Summary with environmental-condition ranges; reports defined in JSON files.
+- A clock in local time, UTC, any UTC offset, or the zone at the platform's position; a live Summary with environmental-condition ranges; reports of any table, saved by name and shared in config packs.
 - The Surfacings tab was dropped.
 - An extra Glare column on Effort.
 - **Check these before relying on old pipelines:**
