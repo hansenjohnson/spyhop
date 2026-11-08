@@ -633,7 +633,7 @@ export class MapView {
 
   // ---------------------------------------------------------------- markers
   rowPos(tab, r) {
-    const pairs = { sightings: [['SigLat', 'SigLon'], ['VesLat', 'VesLon']],
+    const pairs = { sightings: [['SigLat', 'SigLon'], ['Lat', 'Lon']],
       events: [['Lat', 'Lon']], marks: [['Lat', 'Lon']] }[tab] || [];
     for (const [a, b] of pairs) if (r[a] !== '' && r[b] !== '' && !isNaN(+r[a]) && !isNaN(+r[b]) && r[a] !== undefined) return [+r[a], +r[b]];
     return null;
@@ -695,8 +695,8 @@ export class MapView {
       m.on('popupopen', () => { this.openRowPopup = { m, tab, id: r.RowID }; });
       m.on('popupclose', () => { if (this.openRowPopup?.m === m) this.openRowPopup = null; });
       this.markerIndex[`${tab}:${r.RowID}`] = m;
-      if (tab === 'sightings' && disp.sighting_lines !== '0' && r.SigLat && r.VesLat) {
-        L.polyline([[+r.VesLat, +r.VesLon], pos], { color, weight: 1.5, dashArray: '4 4', interactive: false,
+      if (tab === 'sightings' && disp.sighting_lines !== '0' && r.SigLat && r.Lat) {
+        L.polyline([[+r.Lat, +r.Lon], pos], { color, weight: 1.5, dashArray: '4 4', interactive: false,
           opacity: old ? 0.3 : 1 }).addTo(this.layers.lines);
       }
       if (tab === 'sightings' && r.FieldID) (byFid[r.FieldID] = byFid[r.FieldID] || []).push({ r, pos, color });

@@ -579,8 +579,8 @@ export class Planner {
         list.length ? el('button', { onclick: () => { list.forEach((r) => { if (!r.error) this.shown.add(r.file); }); this.saveShown(); this.setShown(list[0].file, true); } }, 'Show all') : null,
         this.shown.size ? el('button', { onclick: () => { this.shown.clear(); this.saveShown(); this.drawSaved(); this.render(); } }, 'Hide all') : null,
         el('button', { onclick: () => this.app.open('routes') }, 'Open the routes folder'),
-        el('button', { onclick: () => this.loadSaved() }, 'Look for new files')),
-      el('p', { class: 'hint' }, 'Each route is a GPX file in the routes folder in Spyhop’s folder, so it can also go straight to a chart plotter or OpenCPN. Show puts a route on the map on every tab (Routes in the layers menu switches all routes on or off). Open loads it below to edit or activate. GPX files copied into the folder are listed after Look for new files.'));
+        el('button', { onclick: () => this.loadSaved() }, 'Refresh')),
+      el('p', { class: 'hint' }, 'Each route is a GPX file in the routes folder in Spyhop’s folder, so it can also go straight to a chart plotter or OpenCPN. Show puts a route on the map on every tab (Routes in the layers menu switches all routes on or off). Open loads it below to edit or activate. GPX files copied into the folder are listed after Refresh.'));
     return sec;
   }
 

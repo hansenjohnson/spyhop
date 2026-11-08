@@ -83,11 +83,13 @@ class Table:
                 if "RowID" in hdr:
                     # one of our own files from an earlier version: carry the data over by
                     # column name, keep a copy of the original
-                    old_rows = [dict(zip(hdr, rec)) for rec in reader if any(rec)]
+                    named = schema.renamed(self.tab, hdr)        # columns renamed since (VesLat → Lat…)
+                    moved = [f"{o} → {n}" for o, n in zip(hdr, named) if o != n]
+                    old_rows = [dict(zip(named, rec)) for rec in reader if any(rec)]
                     fh.close()
                     shutil.copy2(self.path, bak)
-                    added = [h for h in self.header if h not in hdr]
-                    dropped = [h for h in hdr if h not in self.header]
+                    added = [h for h in self.header if h not in named]
+                    dropped = [h for h in named if h not in self.header]
                     lost = [h for h in dropped if any(r.get(h) for r in old_rows)]
                     for r in old_rows:
                         row = {k: r.get(k, "") or "" for k in self.header}
@@ -96,6 +98,7 @@ class Table:
                     atomic_write_csv(self.path, self.header, self.rows)
                     self.notice = (f"{self.path.name} was updated to this version's columns"
                                    + (f" (added {', '.join(added)})" if added else "")
+                                   + (f" (renamed {', '.join(moved)})" if moved else "")
                                    + (f"; the old {', '.join(lost)} column(s) are only in the backup" if lost else "")
                                    + f". A copy of the original is kept as {bak.name}.")
                     return

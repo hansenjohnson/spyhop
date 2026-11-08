@@ -84,6 +84,19 @@ def _more_contour_labels(layer) -> None:
         layer.setdefault("layout", {})["text-padding"] = CONTOUR_LABEL_PADDING
 
 
+def _drop_osm_base(style: dict) -> None:
+    """Take out a style's OpenStreetMap raster background (Seascape draws its depths over one): the user
+    prefers the look without it (0.26), and offline it was never there. Its layers and source go."""
+    srcs = style.get("sources") or {}
+    osm = {k for k, s in srcs.items() if isinstance(s, dict) and s.get("type") == "raster"
+           and any("openstreetmap.org" in str(u) for u in (s.get("tiles") or []) + [s.get("url") or ""])}
+    if not osm:
+        return
+    style["layers"] = [l for l in style.get("layers") or [] if not (isinstance(l, dict) and l.get("source") in osm)]
+    for k in osm:
+        srcs.pop(k, None)
+
+
 def _no_bulk(url: str) -> bool:
     """Servers whose terms don't allow bulk downloading (pre-fetch)."""
     return "openstreetmap.org" in url
@@ -337,6 +350,7 @@ class TileService:
             return None
         style = json.loads(json.dumps(style))
         style["layers"] = [l for l in style.get("layers") or [] if not _is_sounding_layer(l)]
+        _drop_osm_base(style)
         for layer in style["layers"]:
             _more_contour_labels(layer)
         style_url = src["url"]
@@ -772,6 +786,7 @@ class TileService:
             return None
         style_url = m.get("spyhop_url", "")
         style["layers"] = [l for l in style.get("layers") or [] if not _is_sounding_layer(l)]
+        _drop_osm_base(style)
         for layer in style["layers"]:
             _more_contour_labels(layer)
         top = int(float(m.get("maxzoom", 22) or 22))

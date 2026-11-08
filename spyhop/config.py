@@ -404,7 +404,7 @@ class Config:
                 "Offline charts and maps, as .mbtiles files. Areas downloaded in Spyhop (Settings -> Basemap)\n"
                 "are saved here, one file per area; you can also add MBTiles files of\n"
                 "raster PNG/JPEG tiles. Each file appears under Offline map tiles in the map's layers menu (after\n"
-                "\"Look for new files\" in that section, or a restart). Copy a file to another computer's charts\n"
+                "\"Refresh\" in that section, or a restart). Copy a file to another computer's charts\n"
                 "folder to use it there.\n\n"
                 "Free NOAA nautical charts for US waters (updated weekly):\n"
                 "  https://distribution.charts.noaa.gov/ncds/  -> click a region -> download the MBTiles file.\n")

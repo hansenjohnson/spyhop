@@ -123,7 +123,7 @@ def test_add_sighting_computes_position(rec):
     row = res["row"]
     assert row["Species"] == "Humpback whale"
     assert row["SightNo"] == "1"
-    assert row["VesLat"] == "41.900000" and row["VesLon"] == "-70.333333"
+    assert row["Lat"] == "41.900000" and row["Lon"] == "-70.333333"
     # 59.5 M with -14.5 variation = 45 T, 1 nm
     lat, lon = geo.destination(41.9, -70.333333, 45, 1852)
     assert float(row["SigLat"]) == pytest.approx(lat, abs=1e-6)
@@ -386,14 +386,14 @@ def test_old_columns_migrated_with_backup(tmp_path):
 
 def test_siglatlon_follow_vessel_without_bearing(rec):
     row = rec.new_row("sightings", {"Species": "Fin whale"})["row"]
-    assert (row["SigLat"], row["SigLon"]) == (row["VesLat"], row["VesLon"])
+    assert (row["SigLat"], row["SigLon"]) == (row["Lat"], row["Lon"])
     rid = row["RowID"]
-    r = rec.edit("sightings", rid, {"VesLat": "41 55.0"})["row"]           # vessel corrected -> follows
-    assert r["SigLat"] == r["VesLat"] == "41.916667"
+    r = rec.edit("sightings", rid, {"Lat": "41 55.0"})["row"]           # vessel corrected -> follows
+    assert r["SigLat"] == r["Lat"] == "41.916667"
     r = rec.edit("sightings", rid, {"Bearing": "90", "Distance": "1"})["row"]
-    assert r["SigLat"] != r["VesLat"]
+    assert r["SigLat"] != r["Lat"]
     r = rec.edit("sightings", rid, {"Distance": ""})["row"]               # bearing/distance removed -> back to vessel
-    assert (r["SigLat"], r["SigLon"]) == (r["VesLat"], r["VesLon"])
+    assert (r["SigLat"], r["SigLon"]) == (r["Lat"], r["Lon"])
     r = rec.edit("sightings", rid, {"SigLat": "41 56.0"})["row"]           # typed animal position is kept
     assert r["SigLat"] == "41.933333"
     r = rec.edit("sightings", rid, {"Notes": "x"})["row"]
@@ -487,7 +487,7 @@ def test_no_survey_open_blocks_survey_tabs_but_not_marks(tmp_path):
 def test_start_row_rules(rec):
     t = rec.tables["effort"]
     start = t.rows[0]
-    assert start["Effort"] == "Start" and start["VesLat"] and rec.tracking_on()
+    assert start["Effort"] == "Start" and start["Lat"] and rec.tracking_on()
     assert not t.undo_stack                                        # Start can't be undone
     with pytest.raises(ValueErrorMsg):
         rec.edit("effort", start["RowID"], {"Effort": "ON"})       # first row stays Start
@@ -806,7 +806,7 @@ def test_qc_finds_problems(rec):
     s = rec.new_row("sightings", {**GOOD_SIGHTING, "Count": "2", "Calves": "3", "Bearing": "45",
                                   "Distance": "40", "DistUnit": "nm", "Observer": "OBS4"})["row"]
     rec.new_row("sightings", {"Species": "Fin whale"})                                  # most fields blank
-    rec.edit("sightings", s["RowID"], {"VesLat": "42.5"})                               # typo, far from the track
+    rec.edit("sightings", s["RowID"], {"Lat": "42.5"})                               # typo, far from the track
     rec.new_row("events", {"EventType": "Gear Reported"})
     r = _qc(rec)
     got = {(x["check"], x["column"]) for x in r["issues"]}
@@ -818,7 +818,7 @@ def test_qc_finds_problems(rec):
     assert ("Observers in one position at a time", "Port") in got
     assert ("Plausible numbers", "Calves") in got
     assert ("Plausible bearings and distances", "Distance") in got and "40.0 nm" in msgs
-    assert ("Positions match the trackline", "VesLat") in got
+    assert ("Positions match the trackline", "Lat") in got
     assert ("Sighting observer on watch", "Observer") in got
     assert not any(x["column"] in ("Behaviors", "FieldID", "Notes", "ID") for x in r["issues"] if x["check"] == "Required fields filled")
     assert r["counts"]["error"] >= 5 and r["issues"][0]["level"] == "error"
@@ -996,7 +996,7 @@ def test_track_break_fix(rec):
     effs = [r_["Effort"] for r_ in rec.tables["effort"].rows]
     assert effs == ["Start", "ON", "ERROR", "ON"]
     err = rec.tables["effort"].rows[2]
-    assert err["VesLat"] == "41.900500" and err["Visibility"] == ">10 nm"
+    assert err["Lat"] == "41.900500" and err["Visibility"] == ">10 nm"
     # one second after the last good track point (t0 + 20 s), so it sorts after it in the merged export
     assert datetime.fromisoformat(err["DateTime"]) == t0 + timedelta(seconds=21)
     merged = [m for m in rec.merged_rows()[1] if m.get("Record") in ("Effort", "Track")]
@@ -1360,7 +1360,7 @@ def test_style_layer_proxy_cache_and_download(tmp_path):
                  "sources": {"bathy": {"type": "vector", "url": b + "/vector.json"},
                              "dem": {"type": "raster-dem", "url": b + "/raster.json"},
                              "osm": {"type": "raster", "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"]}},
-                 "layers": [{"id": "bg", "type": "background"},
+                 "layers": [{"id": "bg", "type": "background"}, {"id": "osm-base", "type": "raster", "source": "osm"},
                             {"id": "lbl", "type": "symbol", "source": "bathy", "layout": {"text-font": ["Noto Sans Regular"]}},
                             {"id": "depth-points", "type": "symbol", "source": "bathy", "source-layer": "soundings"},
                             {"id": "contour-labels", "type": "symbol", "source": "bathy", "source-layer": "contours",
@@ -1391,7 +1391,7 @@ def test_style_layer_proxy_cache_and_download(tmp_path):
         assert [l["id"] for l in st["layers"]] == ["bg", "lbl", "contour-labels"]   # depth soundings dropped
         assert st["layers"][2]["layout"]["text-padding"] == 2                     # more contour labels
         assert st["sources"]["bathy"]["url"].startswith(local + "/tiles/gl/0/tilejson?u=")
-        assert st["sources"]["osm"]["tiles"][0].startswith(local + "/tiles/gl/0/t/{z}/{x}/{y}?u=")
+        assert "osm" not in st["sources"]                                          # no OpenStreetMap background (0.26)
         assert st["glyphs"].startswith(local + "/tiles/gl/0/glyphs/{fontstack}/{range}?u=")
         from urllib.parse import parse_qs, urlsplit
         up = lambda u: parse_qs(urlsplit(u).query)["u"][0]        # noqa: E731
@@ -1405,8 +1405,8 @@ def test_style_layer_proxy_cache_and_download(tmp_path):
 
         world = [-85, -180, 85, 180]
         plan = await ts.plan_prefetch(0, world, 0, 5)
-        # vector z0–3 (85 tiles) + DEM z0–2 (21) + 3 font ranges; OpenStreetMap left out
-        assert plan["total"] == 85 + 21 + 3 and plan["skipped"] and "tile.openstreetmap.org" in plan["skipped"][0]
+        # vector z0–3 (85 tiles) + DEM z0–2 (21) + 3 font ranges; the OpenStreetMap background isn't in the style any more
+        assert plan["total"] == 85 + 21 + 3 and not any("openstreetmap" in x for x in plan["skipped"])
         r = await ts.start_prefetch(0, world, 0, 5, name="Cape Cod Bay")
         assert r["total"] == 109 and r["file"] == "Cape Cod Bay.mbtiles"
         await ts._prefetch_task
@@ -1479,7 +1479,7 @@ def test_style_layer_proxy_cache_and_download(tmp_path):
         assert [l["id"] for l in off["layers"]] == ["bg", "lbl", "contour-labels"]
         assert off["sources"]["dem"]["tiles"][0].startswith(here + "/t/") and off["sources"]["dem"]["maxzoom"] == 2
         assert "url" not in off["sources"]["bathy"] and off["glyphs"] == here + "/glyphs/{fontstack}/{range}"
-        assert off["sources"]["osm"]["tiles"][0].startswith(here + "/t/")          # not downloaded: blank, not online
+        assert "osm" not in off["sources"]                                         # no OpenStreetMap background (0.26)
         dem_set = off["sources"]["dem"]["tiles"][0].split("/t/")[1].split("/")[0]
         assert ts.offline_style_tile("Cape Cod Bay.mbtiles", dem_set, 2, 3, 1) == png
         assert ts.offline_style_tile("Cape Cod Bay.mbtiles", dem_set, 5, 0, 0) is None
@@ -2103,3 +2103,27 @@ def test_templates_renamed_from_config_packs(tmp_path):
     assert not old.exists()
     assert templates.local_history(cfg) == [{"date": "2026-11-01", "by": "HJ", "changed": "species.csv", "notes": "Old record"}]
     assert not (root / "spyhop-config.csv").exists()
+
+
+def test_veslat_veslon_become_lat_lon(tmp_path):
+    """0.26: the Sightings and Effort columns VesLat/VesLon are now Lat/Lon. Older survey files are
+    carried over (with a backup), past surveys drawn as overlays read them, and saved reports using
+    the old names still work."""
+    from spyhop import schema, store, reports
+    hdr_old = ["VesLat" if h == "Lat" else "VesLon" if h == "Lon" else h for h in schema.headers("sightings")]
+    assert "VesLat" in hdr_old and "Lat" in schema.headers("sightings")
+    p = tmp_path / "Old_sightings.csv"
+    row = {h: "" for h in hdr_old}
+    row.update(RowID="abc", DateTime="2026-11-01T10:00:00-05:00", VesLat="41.900000", VesLon="-70.300000",
+               SigLat="41.910000", SigLon="-70.310000", Species="Humpback whale", Num="1")
+    with open(p, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(hdr_old)
+        w.writerow([row[h] for h in hdr_old])
+    t = store.Table("sightings", p)
+    assert t.rows[0]["Lat"] == "41.900000" and t.rows[0]["Lon"] == "-70.300000" and "VesLat" not in t.rows[0]
+    assert "renamed VesLat → Lat, VesLon → Lon" in t.notice and "only in the backup" not in t.notice
+    assert list(csv.reader(open(p, encoding="utf-8-sig")))[0] == schema.headers("sightings")
+    spec = reports.clean({"name": "Old", "table": "effort", "columns": ["time", "VesLat", "VesLon"],
+                          "rules": [{"column": "VesLat", "op": "not_blank"}]})
+    assert spec["columns"] == ["time", "Lat", "Lon"] and spec["rules"][0]["column"] == "Lat"

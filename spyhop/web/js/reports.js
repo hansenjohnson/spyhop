@@ -222,7 +222,8 @@ export class ReportsTool {
     this.$result.replaceChildren(head, body, saveRow,
       el('p', { class: 'hint' }, survey && r?.rows?.length ? 'Click a row to show it in its table. Number columns get a total. Exports are saved in the exports folder. ' : '',
         'Saved reports are files in the reports folder in Spyhop’s folder, and travel in templates (Settings → Templates). ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.app.open('reports'); } }, 'Open the reports folder')));
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.app.open('reports'); } }, 'Open the reports folder'), ' · ',
+        el('a', { href: '#', id: 'reports-refresh', onclick: async (e) => { e.preventDefault(); await this.loadDefs(true); this.render(); } }, 'Refresh')));
   }
 
   // ---------------------------------------------------------------- server

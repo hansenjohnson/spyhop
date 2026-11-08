@@ -359,8 +359,8 @@ class Recorder:
         pt = self.track.points[0] if self.track.points else {}
         row = {k: "" for k in t.header}
         row.update(RowID=uuid.uuid4().hex[:12], DateTime=when, Effort="Start",
-                   VesLat=first.get("VesLat") or pt.get("Lat", ""),
-                   VesLon=first.get("VesLon") or pt.get("Lon", ""),
+                   Lat=first.get("Lat") or pt.get("Lat", ""),
+                   Lon=first.get("Lon") or pt.get("Lon", ""),
                    Notes="Start row added automatically (survey made before Start/End existed)")
         t.rows.insert(0, row)
         try:
@@ -692,7 +692,7 @@ class Recorder:
     def _reference_coord(self, tab: str, row: dict, is_lat: bool):
         """A nearby coordinate (row's vessel position, else live GPS) used to pick
         the hemisphere when someone types a position without N/S/E/W."""
-        keys = ("VesLat", "Lat", "SigLat") if is_lat else ("VesLon", "Lon", "SigLon")
+        keys = ("Lat", "SigLat") if is_lat else ("Lon", "SigLon")
         for k in keys:
             try:
                 return float(row.get(k) or "x")
@@ -730,7 +730,7 @@ class Recorder:
     def compute(self, tab: str, row: dict, changed: set[str], old: dict | None = None) -> list[str]:
         warnings = []
         if tab == "sightings":
-            keys = {"Bearing", "BrgRef", "Distance", "DistUnit", "VesLat", "VesLon", "VesHdg"}
+            keys = {"Bearing", "BrgRef", "Distance", "DistUnit", "Lat", "Lon", "VesHdg"}
             b, d = row.get("Bearing", ""), row.get("Distance", "")
             if b == "" or d == "":
                 # No bearing/distance: the animal is taken to be at the vessel, unless
@@ -738,14 +738,14 @@ class Recorder:
                 if changed & {"SigLat", "SigLon"}:
                     return warnings
                 follows = (old is None or not old.get("SigLat")
-                           or (old.get("SigLat") == old.get("VesLat") and old.get("SigLon") == old.get("VesLon"))
+                           or (old.get("SigLat") == old.get("Lat") and old.get("SigLon") == old.get("Lon"))
                            or bool(changed & {"Bearing", "Distance"}))
                 if follows:
-                    row["SigLat"], row["SigLon"] = row.get("VesLat", ""), row.get("VesLon", "")
+                    row["SigLat"], row["SigLon"] = row.get("Lat", ""), row.get("Lon", "")
                 return warnings
             if changed & keys:
                 try:
-                    lat, lon = float(row["VesLat"]), float(row["VesLon"])
+                    lat, lon = float(row["Lat"]), float(row["Lon"])
                 except (TypeError, ValueError):
                     warnings.append("No vessel position on this row, so the animal's position "
                                     "can't be calculated.")
@@ -773,7 +773,7 @@ class Recorder:
         """Animal position given directly (e.g. picked on the map): fill in the
         bearing (in the row's reference) and distance from the vessel to it."""
         try:
-            vlat, vlon = float(row["VesLat"]), float(row["VesLon"])
+            vlat, vlon = float(row["Lat"]), float(row["Lon"])
             slat, slon = float(row["SigLat"]), float(row["SigLon"])
         except (KeyError, TypeError, ValueError):
             return
@@ -846,8 +846,8 @@ class Recorder:
         if tab == "effort" and not t.rows:
             row["Effort"] = "Start"
         row["DateTime"] = self.now().isoformat(timespec="seconds")
-        pos_keys = {"sightings": ("VesLat", "VesLon"),
-                    "effort": ("VesLat", "VesLon"), "events": ("Lat", "Lon"),
+        pos_keys = {"sightings": ("Lat", "Lon"),
+                    "effort": ("Lat", "Lon"), "events": ("Lat", "Lon"),
                     "marks": ("Lat", "Lon")}[tab]
         if lat is not None and lon is not None:
             row[pos_keys[0]], row[pos_keys[1]] = f"{float(lat):.6f}", f"{float(lon):.6f}"
@@ -1057,7 +1057,7 @@ class Recorder:
             row["DateTime"] = when.astimezone(tz).isoformat(timespec="seconds")
             p = nearest_point(when)
             if p:
-                row["VesLat"], row["VesLon"] = p.get("Lat", ""), p.get("Lon", "")
+                row["Lat"], row["Lon"] = p.get("Lat", ""), p.get("Lon", "")
             row["Notes"] = note
             return row
 
@@ -1282,11 +1282,11 @@ class Recorder:
             elif kind == "Effort":
                 if t is not None:
                     state = {k: r.get(k, "") for k in self.MERGED_EFFORT}
-                row.update(Lat=r.get("VesLat", ""), Lon=r.get("VesLon", ""), **{k: r.get(k, "") for k in self.MERGED_EFFORT})
+                row.update(Lat=r.get("Lat", ""), Lon=r.get("Lon", ""), **{k: r.get(k, "") for k in self.MERGED_EFFORT})
             else:
                 row.update(state)
                 if kind == "Sighting":
-                    row.update(Lat=r.get("VesLat", ""), Lon=r.get("VesLon", ""),
+                    row.update(Lat=r.get("Lat", ""), Lon=r.get("Lon", ""),
                                **{k: r.get(k, "") for k in self.MERGED_SIGHTING})
                 else:
                     row.update(Lat=r.get("Lat", ""), Lon=r.get("Lon", ""), EventNo=r.get("EventNo", ""),
@@ -1344,7 +1344,9 @@ class Recorder:
                 return []
             try:
                 with open(p, newline="", encoding="utf-8-sig") as fh:
-                    return list(csv.DictReader(fh))
+                    rd = csv.DictReader(fh)
+                    names = schema.renamed(kind, rd.fieldnames or [])     # an older survey's VesLat/VesLon
+                    return [dict(zip(names, r.values())) for r in rd]
             except (OSError, csv.Error) as e:
                 log.warning("couldn't read %s: %s", p, e)
                 return []

@@ -89,6 +89,10 @@ def clean(d) -> dict:
     cols = d.get("columns") or []
     if not isinstance(cols, list) or not all(isinstance(c, str) for c in cols):
         raise ReportError('"columns" must be a list of column names.')
+    ren = schema.RENAMED_COLUMNS.get(table, {})          # e.g. a report saved before VesLat became Lat
+    cols = list(dict.fromkeys(ren.get(c, c) for c in cols))
+    d = {**d, "rules": [{**r, "column": ren.get(r.get("column"), r.get("column"))} if isinstance(r, dict) else r
+                        for r in d.get("rules") or []]}
     bad = [c for c in cols if c not in offered]
     if bad:
         raise ReportError(f"The {table} table has no column {', '.join(map(repr, bad))}.")
@@ -183,8 +187,8 @@ def counts(rec, table: str) -> list[dict]:
 
 
 def _position(table: str, r: dict):
-    keys = {"sightings": [("SigLat", "SigLon"), ("VesLat", "VesLon")], "events": [("Lat", "Lon")],
-            "effort": [("VesLat", "VesLon")]}[table]
+    keys = {"sightings": [("SigLat", "SigLon"), ("Lat", "Lon")], "events": [("Lat", "Lon")],
+            "effort": [("Lat", "Lon")]}[table]
     for la, lo in keys:
         try:
             return float(r[la]), float(r[lo])

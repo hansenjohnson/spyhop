@@ -103,6 +103,17 @@ class App {
     this.S = await api('/api/bootstrap');
   }
 
+  // the Refresh buttons of the survey list and the overlays: read those folders again
+  async refreshFolders() {
+    try {
+      const d = await api('/api/bootstrap');
+      this.S.overlays = d.overlays; this.S.surveys = d.surveys;
+      this.map.loadOverlays(d.overlays);
+      this.renderOverlays();
+      if (this.tab === 'survey') this.renderSurvey();
+    } catch { /* toast shown */ }
+  }
+
   async reload() {
     const before = this.S?.about?.spyhop;
     await this.load();
@@ -826,13 +837,15 @@ class App {
           el('td', {}, el('span', { class: `pill ${r.active ? 'on' : 'off'}` }, r.active ? 'Active' : 'Ended')),
           el('td', {}, when(r.start_time)), el('td', {}, when(r.end_time)), el('td', {}, String(r.sightings)),
           el('td', {}, r.current ? el('b', {}, 'open now') : el('button', { onclick: () => this.openSurvey(r) }, 'Open'))))))
-        : el('p', { class: 'hint' }, 'No surveys in this folder yet.'));
+        : el('p', { class: 'hint' }, 'No surveys in this folder yet.'),
+      el('div', { class: 'btnrow' }, el('button', { id: 'btn-surveys-refresh', title: 'Read the survey data folder again (e.g. after copying surveys into it)',
+        onclick: () => this.refreshFolders() }, 'Refresh')));
     const folder = sec('Folders',
       el('p', { id: 'survey-folder-link' }, 'Surveys are saved in ', el('span', { class: 'mono' }, S.config.data_dir), '. ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('datafolder'); } }, 'Open folder'), ' · ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('settings'); setTimeout(() => $('#settings-folders')?.scrollIntoView({ block: 'start' }), 50); } },
           'Change it in Settings → General → Folders')));
-    pane.replaceChildren(...[current, list, folder].filter(Boolean));
+    pane.replaceChildren(...[current, folder, list].filter(Boolean));
   }
 
   // Settings → General → Folders: the survey data folder (can be changed) and Spyhop's own folder
@@ -1303,7 +1316,7 @@ class App {
     const isRiwh = (sp) => riwhNames.has(sp) || /north atlantic right whale|eubalaena glacialis/i.test(sp || '');
     const fmt = st.latlon_format;
     const pos = (r) => {
-      const la = r.SigLat !== '' && r.SigLat != null ? r.SigLat : r.VesLat, lo = r.SigLon !== '' && r.SigLon != null ? r.SigLon : r.VesLon;
+      const la = r.SigLat !== '' && r.SigLat != null ? r.SigLat : r.Lat, lo = r.SigLon !== '' && r.SigLon != null ? r.SigLon : r.Lon;
       return la !== '' && la != null && lo !== '' && lo != null ? fmtPos(+la, +lo, fmt) : '—';
     };
     const riwh = sight.filter((r) => isRiwh(r.Species))
@@ -2104,6 +2117,8 @@ class App {
     const sec = (title, ...kids) => el('section', { class: 'settings-sec' }, el('h3', {}, title), ...kids);
     const inst = sec('Instruments',
       el('p', { class: 'hint' }, 'Latest readings from every NMEA input: speed, depth, wind, weather, engines and other transducers. A reading turns grey when it hasn’t been updated for 15 seconds. Click a reading to plot it since the start of the survey (readings are saved every 5 seconds while a survey is active).'),
+      el('p', { id: 'inst-inputs-link' }, 'The GPS / NMEA inputs (serial, UDP, TCP, gpsd, file replay, simulator) are set up in ',
+        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('inputs'); } }, 'Settings → Inputs'), '.'),
       el('div', { id: 'inst-grid' }));
     const logChk = el('input', { type: 'checkbox', checked: !!st.nmea_log_enabled,
       onchange: (e) => api('/api/nmea/log', { enabled: e.target.checked }).then((r) => { this.S.nmea = { ...this.S.nmea, log: r.log }; this.updateRawLog();
@@ -2196,7 +2211,8 @@ class App {
       el('p', { class: 'hint' }, 'GeoJSON, GPX or KML files: planned transects, management areas, other surveys. They are kept in Spyhop’s overlays folder. Click an overlay’s colour to change it (↺ goes back to its own colours); the colours are kept with the map display, so they travel in templates too.'),
       el('div', { class: 'btnrow' }, el('button', { class: 'primary', onclick: () => this.importOverlay() }, 'Import…'),
         list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, true)); this.renderOverlays(); } }, 'Show all') : null,
-        list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, false)); this.renderOverlays(); } }, 'Hide all') : null),
+        list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, false)); this.renderOverlays(); } }, 'Hide all') : null,
+        el('button', { id: 'btn-overlays-refresh', title: 'Read the overlays folder again (e.g. after copying files into it)', onclick: () => this.refreshFolders() }, 'Refresh')),
       !allOn && list.length ? el('p', { class: 'warnbox' }, 'Overlays are switched off in the map’s layers menu (“Imported overlays”), so none are drawn. ',
         el('button', { onclick: () => { m.layers.imported.addTo(m.map); m.saveOverlayState(); this.renderOverlays(); } }, 'Switch them on')) : null,
       list.length ? el('table', { class: 'summary overlay-table', id: 'overlay-table' },
@@ -2315,7 +2331,7 @@ class App {
         el('button', { onclick: () => this.open('charts') }, 'Open the charts folder'),
         el('button', { title: 'Look again for .mbtiles files copied into the charts folder', onclick: () => api('/api/tiles/rescan', {}).then((r) => {
           this.S.mbtiles = r.mbtiles; this.map.syncCharts(r.mbtiles); this.renderChartList(); toast('Charts folder checked');
-        }).catch(() => {}) }, 'Look for new files')),
+        }).catch(() => {}) }, 'Refresh')),
       el('p', { class: 'hint' }, 'Spyhop uses a downloaded area automatically when the map layer it came from is chosen, before going online. Each file is also listed under “Offline map tiles” in the map’s layers menu; Select puts it on the map on its own, so you can see what you’ll have at sea. NOAA ENC charts (.mbtiles from charts.noaa.gov) can be put in the folder too.'),
       el('p', {}, cacheInfo),
       el('p', { class: 'hint' }, 'Map overlays (transects, management areas…) are in Tools → ',

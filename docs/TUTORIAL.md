@@ -19,14 +19,35 @@ Spyhop records a vessel-based whale survey: sightings, effort and conditions, ev
 
 ## Try it with the simulator
 
-You don't need a GPS to try Spyhop.
+You don't need a GPS to try Spyhop. The simulator is a pretend vessel that steams on a fixed heading and speed, sending positions just as a real GPS would, plus made-up depth, wind, weather and engine readings. Use it to learn Spyhop, to train observers, or to test a setup before a survey.
 
-1. Open **Tools → Instruments** and press **+ Add input**.
-2. Change the new input's type to **SIMULATOR**, and set a heading, speed and start position.
-3. Press **Apply**. A simulated vessel appears on the map and moves at that speed.
-4. Untick or delete the simulator input when you connect a real GPS. While one is ticked, its fake positions go into the data like real ones.
+**Switch it on**
 
-From a terminal you can also run `python -m spyhop --sim`, which adds the simulator for that session only.
+1. Open **Settings → Inputs** and press **+ Add input**.
+2. Change the new input's type to **SIMULATOR**. Four boxes appear:
+   - **Heading °T** and **Speed kn**: the course and speed it steams (for example 090 and 10).
+   - **Start lat** and **Start lon**: where it starts, in decimal degrees (for example 41.9 and −70.33, in Cape Cod Bay; west and south are negative).
+3. Press **Apply** (it reads **Apply — unsaved changes** until you do). The vessel appears on the map and starts moving. The map follows it while the **⌖** button on the map is on (Mod+Shift+C centres on it once).
+4. Open **Tools → Instruments** to see the readings it sends; the status bar at the top shows its position, course and speed.
+
+**Steer it**
+
+- To turn, change **Heading °T** (or **Speed kn**) in Settings → Inputs and press **Apply**. The vessel turns at once, from where it is: it doesn't jump back to the start.
+- To follow a planned route, turn at each waypoint as you would at sea (Tools → Routes shows the course of each leg).
+- To move it somewhere else, change **Start lat** / **Start lon** and press **Apply**; it starts again from there.
+
+**Practise a survey**
+
+1. In the Survey tab, press **Start New Survey…** and call it something like *Practice*.
+2. Record effort, sightings and events as described in *Record data* below: the simulator's positions, times and readings fill in the rows like a real GPS.
+3. When you're done, **End Survey**, then try **Quality Control**, the **Summary** and **Export Data…** on it.
+4. To get rid of it, open it and press **Clear Survey Data…**.
+
+**Switch it off**
+
+Untick or delete the simulator input in Settings → Inputs and press **Apply** before a real survey. While it's ticked, its pretend positions go into the data like real ones. If a real GPS is also listed, the input higher in the list wins, so put a real GPS above the simulator (or remove the simulator).
+
+From a terminal you can also run `python -m spyhop --sim` (add `--sim-heading 270` for another heading), which adds a simulator for that session only. It's listed in Settings → Inputs marked *this session only*, and it isn't saved.
 
 ## Set up your lists (config files)
 

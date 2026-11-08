@@ -81,7 +81,7 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
     return { lat: pos[0], lon: pos[1], svg: shapeSvg(shape, color, rad), size: rad * 2 + 4, color,
       kind: tab === 'sightings' ? (r.Species || '') : (r.EventType || ''),
       label: app.map.label(tab, r), popup: popup(tab, r), old: false,
-      ves: tab === 'sightings' && r.VesLat && r.SigLat && (r.VesLat !== r.SigLat || r.VesLon !== r.SigLon) ? [+r.VesLat, +r.VesLon] : null };
+      ves: tab === 'sightings' && r.Lat && r.SigLat && (r.Lat !== r.SigLat || r.Lon !== r.SigLon) ? [+r.Lat, +r.Lon] : null };
   }).filter(Boolean);
   const data = {
     // [lat, lon, on effort?, break before this point?]; ERROR stretches are left out

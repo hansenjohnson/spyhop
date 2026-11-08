@@ -41,7 +41,7 @@ OPTIONAL = {
     "events": {"ID", "Notes"},
 }
 # Start and End rows need only their time and position
-EFFORT_START_END_REQUIRED = {"DateTime", "VesLat", "VesLon", "Effort"}
+EFFORT_START_END_REQUIRED = {"DateTime", "Lat", "Lon", "Effort"}
 NOT_DATA = {"RowID", "Map", "VesHdg"}          # internal / display columns
 
 M_PER_NM = 1852.0
@@ -479,13 +479,13 @@ def run_qc(rec) -> dict:
     land_points = []                             # (tab, row, name, lat col, lon col)
     for i, r in enumerate(S):
         name = lab("sightings", r, i)
-        check_vessel_pos("sightings", r, name, "VesLat", "VesLon")
+        check_vessel_pos("sightings", r, name, "Lat", "Lon")
         land_points.append(("sightings", r, name, "SigLat", "SigLon"))
     for i, r in enumerate(E):
         if r.get("Effort") not in ("Start", "End", "ERROR"):   # the boat may be at the dock; ERROR marks bad GPS
             name = lab("effort", r, i)
-            check_vessel_pos("effort", r, name, "VesLat", "VesLon")
-            land_points.append(("effort", r, name, "VesLat", "VesLon"))
+            check_vessel_pos("effort", r, name, "Lat", "Lon")
+            land_points.append(("effort", r, name, "Lat", "Lon"))
     for i, r in enumerate(V):
         name = lab("events", r, i)
         land_points.append(("events", r, name, "Lat", "Lon"))
@@ -529,7 +529,7 @@ def run_qc(rec) -> dict:
             add("error", "Plausible bearings and distances",
                 "A relative (R) bearing needs the vessel heading, which wasn't recorded, so the position can't be worked out.",
                 "sightings", r, "BrgRef", name)
-        vp, sp = _pos(r, "VesLat", "VesLon"), _pos(r, "SigLat", "SigLon")
+        vp, sp = _pos(r, "Lat", "Lon"), _pos(r, "SigLat", "SigLon")
         if vp and sp:
             dist_nm = geo.haversine_m(vp[0], vp[1], sp[0], sp[1]) / M_PER_NM
             if dist_nm > L["max_sighting_nm"]:

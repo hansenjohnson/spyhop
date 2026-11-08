@@ -200,7 +200,9 @@ export class OnlineOverlays {
       return;
     }
     this.drawAis(r.features || []);
-    const sources = [...new Set((r.features || []).map((f) => f.properties?.source).filter(Boolean))];
+    // credit each AIS network once, without station IDs (which can be very long): "aishub:2732 station" → "aishub"
+    const network = (src) => String(src).split(/[:/#|]/)[0].split(/\s+/).filter((w) => !/\d/.test(w)).join(' ').trim();
+    const sources = [...new Set((r.features || []).map((f) => f.properties?.source).filter(Boolean).map(network).filter(Boolean))].slice(0, 6);
     this.state.ais = ''; this.state.aisAt = new Date();
     this.setAttr('ais', `AIS: ${credit}${sources.length ? ` (${esc(sources.join(', '))})` : ''} · ${this.state.aisCount} shown`);
     this.app.onlineChanged?.();

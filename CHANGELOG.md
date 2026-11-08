@@ -6,6 +6,16 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.26.0 — 2026-11-08
+
+- **Lat and Lon:** the Sightings and Effort columns VesLat and VesLon are now **Lat** and **Lon**, so they suit any platform (vessel, plane, land station). Survey files from earlier versions are converted when they're opened (a backup of each original is kept), past surveys shown as overlays are read either way, and saved reports that use the old names keep working. The merged export already used Lat and Lon.
+- **Seascape depths** no longer draws its OpenStreetMap background, so it looks the same online as offline.
+- **Survey tab:** Folders now comes between the current survey and **Surveys in this folder**.
+- **Refresh** is the name of every button that reads a folder again: Settings → Basemap and Tools → Routes (were *Look for new files*), and new Refresh buttons for the survey list, Tools → Overlays and Tools → Reports.
+- **Tools → Instruments** links to the GPS / NMEA inputs in Settings → Inputs.
+- **AIS:** the map's credits line names each AIS network once, without station IDs (the full source is still in each vessel's popup).
+- **Tutorial:** a fuller *Try it with the simulator* section (it pointed to the wrong tab): switching it on, steering it, practising a survey, and switching it off.
+
 ## 0.25.0 — 2026-11-07
 
 - **Overlay colours:** in Tools → Overlays, click an overlay's colour to draw it in another colour on the map (↺ goes back to its own colours). The colours are kept with the map display, so they are remembered and travel in templates.

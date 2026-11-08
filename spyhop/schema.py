@@ -66,8 +66,8 @@ TABS = {
             col("SightNo", "seq", "SightNo", width=60,
                 help="Sighting number, assigned automatically. Photos and other records refer to it, so change it with care."),
             col("DateTime", "datetime", "Time", auto=True, help=T_HELP),
-            col("VesLat", "lat", "VesLat", auto=True, help="Vessel latitude from GPS when the row was added."),
-            col("VesLon", "lon", "VesLon", auto=True, help="Vessel longitude from GPS when the row was added."),
+            col("Lat", "lat", "Lat", auto=True, help="Platform latitude from GPS when the row was added."),
+            col("Lon", "lon", "Lon", auto=True, help="Platform longitude from GPS when the row was added."),
             # kept in the CSV (needed for bearings relative to the bow) but not shown in the table
             col("VesHdg", "float", "VesHdg", auto=True, hidden=True),
             col("Species", "choice", "Species", list="species", width=170,
@@ -103,8 +103,8 @@ TABS = {
         "seq": None,
         "columns": COMMON_HEAD + [
             col("DateTime", "datetime", "Time", auto=True, copy=False, help=T_HELP),
-            col("VesLat", "lat", "VesLat", auto=True, copy=False, help="Vessel latitude from GPS when the row was added."),
-            col("VesLon", "lon", "VesLon", auto=True, copy=False, help="Vessel longitude from GPS when the row was added."),
+            col("Lat", "lat", "Lat", auto=True, copy=False, help="Platform latitude from GPS when the row was added."),
+            col("Lon", "lon", "Lon", auto=True, copy=False, help="Platform longitude from GPS when the row was added."),
             col("Effort", "choice", "Effort", list="effort", width=60,
                 help="Start = survey began (first row only) · ON = actively searching · OFF = not searching · End = survey ended (last row only; use End survey in the Survey tab)."),
             col("Visibility", "choice", "Vis", list="visibility", help="Estimated visibility."),
@@ -155,10 +155,25 @@ TABS = {
 
 # Columns used to place each tab's marker on the map (lat, lon), first non-empty wins.
 MARKER_POS = {
-    "sightings": [("SigLat", "SigLon"), ("VesLat", "VesLon")],
+    "sightings": [("SigLat", "SigLon"), ("Lat", "Lon")],
     "events": [("Lat", "Lon")],
     "marks": [("Lat", "Lon")],
 }
+
+# columns renamed in later versions, by table: old name -> new name (files and saved reports are
+# read with the new names; 0.26: VesLat/VesLon became Lat/Lon, so they suit any platform)
+RENAMED_COLUMNS = {
+    "sightings": {"VesLat": "Lat", "VesLon": "Lon"},
+    "effort": {"VesLat": "Lat", "VesLon": "Lon"},
+}
+
+
+def renamed(tab: str, names):
+    """Column names with old ones replaced by their new names (an old name is kept if the new one is already there)."""
+    ren = RENAMED_COLUMNS.get(tab, {})
+    names = list(names)
+    return [ren[n] if n in ren and ren[n] not in names else n for n in names]
+
 
 TRACK_COLUMNS = ["DateTime", "Lat", "Lon", "SOG", "COG", "Effort"]
 

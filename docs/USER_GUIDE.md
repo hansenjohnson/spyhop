@@ -35,7 +35,7 @@ Other options: `--install-shortcut` (make the Spyhop icon again), `--nmea serial
 - **Show** puts a route on the map on every tab, in its own colour (remembered; **Routes** in the map's layers menu switches all routes, saved and current, on or off). Click a waypoint for its position and distance from the vessel, and **Open to edit**. **Show all** / **Hide all**.
 - **Open** loads a route into the editor below (*Current route*), to change it or activate it. If the route you're editing has unsaved changes, Spyhop asks first. The route being edited is marked *editing* (*editing · changed* once you change it; **Revert** goes back to the saved copy). **Close** puts it away: the editor is emptied and the route is no longer drawn (it stays in the folder, and on the map if its **Show** box is ticked).
 - **Zoom to** and **Delete** (after asking).
-- **New route** starts an empty one; **Import GPX…** loads a GPX file into the editor; **Open the routes folder**; **Look for new files** picks up GPX files copied into the folder (from a plotter, another computer or a colleague). A GPX file that wasn't made by Spyhop opens as a manual route.
+- **New route** starts an empty one; **Import GPX…** loads a GPX file into the editor; **Open the routes folder**; **Refresh** picks up GPX files copied into the folder (from a plotter, another computer or a colleague). A GPX file that wasn't made by Spyhop opens as a manual route.
 
 The **current route** is drawn on the map with numbered waypoints and kept between sessions. While it's a **draft** it shows only while the Routes tab is open; once **activated** it stays on the map from every tab.
 
@@ -82,16 +82,15 @@ The **current route** is drawn on the map with numbered waypoints and kept betwe
 - **Export GPX…** downloads the waypoints and a route for a chart plotter or OpenCPN, and keeps a copy in `exports/`.
 - A GPX saved or exported by Spyhop holds the whole design (mode, legs, speed, appearance), so it opens again exactly; from any other GPX, the route (or else the waypoints, or a track) becomes a manual route.
 
-## Connecting GPS / instruments (Tools → Instruments)
+## Connecting GPS / instruments (Settings → Inputs, Tools → Instruments)
 
-The **NMEA** tab (inside Survey) has three parts:
+**Tools → Instruments** shows what comes in, and links to **Settings → Inputs**, where the inputs are set up. It has:
 
 - **Instruments:** the latest reading of everything coming in, grouped as Navigation (SOG, speed through water, COG, heading, rate of turn, rudder, GPS fix, satellites, HDOP), Depth, Wind (apparent and true), Weather (air and water temperature, humidity, dew point, pressure), Engine (RPM per engine or shaft) and Other transducers. Each tile shows the sentence it came from and how old it is, and turns grey after 15 seconds without an update.
 - **Plots:** click any numeric reading to plot it since the start of the survey, with now/min/max/mean and a hover readout. Angles are plotted as dots, because they wrap at 360. While a survey is active, Spyhop saves every reading every 5 seconds in `<survey>_instruments.csv` (DateTime, Key, Label, Unit, Value). That file is part of the separate-CSV export, so the history survives a restart.
 - **Raw NMEA log:** tick **Record raw NMEA to a file** to save every sentence from every input as it arrives. Each line starts with the UTC time and the input name (untick that option for plain NMEA that any NMEA tool reads). Logs go in `nmea_logs/` in the survey data folder, one file per survey (`<survey>_nmea_<time>.nmea`; a new file starts when you start, open or close a survey). Recording carries on after a restart until you switch it off. A log can be played back as a **File** input.
-- **GPS / NMEA inputs** (moved here from Settings).
 
-Set up inputs in **NMEA → GPS / NMEA inputs**. You can run several inputs at once. The first one in the list is preferred, and the next one takes over if it goes quiet for 5 seconds.
+Set up inputs in **Settings → Inputs** (GPS / NMEA inputs). You can run several inputs at once. The first one in the list is preferred, and the next one takes over if it goes quiet for 5 seconds.
 
 | Input | Use it for |
 |---|---|
@@ -252,7 +251,7 @@ A report is a chosen part of one table: some rows, some columns. It updates as y
 
 Live data from the internet, drawn over the map. Each one is also in the map's layers menu (marked *online* or *feed*), and the ones you leave on are on next time.
 
-- **AIS vessels** from [Open Waters AIS](https://openwaters.io/ais/), a free network of coastal-authority feeds and volunteer receivers. Spyhop asks for the vessels in view every 30 s and when the map moves; zoom in if it says so (the area is limited). Each vessel is coloured by type (cargo green, tanker red, passenger blue, fishing orange, sailing and pleasure purple, tugs and special craft teal, other grey): a triangle pointing the way it's heading when it's moving, a dot when it isn't, a diamond for an aid to navigation. Click one for its name, MMSI, type, speed, course, status, when it was last heard and the source, and its distance and bearing from your vessel. **Hide AIS vessels that aren't moving** thins a busy harbour. The map's credits line names the sources. AIS from the internet can be minutes old and misses vessels out of receiver range or without AIS: not for navigation or collision avoidance.
+- **AIS vessels** from [Open Waters AIS](https://openwaters.io/ais/), a free network of coastal-authority feeds and volunteer receivers. Spyhop asks for the vessels in view every 30 s and when the map moves; zoom in if it says so (the area is limited). Each vessel is coloured by type (cargo green, tanker red, passenger blue, fishing orange, sailing and pleasure purple, tugs and special craft teal, other grey): a triangle pointing the way it's heading when it's moving, a dot when it isn't, a diamond for an aid to navigation. Click one for its name, MMSI, type, speed, course, status, when it was last heard and the source, and its distance and bearing from your vessel. **Hide AIS vessels that aren't moving** thins a busy harbour. The map's credits line names the AIS networks (without station IDs, which can be very long); a vessel's popup gives its full source. AIS from the internet can be minutes old and misses vessels out of receiver range or without AIS: not for navigation or collision avoidance.
 - **Weather radar, US:** NOAA NEXRAD base reflectivity mosaic, from the Iowa Environmental Mesonet (Iowa State University), updated every 5 minutes.
 - **Weather radar, worldwide:** RainViewer's latest radar frame (every 10 minutes; the time is in the credits line), where radars exist. Free for personal and educational use; the detail stops at about zoom 7.
 - **Radar opacity** applies to both.
@@ -267,7 +266,7 @@ Live data from the internet, drawn over the map. Each one is also in the map's l
 
 - **Bundled coastline:** a world coastline from Natural Earth (1:10 m scale) always draws under the map, so you have a coastline even with no internet. Only the part in view is drawn, simplified to the zoom, so it stays quick. It is coarse, so don't navigate by it.
 - **Online layers** (the map's layers button):
-  - **Seascape depths (feet)**, the default: Open Waters' Seascape bathymetry, with depth shading and labelled contours in feet (Spyhop leaves out its spot soundings). While it's shown, the readout at the bottom left gives the **depth at the cursor** (below chart datum), next to the scale bar; it works offline wherever the map has been viewed or downloaded, on an OpenStreetMap base. It's drawn with MapLibre GL (bundled), which loads the first time the layer is shown. Seascape is not an official chart and **not for navigation**.
+  - **Seascape depths (feet)**, the default: Open Waters' Seascape bathymetry, with depth shading and labelled contours in feet (Spyhop leaves out its spot soundings). While it's shown, the readout at the bottom left gives the **depth at the cursor** (below chart datum), next to the scale bar; it works offline wherever the map has been viewed or downloaded. Spyhop leaves out Seascape's OpenStreetMap background, so it looks the same online and offline (switch on another layer under it, or use Esri Ocean, for land detail). It's drawn with MapLibre GL (bundled), which loads the first time the layer is shown. Seascape is not an official chart and **not for navigation**.
   - Esri Ocean, Esri Imagery, NOAA charts (NOAA's chart display service), and OpenStreetMap.
 - **Browsing cache:** everything an online layer shows is also saved on this computer as you view it (unless "Save tiles as you view them" is off), so areas you've looked at stay available offline.
 - **Downloading an area for offline use** (Settings → Basemap): move the map to cover the survey area, choose the layer, the zoom range and a name (e.g. *Cape Cod Bay*), and press **Download** while you have internet.
@@ -275,15 +274,15 @@ Live data from the internet, drawn over the map. Each one is also in the map's l
   - Spyhop shows roughly how many tiles that is before you start, and a progress bar while it runs.
   - Each zoom level has four times the tiles of the one before, so keep the highest zoom modest for a big area: 12–13 suits a day's survey area, 14–15 a harbour.
   - A layer's own top zoom is respected (Esri Ocean stops at 13), and zooming in past what was downloaded shows the saved tiles enlarged.
-  - For Seascape, the file holds its depth tiles, contours, label fonts and the map style itself. Its OpenStreetMap base isn't saved, because OpenStreetMap's tile policy forbids bulk downloading, so download that area in **Esri Ocean** too if you want land detail offline. OpenStreetMap on its own can't be downloaded either.
+  - For Seascape, the file holds its depth tiles, contours, label fonts and the map style itself. Spyhop doesn't draw Seascape's OpenStreetMap background (and OpenStreetMap's tile policy forbids bulk downloading anyway), so download that area in **Esri Ocean** too if you want land detail offline. OpenStreetMap on its own can't be downloaded either.
   - When it finishes, Spyhop says how many tiles were saved and in which file, how many had no data (open ocean or land, which is normal), and how many failed and why. Press **Download** again to retry the ones that failed.
   - With no internet, Spyhop stops trying a server for a few seconds after repeated failures, so the map stays quick and draws from the saved tiles.
 - **In the charts folder** (Settings → Basemap): a table of every `.mbtiles` file there, downloads and charts you added yourself, with what it was made from, its zooms, number of tiles, size and date, and the totals.
   - **Select** puts that file on the map on its own (zooming to its area if the map is elsewhere): only what is saved in it, as you'll have it at sea. The chart on the map is marked *On the map*; choose another map in the layers menu to go back.
   - **Delete** removes the file from the charts folder, after asking.
   - Each file is also listed under **Offline map tiles** in the map's layers menu. When you use the online layer it was made from (e.g. Seascape), Spyhop takes the tiles from the file before going online, so the map is quick and saves bandwidth.
-  - A downloaded file works on any computer with Spyhop: copy it into that computer's charts folder and press **Look for new files**.
-- **MBTiles charts of your own:** put `.mbtiles` files (raster PNG/JPEG tiles) in the charts folder and press **Look for new files** (or restart). Free, weekly-updated **NOAA nautical charts** for US waters are available at <https://distribution.charts.noaa.gov/ncds/>: click a region and download the MBTiles file. Downloads of Esri and NOAA layers are ordinary MBTiles files, so other map programs can open them too.
+  - A downloaded file works on any computer with Spyhop: copy it into that computer's charts folder and press **Refresh**.
+- **MBTiles charts of your own:** put `.mbtiles` files (raster PNG/JPEG tiles) in the charts folder and press **Refresh** (or restart). Free, weekly-updated **NOAA nautical charts** for US waters are available at <https://distribution.charts.noaa.gov/ncds/>: click a region and download the MBTiles file. Downloads of Esri and NOAA layers are ordinary MBTiles files, so other map programs can open them too.
 - The online map layers are built into Spyhop, so fixes arrive with updates. To add one of your own, create `tile_sources.csv` in the Spyhop folder with the columns `name,url,attribution,overlay,max_zoom,kind`: its layers are added after the built-in ones. The URL is an XYZ tile server, or an ArcGIS `export` URL using `{bbox}`, with kind `raster`. A MapLibre `style.json` URL uses kind `style`.
 
 The online layers could not be tested from the machine this was built on, which had no internet. Check them once on a connected laptop before you sail.
@@ -299,7 +298,8 @@ Surveys are managed in **Survey**; the quality control check is in **Tools → Q
   - If another survey is still active, you're asked whether to **End** it or just **Close** it (keeping it active) first.
 - **End Survey…** adds an **End** row and stops the trackline. An ended survey can still be corrected, but no new rows can be added. To carry on, delete its End row in the Effort tab (or Undo).
 - **Close Survey…** clears the tabs. Everything is already saved as you go. A closed survey that hasn't ended stays *active*, so you can continue it later.
-- **Surveys in this folder** lists every survey with its status (Active/Ended), start and end times, and number of sightings.
+- Below the current survey, **Folders** shows where surveys are saved, with links to open the folder and to change it (Settings → General → Folders).
+- **Surveys in this folder** lists every survey with its status (Active/Ended), start and end times, and number of sightings. **Refresh** reads the folder again, e.g. after copying surveys into it.
   - Press **Open** to open one. If it's still active, you're asked whether to **Continue** it (tracking resumes) or just open it to look at or correct.
   - Surveys made before Start/End existed get a Start row added at the top, timed at their earliest record, with a notice.
 - **Quality control check** (Tools → Quality Control): press **Run quality control check** before you finish a survey (or any time). It lists problems as **errors** (must fix), **warnings** (probably wrong) and **notes** (worth a look), and **Show** takes you to the row and column. It doesn't change anything, except when you press a **Fix** button. **Save report…** downloads the list as a CSV. It checks:
