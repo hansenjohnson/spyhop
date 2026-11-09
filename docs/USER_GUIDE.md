@@ -123,6 +123,7 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
     - **events:** the time, position, event and ID
     - **all:** the current distance and bearing from the vessel, which keeps updating while the popup is open, and a link to the row in its table
   - dashed lines from the vessel to each sighting (on by default) and, optionally, a dotted line joining re-sightings of the same FieldID from oldest to newest
+  - **resights** (see *Resights* below) drawn smaller and as outlines by default, with a dotted line from the first sighting through its resights; change their look in **Settings → General → Resights**
   - optional fading of the track and markers older than a number of hours you choose
   - **toolbar buttons:**
     - ⌖ follow the vessel
@@ -161,7 +162,7 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
   - **Save as PDF…** saves the same summary as a PDF, with a map made for paper: zoomed to the extent of the survey, on the **Esri Ocean** basemap when there's internet (the offline coastline otherwise; a line under the map says which), with no text labels on the points, and a **legend** of the point symbols (by species and event type, with counts) under the map. The summary PDF in **Export Data…** is the same.
     - The offline coastline is the default base map; OpenStreetMap and Esri Ocean are offered when there's internet.
     - A copy goes in the survey's `exports` folder.
-  - counts by species (sightings, number, calves) and by event type
+  - counts by species (sightings, number, calves, resights) and by event type. Resights aren't counted as sightings again: each sighting counts once, with the largest number and calves seen on any look at those animals.
   - **North Atlantic right whale sightings:** each one, with time, position, number, calves, field ID and notes
   - **observers on watch**: time each observer spent at Port, Recorder and Stbd while effort was ON, and their total
   - the range of environmental conditions (visibility, sea state, weather, glare) for the whole survey and on effort only
@@ -199,6 +200,10 @@ The tables work like a spreadsheet:
   - The vessel heading is saved in the CSV (`VesHdg`, not shown in the table) so that bearings relative to the bow can be converted.
   - Each row stores its own bearing reference (**Ref**: M magnetic, T true, R relative to the bow) and distance **Unit**, so changing the defaults in Settings never changes old rows.
   - Magnetic bearings use the World Magnetic Model.
+- **Resights** (another look at animals already recorded: closing in for photos, a focal follow): select the sighting and press **Add resight** (Ctrl/Cmd+Shift+L), greyed out when no sighting is selected. The new row gets the time and position as usual, **Resight of** (right after Calves) holds the first sighting's SightNo, and the species, Num, Calves, NumConf, IDrel and FieldID are copied from the row you selected, ready to correct. A resight of a resight is linked to the first sighting. You can also type a SightNo in **Resight of** to link rows afterwards, or clear it to unlink one.
+  - Resights aren't counted again in the Summary (see *Summary*), and Quality Control doesn't list them as off-effort sightings or their observer as off watch.
+  - **Settings → General → Resights:** list the Sightings table in time order or with each sighting's **resights nested** under it; the resight markers' shape (or hidden), fill (outline, filled or faded), size and labels; and the dotted line from each sighting through its resights.
+  - In the exports, the merged CSV has a **ResightOf** column: keep the rows where it's blank for first detections only (e.g. for encounter rates or detection distances).
 - **Waypoints** (Tools → Waypoints; called Marks before 0.5.0): each waypoint has its own **Shape** (Circle, Diamond, Square, Triangle, Star) and **Color** (pick from the list or type a `#hex` code).
 - **Events:** the default list includes **Gear Reported**, **Gear Recovered** and **Other** (they're added once to existing `event_types.csv` files too; delete them there if you don't want them). **ID** is free text for an instrument or sample ID (CTD cast number, tag ID, drifter ID…). Each event type has a short code in `event_types.csv` (the `event_code` column, e.g. `CTD`, `ACOD`). Type the code to pick the event, and the map label shows code + ID.
 - **Effort:** the Effort column is **Start**, **ON**, **OFF** or **End**.
@@ -215,6 +220,7 @@ The tables work like a spreadsheet:
 | Ctrl+Shift+S / E / V / K | Add sighting / conditions row / event / waypoint |
 | Ctrl+Shift+F | Add an effort row that switches effort ON↔OFF |
 | Ctrl+Shift+R, Ctrl+Shift+H | Add a sighting pre-filled with North Atlantic right whale / Humpback whale |
+| Ctrl+Shift+L | Add a resight of the selected sighting |
 | Ctrl+Shift+U / Y | Undo / redo |
 | Ctrl+1 … 5 | Sightings, Effort, Events, Tools → Summary, Settings → General |
 | Ctrl+PageUp/PageDown, Alt+←/→ | Previous/next tab |
@@ -318,9 +324,10 @@ Surveys are managed in **Survey**; the quality control check is in **Tools → Q
   - Surveys made before Start/End existed get a Start row added at the top, timed at their earliest record, with a notice.
 - **Quality control check** (Tools → Quality Control): press **Run quality control check** before you finish a survey (or any time). It lists problems as **errors** (must fix), **warnings** (probably wrong) and **notes** (worth a look), and **Show** takes you to the row and column. It doesn't change anything, except when you press a **Fix** button. **Save report…** downloads the list as a CSV. It checks:
   - **Survey details:** every field filled in, and a valid email.
-  - **Required fields:** Sightings — everything except Behaviors, Bearing, Ref, Dist, Unit, Alt, FieldID and Notes. Effort — everything except Notes (Start and End rows need only the time and position). Events — everything except ID and Notes.
+  - **Required fields:** Sightings — everything except Behaviors, Bearing, Ref, Dist, Unit, Alt, Resight of, FieldID and Notes. Effort — everything except Notes (Start and End rows need only the time and position). Events — everything except ID and Notes.
   - **Valid values:** choices are in their lists; numbers, positions and times can be read; no time is in the future; nothing is before Start or after End; rows are in time order; no SightNo or EventNo is used twice; the survey starts with Start and has an End.
   - **Plausible values:** Num a whole number of at least 1 (flagged over 500); Calves not more than Num; Bearing 0–360° (negative bearings are stored as their 0–360 equivalent) and Dist not negative, given together and with their Ref and Unit; relative bearings have a heading; animals within 10 nm of the vessel and no further than the visibility on the Effort row in force; vessel positions within 0.5 nm of the trackline at that time; positions not on land (by the bundled coastline, ignoring the first 0.5 km); no track jumps or gaps beyond the trackline-break settings (each has a **Fix** button that marks it with an ERROR Effort row).
+  - **Resights:** each Resight of names an existing sighting (one deleted or renumbered is flagged, and the row is counted as a sighting of its own), timed before the resight and of the same species.
   - **Protocol:** a new Effort row at least every 1.5 × the reminder interval while on effort; nobody in two watch positions at once; the sighting's observer is on watch; a sighting entered twice (same time, species, number and position) or a duplicated event (same type and ID within 30 s). A FieldID can be reused for different species, and two sightings of one species close together are fine. Notes list sightings off effort, effort in sea state above 5 or visibility under 0.5 nm, and observers on watch over 2 hours without a break.
   - The thresholds are at the top of `spyhop/qc.py`.
 - **Keeping the computer awake** (Settings → General → Sleep): a computer that goes to sleep stops recording the trackline and NMEA data, so by default Spyhop stops it sleeping **during a survey** (from Start until End, or until the survey is closed). Choose **Always** to keep it awake whenever Spyhop is open, or **Never** to leave sleep to the computer's own settings. Tick **Keep the screen on too** to stop the screen turning off as well. Closing a laptop's lid still puts most laptops to sleep, and a laptop on battery runs down faster. When Spyhop quits, or crashes, the computer's own sleep settings apply again. (It uses `caffeinate` on a Mac, a Windows power request on Windows, and `systemd-inhibit` on Linux.)

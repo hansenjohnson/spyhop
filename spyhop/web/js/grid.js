@@ -1,6 +1,7 @@
 // Spreadsheet-style editable grid for one data tab.
 import { el, fmtCoord, timeParts, api, modal, confirmBox, isModalOpen } from './util.js';
 import { shapeSvg } from './map.js';
+import { Resights } from './resights.js';
 
 const PRINTABLE = /^.$/u;
 
@@ -32,6 +33,12 @@ export class Grid {
   }
 
   get rows() { return this.app.S.tables[this.tab].rows; }
+  // rows in the order shown: Sightings can nest each sighting's resights under it (Settings → General)
+  shownRows() {
+    if (this.tab !== 'sightings') return { rows: this.rows, rs: null };
+    const rs = new Resights(this.rows);
+    return { rows: this.app.S.config.display.resight_order === 'nested' ? rs.nested() : this.rows, rs };
+  }
   row(id) { return this.rows.find((r) => r.RowID === id); }
 
   // ---------------------------------------------------------------- display
@@ -75,8 +82,12 @@ export class Grid {
         'data-key': c.key, title: c.key + (c.auto ? ' (filled in automatically)' : ''),
         style: c.width ? { minWidth: `${c.width}px` } : null }, c.label))));
     const tbody = el('tbody');
-    this.rows.forEach((r, i) => {
-      const tr = el('tr', { 'data-id': r.RowID, class: this.sel?.id === r.RowID ? 'selrow' : null });
+    const { rows, rs } = this.shownRows();
+    const nested = rows !== this.rows;
+    rows.forEach((r, i) => {
+      const re = rs?.isResight(r);
+      const cls = [this.sel?.id === r.RowID ? 'selrow' : '', re ? 'resight' : '', re && nested ? 'nested' : ''].filter(Boolean).join(' ');
+      const tr = el('tr', { 'data-id': r.RowID, class: cls || null });
       tr.append(el('td', { class: 'rownum', title: 'Select row' }, i + 1));
       for (const c of this.cols) {
         const v = r[c.key] ?? '';
@@ -90,6 +101,9 @@ export class Grid {
           td.append(el('span', { class: 'swatch', style: { background: v } }), v);
         } else if (c.list === 'shapes' && v) {
           td.append(el('span', { class: 'shape-icon', html: shapeSvg(v, r.Color || 'gray', 6) }), v);
+        } else if (c.key === 'ResightOf' && v) {
+          td.textContent = `↳ ${v}`;
+          if (!re) { td.classList.add('dangling'); td.title = `There is no sighting ${v}: this row is counted as a sighting of its own`; }
         } else if (c.key === 'Effort' && v) {
           td.append(el('span', { class: `pill ${v === 'ON' ? 'on' : v === 'ERROR' ? 'err' : 'off'}` }, v));
         } else {
@@ -138,13 +152,14 @@ export class Grid {
   }
 
   move(dRow, dCol) {
-    if (!this.rows.length) return;
-    if (!this.sel || !this.row(this.sel.id)) { this.select(this.rows.at(-1).RowID, this.cols[0].key); return; }
-    let ri = this.rows.findIndex((r) => r.RowID === this.sel.id);
+    const rows = this.shownRows().rows;
+    if (!rows.length) return;
+    if (!this.sel || !this.row(this.sel.id)) { this.select(rows.at(-1).RowID, this.cols[0].key); return; }
+    let ri = rows.findIndex((r) => r.RowID === this.sel.id);
     let ci = this.cols.findIndex((c) => c.key === this.sel.key);
-    ri = Math.max(0, Math.min(this.rows.length - 1, ri + dRow));
+    ri = Math.max(0, Math.min(rows.length - 1, ri + dRow));
     ci = Math.max(0, Math.min(this.cols.length - 1, ci + dCol));
-    this.select(this.rows[ri].RowID, this.cols[ci].key);
+    this.select(rows[ri].RowID, this.cols[ci].key);
   }
 
   // ---------------------------------------------------------------- events

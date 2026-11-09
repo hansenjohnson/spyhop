@@ -1,6 +1,7 @@
 // Main controller: layout, status bar, tabs, shortcuts, settings, summary, live updates.
 import { $, $$, el, esc, api, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, isTrackBreak, trackStates, isPlaceholderObs, LINE_STYLES } from './util.js';
 import { Grid } from './grid.js';
+import { Resights, groupCounts } from './resights.js';
 import { MapView, SHAPES } from './map.js';
 import { buildSummaryHtml } from './summary_html.js';
 import { openInstrumentPlot } from './plot.js';
@@ -262,6 +263,11 @@ class App {
       el('button', { onclick: () => this.deleteRow(tab), title: 'Delete the selected row' }, 'Delete row'),
       el('button', { id: `undo-${tab}`, onclick: () => this.undo(tab), title: `Undo${sc('undo')}` }, '↶ Undo'),
       el('button', { id: `redo-${tab}`, onclick: () => this.redo(tab), title: `Redo${sc('redo')}` }, '↷ Redo'));
+    if (tab === 'sightings') {
+      bar.insertBefore(el('button', { id: 'btn-add-resight', disabled: true, onclick: () => this.addResight(),
+        title: `Add another look at the animals of the selected sighting: a new row linked to their first sighting, with the species, numbers and FieldID filled in${sc('add-resight')}` },
+        'Add resight'), bar.children[1]);
+    }
     return bar;
   }
 
@@ -406,6 +412,34 @@ class App {
     const u = $(`#undo-${tab}`), r = $(`#redo-${tab}`);
     if (u) u.disabled = !t.can_undo;
     if (r) r.disabled = !t.can_redo;
+    if (tab === 'sightings') this.updateResightButton();
+  }
+
+  // Add resight: only with a sighting selected
+  selectedSighting() {
+    const g = this.grids.sightings, id = g?.sel?.id;
+    return id ? this.S.tables.sightings.rows.find((r) => r.RowID === id) || null : null;
+  }
+
+  updateResightButton() {
+    const b = $('#btn-add-resight');
+    if (!b) return;
+    const r = this.selectedSighting();
+    b.disabled = !r || !this.S.survey;
+    b.textContent = r ? `Add resight of ${new Resights(this.S.tables.sightings.rows).original(r).SightNo}` : 'Add resight';
+  }
+
+  async addResight() {
+    const r = this.selectedSighting();
+    if (!r) { toast('Select a sighting first: the resight is linked to it.', 'warn'); this.showTab('sightings'); return; }
+    let res;
+    try { res = await api('/api/sightings/resight', { id: r.RowID }); } catch { return; }
+    const t = this.S.tables.sightings;
+    if (!t.rows.some((x) => x.RowID === res.row.RowID)) { t.rows.push(res.row); t.can_undo = true; this.renderTab('sightings'); this.map.drawMarkers('sightings'); }
+    if (this.logSize === 'min') this.setLogSize('normal');
+    this.showTab('sightings');
+    const g = this.grids.sightings;
+    g.select(res.row.RowID, g.cols.find((c) => c.key === 'Behaviors') ? 'Behaviors' : g.firstEmptyEditable(res.row));
   }
 
   showTab(tab) {
@@ -429,7 +463,7 @@ class App {
     this.showHelp(tab, this.grids[tab]?.sel?.key);
   }
 
-  onRowSelected(tab, id) { this.map?.focusRow(tab, id); }
+  onRowSelected(tab, id) { this.map?.focusRow(tab, id); if (tab === 'sightings') this.updateResightButton(); }
 
   // Description of the selected column, shown in the bottom bar.
   showHelp(tab, key) {
@@ -509,6 +543,8 @@ class App {
         this.map.restyleOverlays();
         this.map.redrawData();
         this.map.updateVessel(this.S.vessel);
+        this.grids.sightings?.render();          // resights nested or in time order
+        if (this.tab === 'settings') this.renderSettings();
         break;
       case 'notice': toast(m.text, m.level || 'info', m.level === 'error' ? 12000 : 5000); break;
       case 'awake':
@@ -1286,6 +1322,7 @@ class App {
         if (this.grids[this.tab]) this.addRow(this.tab, prefill);
         else toast('Go to Sightings, Effort, Events or Tools → Waypoints to add a row.', 'info', 2500);
         break;
+      case 'add-resight': this.addResight(); break;
       case 'toggle-effort': this.toggleEffort(); break;
       case 'undo': this.undo(); break;
       case 'redo': this.redo(); break;
@@ -1314,11 +1351,16 @@ class App {
     if (!pane) return;
     const S = this.S, st = S.config.settings, sight = S.tables.sightings.rows, ev = S.tables.events.rows;
     if (!S.survey) { pane.replaceChildren(el('p', { class: 'hint' }, 'No survey open — start or open one in the Survey tab.')); return; }
+    // resights aren't counted again: one entry per first sighting, with the largest number and
+    // calves seen on any look at those animals
+    const rsx = new Resights(sight);
+    const groups = rsx.groups().map((g) => ({ r: g[0], ...groupCounts(g) }));
+    const nResights = sight.length - groups.length;
     const bySp = {};
-    for (const r of sight) {
-      const k = r.Species || '(unidentified)';
-      const o = bySp[k] || (bySp[k] = { n: 0, number: 0, calves: 0 });
-      o.n++; o.number += +r.Count || 0; o.calves += +r.Calves || 0;
+    for (const g of groups) {
+      const k = g.r.Species || '(unidentified)';
+      const o = bySp[k] || (bySp[k] = { n: 0, number: 0, calves: 0, re: 0 });
+      o.n++; o.number += g.number; o.calves += g.calves; o.re += g.resights;
     }
     const byEv = {};
     for (const r of ev) byEv[r.EventType || '(no type)'] = (byEv[r.EventType || '(no type)'] || 0) + 1;
@@ -1353,7 +1395,7 @@ class App {
     const first = firstIso ? timeParts(firstIso, this.clock()) : null;
     const tbl = (head, rows) => el('table', { class: 'summary' }, el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))),
       el('tbody', {}, rows.map((r) => el('tr', {}, r.map((c) => el('td', {}, c))))));
-    const spRows = Object.entries(bySp).sort((a, b) => b[1].n - a[1].n).map(([k, o]) => [k, o.n, o.number, o.calves]);
+    const spRows = Object.entries(bySp).sort((a, b) => b[1].n - a[1].n).map(([k, o]) => [k, o.n, o.number, o.calves, o.re || '']);
 
     // range of environmental conditions logged in the Effort tab
     const fixed = S.schema.fixed_lists;
@@ -1409,16 +1451,16 @@ class App {
       const la = r.SigLat !== '' && r.SigLat != null ? r.SigLat : r.Lat, lo = r.SigLon !== '' && r.SigLon != null ? r.SigLon : r.Lon;
       return la !== '' && la != null && lo !== '' && lo != null ? fmtPos(+la, +lo, fmt) : '—';
     };
-    const riwh = sight.filter((r) => isRiwh(r.Species))
-      .sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime) || (+a.SightNo || 0) - (+b.SightNo || 0));
+    const riwh = groups.filter((g) => isRiwh(g.r.Species))
+      .sort((a, b) => new Date(a.r.DateTime) - new Date(b.r.DateTime) || (+a.r.SightNo || 0) - (+b.r.SightNo || 0));
     const riwhTable = riwh.length ? el('table', { class: 'summary riwh-table' },
-      el('thead', {}, el('tr', {}, ['Sighting', 'Time', 'Position', 'Number', 'Calves', 'Field ID', 'Notes'].map((h) => el('th', {}, h)))),
-      el('tbody', {}, riwh.map((r) => el('tr', {},
+      el('thead', {}, el('tr', {}, ['Sighting', 'Time', 'Position', 'Number', 'Calves', 'Resights', 'Field ID', 'Notes'].map((h) => el('th', {}, h)))),
+      el('tbody', {}, riwh.map(({ r, number, calves, resights, fieldIds }) => el('tr', {},
         el('td', {}, r.SightNo || ''), el('td', { class: 'nowrap' }, fmtT(r.DateTime)), el('td', { class: 'mono nowrap' }, pos(r)),
-        el('td', { class: 'num' }, r.Count || ''), el('td', { class: 'num' }, r.Calves || ''), el('td', {}, r.FieldID || ''),
-        el('td', {}, r.Notes || ''))))) : null;
-    const riwhTotals = riwh.length ? `${riwh.length} sighting${riwh.length === 1 ? '' : 's'}, ${riwh.reduce((a, r) => a + (+r.Count || 0), 0)} animals`
-      + `, ${riwh.reduce((a, r) => a + (+r.Calves || 0), 0)} calves. Positions are the whales’ (SigLat/SigLon), or the vessel’s if none was worked out.` : '';
+        el('td', { class: 'num' }, number || ''), el('td', { class: 'num' }, calves || ''), el('td', { class: 'num' }, resights || ''),
+        el('td', {}, fieldIds.join(', ')), el('td', {}, r.Notes || ''))))) : null;
+    const riwhTotals = riwh.length ? `${riwh.length} sighting${riwh.length === 1 ? '' : 's'}, ${riwh.reduce((a, g) => a + g.number, 0)} animals`
+      + `, ${riwh.reduce((a, g) => a + g.calves, 0)} calves. Positions are the whales’ at the first sighting (SigLat/SigLon), or the vessel’s if none was worked out; numbers are the largest seen on any look.` : '';
     pane.replaceChildren(
       el('div', { class: 'summary-head' },
         el('h2', {}, `Survey: ${sv.name}`),
@@ -1428,7 +1470,7 @@ class App {
             onclick: () => this.saveSummaryHtml('pdf') }, 'Save as PDF…'))),
       el('p', { class: 'print-only hint' }, `Spyhop summary · generated ${gen.date} ${gen.time} ${gen.abbr}`),
       el('div', { class: 'cards' },
-        card('Sightings', sight.length), card('Number', sight.reduce((a, r) => a + (+r.Count || 0), 0)),
+        card(nResights ? `Sightings (+${nResights} resight${nResights === 1 ? '' : 's'})` : 'Sightings', groups.length), card('Number', groups.reduce((a, g) => a + g.number, 0)),
         card('Species', Object.keys(bySp).filter((k) => k !== '(unidentified)').length),
         card('Time on effort', fmtDuration(onSec), effortNow), card('On-effort distance', `${(onDist / div).toFixed(2)} ${unit}`, effortNow && st.tracking_enabled),
         card('Track distance', `${(total / div).toFixed(2)} ${unit}`, !!st.tracking_enabled), card('Events', ev.length)),
@@ -1442,7 +1484,8 @@ class App {
         ['Platform', platform || '—'], ['Platform altitude', meta.platform_altitude_ft ? `${meta.platform_altitude_ft} ft` : '—'], ['Organization', meta.organization || '—'], ['Chief scientist', meta.chief_scientist || '—'],
         ['Chief scientist email', meta.chief_scientist_email ? el('a', { href: `mailto:${meta.chief_scientist_email}` }, meta.chief_scientist_email) : '—']])),
       el('h3', {}, 'Sightings by species'),
-      spRows.length ? tbl(['Species', 'Sightings', 'Number', 'Calves'], spRows) : el('p', { class: 'hint' }, 'No sightings yet.'),
+      spRows.length ? tbl(['Species', 'Sightings', 'Number', 'Calves', 'Resights'], spRows) : el('p', { class: 'hint' }, 'No sightings yet.'),
+      spRows.length && nResights ? el('p', { class: 'hint' }, 'Resights aren’t counted as sightings; Number and Calves are the largest seen on any look at the same animals.') : null,
       el('h3', {}, 'North Atlantic right whale sightings'),
       riwhTable ? el('div', { class: 'table-scroll' }, riwhTable) : el('p', { class: 'hint' }, 'No North Atlantic right whales sighted.'),
       riwhTable ? el('p', { class: 'hint' }, riwhTotals) : null,
@@ -1827,6 +1870,23 @@ class App {
     return sec('Altitude and reticles', ...kids);
   }
 
+  // Settings → General → Resights: the Sightings table's order, and resights on the map
+  resightSection(sec, dnum, dchk) {
+    const d = this.S.config.display;
+    const dsel = (key, opts, id) => el('select', { id, onchange: (e) => this.saveDisplay({ [key]: e.target.value }) },
+      opts.map(([v, l]) => el('option', { value: v, selected: (d[key] || '') === v }, l)));
+    return sec('Resights',
+      el('p', { class: 'hint' }, 'A resight is a later look at animals already recorded, e.g. on the approach for photos or during a focal follow. Select the sighting and use Add resight: the new row’s Resight of holds the first sighting’s SightNo, and its species, numbers, confidence and FieldID are filled in. Resights aren’t counted again in the Summary, which uses the largest number and calves seen on any look. Time order lists rows as recorded; Resights nested puts each sighting’s resights straight under it. The marker size is a percentage of the sightings’ marker size.'),
+      el('div', { class: 'grid2' },
+        el('label', { class: 'row' }, 'Sightings table', dsel('resight_order', [['time', 'Time order'], ['nested', 'Resights nested']], 'resight-order')),
+        el('label', { class: 'row' }, 'Resight marker', dsel('resight_marker_shape', [['same', 'Same shape'], ...SHAPES.map((x) => [x, x]), ['hidden', 'Not shown']], 'resight-shape')),
+        el('label', { class: 'row' }, 'Resight marker fill', dsel('resight_marker_fill', [['hollow', 'Outline'], ['filled', 'Filled'], ['faded', 'Faded']], 'resight-fill')),
+        dnum('resight_marker_size', 'Resight marker size (%)', 30, 150, 5)),
+      el('div', { class: 'grid2 checks' },
+        dchk('resight_lines', 'Dotted line from each sighting through its resights (oldest → newest)'),
+        dchk('resight_labels', 'Label resight markers on the map')));
+  }
+
   // ---------------------------------------------------------------- settings
   awakeText() {
     const a = this.S.awake || {}, st = this.S.config.settings;
@@ -1923,6 +1983,7 @@ class App {
         el('h4', {}, 'Fading'),
         el('div', { class: 'grid2' }, dnum('fade_hours', 'Fade after (hours)', 0.25, 72, 0.25)),
         el('div', { class: 'grid2 checks' }, dchk('fade_enabled', 'Fade the trackline, sightings and events older than this (waypoints never fade)'))),
+      this.resightSection(sec, dnum, dchk),
       sec('Basemap and offline charts', el('p', {}, 'The map’s layers, downloads for offline use and the charts folder are in ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('basemap'); } }, 'Settings → Basemap'), '.')),
       this.foldersSection(),
@@ -1947,7 +2008,7 @@ class App {
       ['survey', 'Survey'], ...this.groupTabs().map(([k]) => [k, this.tabPath(k)])]);
     return [
       ['add:sightings', 'Add a sighting'], ['add:effort', 'Add a conditions (effort) row'], ['add:events', 'Add an event'],
-      ['add:marks', 'Add a waypoint'], ['add-current', 'Add a row to the table you’re in'],
+      ['add:marks', 'Add a waypoint'], ['add-current', 'Add a row to the table you’re in'], ['add-resight', 'Add a resight of the selected sighting'],
       ['toggle-effort', 'Add an effort row that switches effort ON↔OFF'],
       ['undo', 'Undo in the current table'], ['redo', 'Redo in the current table'],
       ['next-tab', 'Next tab'], ['prev-tab', 'Previous tab'],

@@ -127,6 +127,11 @@ table.grid td.t-bool { text-align: center; font-size: 1.15em; cursor: pointer; }
 table.grid td.auto { color: var(--muted); }
 table.grid td.rownum, table.grid th.rownum { position: sticky; left: 0; z-index: 1; background: var(--panel2); color: var(--muted); text-align: right; width: 2.6em; cursor: pointer; }
 table.grid th.rownum { z-index: 3; }
+/* resights: a light tint; nested under their sighting, the SightNo cell is indented */
+table.grid tr.resight td { background: #f7f9fb; }
+table.grid tr.nested td[data-key="SightNo"] { padding-left: 1.6em; }
+table.grid td[data-key="ResightOf"] { white-space: nowrap; color: #6b4700; }
+table.grid td[data-key="ResightOf"].dangling { color: var(--alert); text-decoration: line-through; }
 table.grid tr.selrow td { background: var(--sel); }
 table.grid tr.selrow td.rownum { color: var(--text); font-weight: 700; }
 table.grid td.sel { outline: 2px solid var(--sel-cell); outline-offset: -2px; }

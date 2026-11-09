@@ -134,6 +134,7 @@ DEFAULT_SHORTCUTS = ["combo", "action", "prefill"], [
     ["Mod+Shift+K", "add:marks", ""],
     ["Mod+Shift+R", "add:sightings", "Species=North Atlantic right whale"],
     ["Mod+Shift+H", "add:sightings", "Species=Humpback whale"],
+    ["Mod+Shift+L", "add-resight", ""],
     ["Mod+Shift+U", "undo", ""],
     ["Mod+Shift+Y", "redo", ""],
     ["Mod+PageUp", "prev-tab", ""],
@@ -158,7 +159,7 @@ LIST_COLUMNS = {
 }
 UNIQUE_COLUMNS = {"name", "species_code", "event_code", "behavior_code"}
 SHORTCUT_VERBS = {"add", "tab"}            # verbs that take ":<argument>"
-SHORTCUT_ACTIONS = {"add-current", "toggle-effort", "undo", "redo", "next-tab", "prev-tab",
+SHORTCUT_ACTIONS = {"add-current", "add-resight", "toggle-effort", "undo", "redo", "next-tab", "prev-tab",
                     "center-vessel", "toggle-log", "max-log", "measure"}
 _COLOR = re.compile(r"^(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6}|[a-zA-Z]{3,30})$")
 _MODS = {"mod": "Mod", "cmd": "Mod", "ctrl": "Mod", "shift": "Shift", "alt": "Alt", "option": "Alt"}
@@ -209,6 +210,12 @@ DEFAULT_DISPLAY = {
     "heading_vector_min": "6",      # its length: minutes ahead at the current speed
     "sighting_lines": "1",          # vectors from the vessel to each sighting
     "fieldid_lines": "0",           # dotted line joining sightings with the same FieldID
+    "resight_order": "time",        # Sightings table: time (as recorded) | nested (resights under their first sighting)
+    "resight_lines": "1",           # dotted line from a sighting through its resights, in time order
+    "resight_marker_shape": "same", # resights' marker: same (as the sighting) | a shape | hidden
+    "resight_marker_fill": "hollow",  # hollow (outline in the sighting's color) | filled | faded
+    "resight_marker_size": "70",    # % of the sightings' marker size
+    "resight_labels": "0",          # label resight markers too
     "show_track_on": "1",
     "show_track_off": "1",
     "fade_enabled": "0",            # fade the track, sightings and events older than fade_hours (not waypoints)

@@ -8,6 +8,7 @@
 /* global topojson */
 import { esc, timeParts, isTrackBreak, trackStates, dashFor } from './util.js';
 import { shapeSvg } from './map.js';
+import { Resights } from './resights.js';
 
 const ONLINE = {
   'OpenStreetMap (online)': ['https://tile.openstreetmap.org/{z}/{x}/{y}.png', '© OpenStreetMap contributors', 19],
@@ -73,14 +74,17 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
     return `<b>${esc(app.map.popupHeading(tab, r))}</b><table class="pop">${rows}</table>`;
   };
   const rad = +disp.marker_radius || 8;
+  const rs = new Resights(S.tables.sightings?.rows);
   const items = (tab) => (S.tables[tab]?.rows || []).filter((r) => r.Map !== '0').map((r) => {
     const pos = app.map.rowPos(tab, r);
     if (!pos) return null;
     const color = app.map.markerColor(tab, r);
-    const shape = tab === 'marks' && r.Shape ? r.Shape : disp[`${tab}_marker_shape`] || 'Diamond';
-    return { lat: pos[0], lon: pos[1], svg: shapeSvg(shape, color, rad), size: rad * 2 + 4, color,
-      kind: tab === 'sightings' ? (r.Species || '') : (r.EventType || ''),
-      label: app.map.label(tab, r), popup: popup(tab, r), old: false,
+    const look = app.map.markerLook(tab, r, rs);       // resights: Settings → General → Resights
+    if (!look) return null;
+    const re = tab === 'sightings' && rs.isResight(r);
+    return { lat: pos[0], lon: pos[1], svg: shapeSvg(look.shape, color, look.r, '#000', look.fill), size: look.r * 2 + 4, color,
+      kind: tab === 'sightings' ? `${r.Species || ''}${re ? ' (resight)' : ''}` : (r.EventType || ''),
+      label: look.label ? app.map.label(tab, r) : '', popup: popup(tab, r), old: false,
       ves: tab === 'sightings' && r.Lat && r.SigLat && (r.Lat !== r.SigLat || r.Lon !== r.SigLon) ? [+r.Lat, +r.Lon] : null };
   }).filter(Boolean);
   const data = {
@@ -98,6 +102,10 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
       return out;
     })(),
     sightings: items('sightings'), events: items('events'),          // marks belong to no survey: left out
+    // each sighting through its resights, oldest to newest: [color, [[lat, lon]…]]
+    resightLines: disp.resight_lines === '0' ? [] : rs.groups().map((g) => [app.map.markerColor('sightings', g[0]),
+      g.filter((r) => r.Map !== '0').sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)).map((r) => app.map.rowPos('sightings', r)).filter(Boolean)])
+      .filter(([, pts]) => pts.length > 1),
     style: { on: disp.track_on_effort_color, off: disp.track_off_effort_color, width: +disp.track_width || 3,
       offWidth: +disp.track_off_width || 1.5,
       onDash: dashFor(disp.track_on_style || 'solid', +disp.track_width || 3), offDash: dashFor(disp.track_off_style || 'solid', +disp.track_off_width || 1.5),
@@ -178,7 +186,7 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
   function markers(list) {
     var g = L.layerGroup();
     list.forEach(function (m) {
-      var label = D.pdf ? '' : '<span class="mlabel" style="font-size:' + D.style.labelSize + 'px;left:' + m.size + 'px">' + m.label.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }) + '</span>';
+      var label = D.pdf || !m.label ? '' : '<span class="mlabel" style="font-size:' + D.style.labelSize + 'px;left:' + m.size + 'px">' + m.label.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }) + '</span>';
       var icon = L.divIcon({ className: 'data-marker', iconSize: [m.size, m.size], iconAnchor: [m.size / 2, m.size / 2], html: m.svg + label });
       var mk = L.marker([m.lat, m.lon], { icon: icon, riseOnHover: true, interactive: !D.pdf });
       if (!D.pdf) mk.bindPopup(m.popup, { maxWidth: 360 });
@@ -187,6 +195,7 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
     });
     return g;
   }
+  (D.resightLines || []).forEach(function (l) { L.polyline(l[1], { color: l[0], weight: 2.5, dashArray: '2 6', lineCap: 'round', interactive: false }).addTo(lines); });
   var overlays = { 'Track': track, 'Sightings': markers(D.sightings), 'Sighting lines': lines, 'Events': markers(D.events) };
   Object.keys(overlays).forEach(function (k) { overlays[k].addTo(map); });
   L.control.scale({ imperial: false }).addTo(map);

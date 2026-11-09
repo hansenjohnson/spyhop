@@ -17,7 +17,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import __version__, geo, reticle, schema, tzguess
+from . import __version__, geo, resights, reticle, schema, tzguess
 from .config import Config
 from .nmea import NmeaDecoder, RawLog, VesselState
 import uuid
@@ -639,6 +639,8 @@ class Recorder:
                 return f"{v:.6f}", None
             except ValueError as e:
                 raise ValueErrorMsg(f"{c['label']}: {e}")
+        if tab == "sightings" and key == "ResightOf":
+            return self._parse_resight_of(s, row)
         if t in ("int", "seq"):
             try:
                 v = float(s)
@@ -727,6 +729,50 @@ class Recorder:
             base = base or self.now()
             return base.replace(hour=h, minute=mi, second=se).isoformat(timespec="seconds")
         raise ValueErrorMsg("Time must be HH:MM[:SS] or YYYY-MM-DD HH:MM[:SS]")
+
+    def _parse_resight_of(self, s: str, row: dict) -> tuple[str, str | None]:
+        """ResightOf: the SightNo of an earlier sighting of the same animals. One typed against a
+        resight is linked to that resight's original, so every resight points at the first sighting."""
+        k = resights._key(s)
+        if not k.isdigit():
+            raise ValueErrorMsg("Resight of must be the SightNo of the first sighting of these animals")
+        if k == resights._key(row.get("SightNo")):
+            raise ValueErrorMsg("A sighting can't be a resight of itself")
+        rows = [r for r in self.table("sightings").rows if r.get("RowID") != row.get("RowID")]
+        index = resights.by_sightno(rows)
+        target = index.get(k)
+        if target is None:
+            raise ValueErrorMsg(f"There is no sighting {k} to be a resight of")
+        me, cur, seen = resights._key(row.get("SightNo")), target, set()
+        while True:                                 # follow the target's own links to its first sighting
+            ref = resights._key(cur.get("ResightOf"))
+            if ref and ref == me:
+                raise ValueErrorMsg(f"Sighting {k} is itself a resight of this sighting")
+            nxt = index.get(ref) if ref else None
+            if nxt is None or id(nxt) in seen:
+                break
+            seen.add(id(nxt))
+            cur = nxt
+        ok = resights._key(cur.get("SightNo"))
+        if ok != k:
+            return ok, f"Sighting {k} is a resight of {ok}, so this row is linked to {ok}, the first sighting."
+        return k, None
+
+    def add_resight(self, row_id: str) -> dict:
+        """A new sighting row for another look at the animals of row_id: linked to their first
+        sighting, with the species, number, calves, number and ID confidence and FieldID copied
+        from the row chosen (the latest look, if it's a resight itself)."""
+        t = self.table("sightings")
+        try:
+            row = t.get(row_id)
+        except KeyError:
+            raise ValueErrorMsg("That sighting no longer exists.")
+        orig = resights.original_of(row, t.rows)
+        if not resights._key(orig.get("SightNo")):
+            raise ValueErrorMsg("That sighting has no SightNo to link a resight to.")
+        prefill = {k: row.get(k, "") for k in resights.COPIED if row.get(k, "") != ""}
+        prefill["ResightOf"] = orig.get("SightNo")
+        return self.new_row("sightings", prefill)
 
     # -- computed fields -----------------------------------------------------------
     def compute(self, tab: str, row: dict, changed: set[str], old: dict | None = None) -> list[str]:
@@ -1265,7 +1311,7 @@ class Recorder:
 
     # columns of the merged CSV, in order
     MERGED_EFFORT = ["Effort", "Visibility", "SeaState", "Weather", "Glare", "Port", "Recorder", "Starboard"]
-    MERGED_SIGHTING = ["SightNo", "Species", "Count", "Calves", "NumConf", "IDrel", "Behaviors", "Observer",
+    MERGED_SIGHTING = ["SightNo", "ResightOf", "Species", "Count", "Calves", "NumConf", "IDrel", "Behaviors", "Observer",
                        "Bearing", "BrgRef", "Distance", "DistUnit", "Altitude", "SigLat", "SigLon", "VesHdg", "Images", "FieldID"]
     MERGED_EVENT = ["EventNo", "EventType", "EventID"]
 

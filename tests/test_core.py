@@ -2303,3 +2303,45 @@ def test_templates_left_in_data_folder_are_tidied(tmp_path):
     (d / "notes.txt").write_text("mine")
     cfg = Config(tmp_path / "S")
     assert (d / "notes.txt").exists() and any("doesn't know" in n for n in cfg.notices)
+
+
+def test_resights(tmp_path):
+    """0.30: Add resight copies the species, numbers, confidences and FieldID and links to the first
+    sighting; ResightOf is checked; QC, the merged CSV and the grouping helpers know about resights."""
+    from spyhop import resights, qc
+    rec = Recorder(tmp_path)
+    rec.decoder.feed(with_checksum("GPRMC,120000,A,4154.000,N,07020.000,W,10.0,045.0,041126,14.5,W"))
+    rec.start_survey("RS", meta={"platform_type": "Shipboard"})
+    a = rec.new_row("sightings", {"Species": "Humpback whale", "Count": "2", "Calves": "0", "NumConf": "Probable",
+                                  "IDrel": "Definite", "FieldID": "HW-7", "Notes": "first"})["row"]
+    b = rec.new_row("sightings", {"Species": "Fin whale", "Count": "1"})["row"]
+    r1 = rec.add_resight(a["RowID"])["row"]
+    assert r1["ResightOf"] == a["SightNo"] and r1["Species"] == "Humpback whale" and r1["Count"] == "2"
+    assert r1["NumConf"] == "Probable" and r1["IDrel"] == "Definite" and r1["FieldID"] == "HW-7" and r1["Notes"] == ""
+    rec.edit("sightings", r1["RowID"], {"Count": "3", "Calves": "1"})
+    r2 = rec.add_resight(r1["RowID"])["row"]                    # a resight of a resight → the first sighting
+    assert r2["ResightOf"] == a["SightNo"] and r2["Count"] == "3" and r2["Calves"] == "1"
+    # typed by hand: checked, and chains flattened
+    with pytest.raises(ValueErrorMsg, match="no sighting 99"):
+        rec.edit("sightings", b["RowID"], {"ResightOf": "99"})
+    with pytest.raises(ValueErrorMsg, match="itself"):
+        rec.edit("sightings", b["RowID"], {"ResightOf": b["SightNo"]})
+    w = rec.edit("sightings", b["RowID"], {"ResightOf": r1["SightNo"]})
+    row_b = next(x for x in rec.tables["sightings"].rows if x["RowID"] == b["RowID"])
+    assert row_b["ResightOf"] == a["SightNo"] and "first sighting" in w["warnings"][0]
+    with pytest.raises(ValueErrorMsg, match="resight of this sighting"):
+        rec.edit("sightings", a["RowID"], {"ResightOf": r1["SightNo"]})
+    rows = rec.tables["sightings"].rows
+    gs = resights.groups(rows)
+    assert len(gs) == 1 and gs[0][0]["RowID"] == a["RowID"] and len(gs[0]) == 4
+    # QC: b is a fin whale linked to a humpback → warning; a dangling link → warning
+    issues = qc.run_qc(rec)["issues"]
+    assert any(i["check"] == "Resights linked" and "Species" in i["message"] for i in issues)
+    rec.edit("sightings", b["RowID"], {"ResightOf": ""})
+    rec.delete("sightings", a["RowID"])
+    issues = qc.run_qc(rec)["issues"]
+    assert sum(1 for i in issues if i["check"] == "Resights linked" and "no such sighting" in i["message"]) == 2
+    head, merged = rec.merged_rows()
+    assert "ResightOf" in head and any(m.get("ResightOf") == a["SightNo"] for m in merged)
+    with pytest.raises(ValueErrorMsg, match="no longer exists"):
+        rec.add_resight(a["RowID"])

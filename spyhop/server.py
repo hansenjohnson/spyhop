@@ -396,6 +396,10 @@ class App:
         body = await request.json() if request.can_read_body else {}
         return json_ok(self.rec.new_row(tab, body.get("prefill"), body.get("lat"), body.get("lon")))
 
+    async def add_resight(self, request):
+        body = await request.json()
+        return json_ok(self.rec.add_resight(str(body.get("id") or "")))
+
     async def tab_edit(self, request):
         tab = request.match_info["tab"]
         body = await request.json()
@@ -1386,6 +1390,7 @@ class App:
         r.add_get("/ws", self.ws_handler)
         r.add_get("/api/bootstrap", self.bootstrap)
         r.add_post("/api/tab/{tab}/add", self.tab_add)
+        r.add_post("/api/sightings/resight", self.add_resight)
         r.add_post("/api/tab/{tab}/edit", self.tab_edit)
         r.add_post("/api/tab/{tab}/delete", self.tab_delete)
         r.add_post("/api/tab/{tab}/undo", self.tab_undo)

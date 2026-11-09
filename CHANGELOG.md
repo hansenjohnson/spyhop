@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.30.0 — 2026-11-09
+
+- **Resights:** for another look at animals already recorded (closing in for photos, a focal follow). Select a sighting and press **Add resight** (Ctrl/Cmd+Shift+L; greyed out with no sighting selected): the new row's **Resight of** column, right after Calves, holds the first sighting's SightNo, and the species, Num, Calves, NumConf, IDrel and FieldID are copied. A resight of a resight links to the first sighting. Resight of can also be typed (it must name an existing sighting).
+  - **Summary:** resights aren't counted as sightings again; each sighting counts once with the largest number and calves seen on any look. The species and right whale tables show how many resights each has.
+  - **Settings → General → Resights:** the Sightings table in time order or with resights **nested** under their sighting; resight markers' shape (or hidden), fill (outline, filled, faded), size and labels; a dotted line from each sighting through its resights. The HTML and PDF summaries follow these settings.
+  - **Quality Control:** a Resight of that names no sighting, a resight timed before its sighting, or of another species, is flagged. Resights aren't listed as off-effort sightings, nor their observer as off watch.
+  - **Merged CSV:** a new **ResightOf** column.
+  - New installs get the shortcut. An existing `shortcuts.csv` doesn't: add it in Settings → Shortcuts (action "Add a resight of the selected sighting").
+
 ## 0.29.0 — 2026-11-09
 
 - **Platform types:** **Shipboard**, **Aerial**, **Stationary** and **Other** (were Vessel, Plane, Land and Other). The map marks the platform with a ship, an aircraft, a tower or a dot. A **stationary** platform records only its Start and End positions, with no trackline in between, and the status bar says so.

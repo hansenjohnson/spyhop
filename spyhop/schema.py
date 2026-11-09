@@ -77,6 +77,8 @@ TABS = {
                 help="Species seen. Type part of the name or its code (e.g. HUWH) to filter. List: species.csv."),
             col("Count", "int", "Num", width=50, help="Best estimate of the number of animals."),
             col("Calves", "int", "Calves", width=55, help="Number of calves."),
+            col("ResightOf", "int", "Resight of", width=70, skip=True,
+                help="For a later look at animals already recorded (an approach, a focal follow): the SightNo of their first sighting. Blank for a new sighting. Resights aren’t counted again in the summary. “Add resight” fills it in."),
             col("NumConf", "choice", "NumConf", list="numconf",
                 help="Confidence in the number: Definite, Probable, Possible, or At Least (the number is a minimum)."),
             col("IDrel", "choice", "IDrel", list="idrel", width=80, help="Confidence in the species identification."),

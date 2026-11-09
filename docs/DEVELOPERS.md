@@ -33,6 +33,7 @@ spyhop/
   nmea.py         NMEA 0183 parser, vessel state, instrument readings, raw log
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
   qc.py           the quality control check (thresholds in LIMITS)
+  resights.py     resights: ResightOf → the first sighting, groups (the same rules as web/js/resights.js)
   reticle.py      Unit = reticle: angle below the horizon/horizontal → distance (Lerczak & Hobbs 1998), presets, calibrated marks
   reports.py      Tools → Reports: report specs → rows and columns, CSV/HTML pages; saved reports in the current template (Config.reports)
   report_defs/    the starting saved reports of a new current template
@@ -49,6 +50,7 @@ spyhop/
     index.html  css/app.css
     js/app.js            the application: tabs, panes, dialogs, websocket handling
     js/grid.js           the data tables
+    js/resights.js       resights: first sighting, groups, nested order, summary counts
     js/map.js            the Leaflet map, markers, track, tools
     js/depth.js          the water depth at the cursor, read from Seascape's depth tiles
     js/planning.js       Tools → Routes: the route editor, activation, and the saved routes (/api/routes*)

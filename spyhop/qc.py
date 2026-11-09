@@ -18,7 +18,7 @@ import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import geo, schema
+from . import geo, resights, schema
 
 LIMITS = {
     "max_sighting_nm": 10.0,        # animals further than this from the vessel
@@ -36,7 +36,7 @@ LIMITS = {
 
 # columns that may be left blank (everything else visible in the table is required)
 OPTIONAL = {
-    "sightings": {"Behaviors", "Bearing", "BrgRef", "Distance", "DistUnit", "Altitude", "FieldID", "Notes"},
+    "sightings": {"Behaviors", "Bearing", "BrgRef", "Distance", "DistUnit", "Altitude", "ResightOf", "FieldID", "Notes"},
     "effort": {"Notes"},
     "events": {"ID", "Notes"},
 }
@@ -500,8 +500,23 @@ def run_qc(rec) -> dict:
     # ---- sightings
     species = {x["name"]: x for x in cfg.lists.get("species", [])}
     prev = []
+    rs_index = resights.by_sightno(S)
     for i, r in enumerate(S):
         name = lab("sightings", r, i)
+        # resights: linked to a sighting that exists, after it, of the same species
+        orig = resights.original_of(r, S, rs_index)
+        resight = orig is not r
+        if r.get("ResightOf") and not resight:
+            add("warning", "Resights linked", f"Resight of {r['ResightOf']}: there is no such sighting (deleted or renumbered?), "
+                "so this row is counted as a sighting of its own.", "sightings", r, "ResightOf", name)
+        if resight:
+            t_r, t_o = _t(r.get("DateTime")), _t(orig.get("DateTime"))
+            if t_r and t_o and t_r < t_o:
+                add("warning", "Resights linked", f"Timed before sighting {orig.get('SightNo')}, the first sighting it is a resight of.",
+                    "sightings", r, "DateTime", name)
+            if r.get("Species") and orig.get("Species") and r["Species"] != orig["Species"]:
+                add("warning", "Resights linked", f"Species {r['Species']}, but sighting {orig.get('SightNo')} (its first sighting) is {orig['Species']}.",
+                    "sightings", r, "Species", name)
         n, calves = _num(r.get("Count")), _num(r.get("Calves"))
         if n is not None:
             if n < 1 or n != int(n):
@@ -542,10 +557,10 @@ def run_qc(rec) -> dict:
         if t:
             stt = state_at(t)
             effort = (stt or {}).get("Effort")
-            if effort != "ON":
+            if effort != "ON" and not resight:                 # resights off effort (an approach) are normal
                 add("info", "Sightings on effort", f"Recorded {'off effort' if effort else 'before any Effort row'} — fine if intended.",
                     "sightings", r, "DateTime", name)
-            elif r.get("Observer") and r.get("Observer") not in ("UNK",):
+            elif r.get("Observer") and r.get("Observer") not in ("UNK",) and not resight:
                 on = {stt.get(k) for k in ("Port", "Recorder", "Starboard")}
                 if r["Observer"] not in on:
                     add("warning", "Sighting observer on watch",
@@ -629,9 +644,10 @@ CHECKS = [
     ("Conditions recorded regularly", f"On effort, a new Effort row at least every {LIMITS['conditions_gap_factor']:g} × the reminder interval."),
     ("Observers in one position at a time", "Nobody is in two of Port / Recorder / Stbd at once (NA / None, an empty position, can be in several)."),
     ("Sighting observer on watch", "On effort, the sighting's Obs is one of the observers on watch."),
-    ("Sightings on effort", "Sightings made off effort are listed (information only)."),
+    ("Sightings on effort", "Sightings made off effort are listed (information only; resights aren't)."),
     ("Survey conditions", f"On effort in sea state above {LIMITS['max_seastate_on']} or visibility under 0.5 nm (information only)."),
     ("Observer rest", f"Observers on watch over {LIMITS['max_watch_h']:g} h without a break (information only)."),
     ("Distance within visibility", "A sighting's distance (Dist and Unit, or the vessel-to-animal distance) isn't beyond the visibility on the Effort row in force at the time."),
+    ("Resights linked", "Each Resight of names an existing sighting, timed before the resight and of the same species."),
     ("No duplicate records", "A sighting with the same time, species, number and position as another (entered twice), or the same event and ID within 30 s."),
 ]

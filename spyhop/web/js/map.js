@@ -1,12 +1,13 @@
 // Interactive chart: base layers, vessel, track, data markers, popups, measure tool.
 /* global L, topojson */
+import { Resights } from './resights.js';
 import { el, esc, fmtCoord, fmtPos, distM, bearing, destination, fmtDist, fmtBrg, timeParts, toast, api, isTrackBreak, trackStates, dashFor } from './util.js';
 import { DepthProbe } from './depth.js';
 
 const SHAPES = ['Diamond', 'Square', 'Triangle', 'Circle', 'Star'];
 export { SHAPES };
 
-export function shapeSvg(shape, color, r = 8, stroke = '#000') {
+export function shapeSvg(shape, color, r = 8, stroke = '#000', fill = 'filled') {
   const s = r * 2 + 4, c = s / 2;
   let body;
   switch (shape) {
@@ -23,7 +24,10 @@ export function shapeSvg(shape, color, r = 8, stroke = '#000') {
     }
     default: body = `<polygon points="${c},${c - r} ${c + r},${c} ${c},${c + r} ${c - r},${c}"/>`;
   }
-  return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}"><g fill="${esc(color)}" stroke="${stroke}" stroke-width="1.3">${body}</g></svg>`;
+  // fill: filled | hollow (an outline in the color, for resights) | faded (filled, see-through)
+  if (fill === 'hollow') return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}"><g fill="#fff" fill-opacity="0.85" stroke="${esc(color)}" stroke-width="2.4">${body}</g></svg>`;
+  const fo = fill === 'faded' ? ' fill-opacity="0.45"' : '';
+  return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}"><g fill="${esc(color)}"${fo} stroke="${stroke}" stroke-width="1.3">${body}</g></svg>`;
 }
 
 const VESSEL_SVG = (color) => `<svg width="26" height="26" viewBox="-13 -13 26 26">
@@ -149,6 +153,7 @@ export class MapView {
     this.layers.rings = L.layerGroup();
     this.layers.lines = L.layerGroup();
     this.layers.fidlines = L.layerGroup();
+    this.layers.relines = L.layerGroup();
     for (const tab of ['sightings', 'events', 'marks']) this.markerLayers[tab] = L.layerGroup();
     this.layers.imported = L.layerGroup();
     this.layers.graticule = L.layerGroup();
@@ -168,7 +173,7 @@ export class MapView {
     base.addTo(this.map);
     this.baseLayer = base;
     // track and sighting/FieldID lines are always on the map; Settings decides what they draw
-    for (const k of ['track', 'lines', 'fidlines']) this.layers[k].addTo(this.map);
+    for (const k of ['track', 'lines', 'fidlines', 'relines']) this.layers[k].addTo(this.map);
     const defaultsOn = ['Sightings', 'Events', 'Waypoints', 'Imported overlays'];
     for (const [name, layer] of Object.entries(overlays)) {
       const on = ov ? ov.includes(name) : defaultsOn.includes(name);
@@ -688,21 +693,24 @@ export class MapView {
     const layer = this.markerLayers[tab];
     if (!layer) return;
     layer.clearLayers();
-    if (tab === 'sightings') { this.layers.lines.clearLayers(); this.layers.fidlines.clearLayers(); }
+    if (tab === 'sightings') { this.layers.lines.clearLayers(); this.layers.fidlines.clearLayers(); this.layers.relines.clearLayers(); }
     const byFid = {};
     const disp = this.app.S.config.display;
     const rad = +disp.marker_radius || 8, lsize = +disp.label_size || 12;
     const shape = disp[`${tab}_marker_shape`] || 'Diamond';
     this.markerIndex = this.markerIndex || {};
+    const rs = tab === 'sightings' ? new Resights(this.app.S.tables.sightings?.rows) : null;
     for (const r of this.app.S.tables[tab]?.rows || []) {
       if (r.Map === '0') continue;
       const pos = this.rowPos(tab, r);
       if (!pos) continue;
       const color = this.markerColor(tab, r);
-      const s = rad * 2 + 4;
-      const shp = tab === 'marks' && r.Shape ? r.Shape : shape;
+      const look = this.markerLook(tab, r, rs);
+      if (!look) continue;                      // resights set to "Not shown"
+      const s = look.r * 2 + 4;
+      const label = look.label ? `<span class="mlabel" style="font-size:${lsize}px;left:${s}px">${esc(this.label(tab, r))}</span>` : '';
       const icon = L.divIcon({ className: 'data-marker', iconSize: [s, s], iconAnchor: [s / 2, s / 2],
-        html: `${shapeSvg(shp, color, rad)}<span class="mlabel" style="font-size:${lsize}px;left:${s}px">${esc(this.label(tab, r))}</span>` });
+        html: `${shapeSvg(look.shape, color, look.r, '#000', look.fill)}${label}` });
       const old = tab !== 'marks' && this.isOld(r.DateTime);      // waypoints never fade
       const m = L.marker(pos, { icon, title: this.title(tab, r), riseOnHover: true, opacity: old ? 0.35 : 1 }).addTo(layer);
       m.bindPopup(() => this.rowPopup(tab, r.RowID), { minWidth: 200, maxWidth: 320 });
@@ -714,6 +722,19 @@ export class MapView {
           opacity: old ? 0.3 : 1 }).addTo(this.layers.lines);
       }
       if (tab === 'sightings' && r.FieldID) (byFid[r.FieldID] = byFid[r.FieldID] || []).push({ r, pos, color });
+    }
+    // dotted line from each sighting through its resights, oldest to newest (in the sighting's color)
+    if (tab === 'sightings' && disp.resight_lines !== '0') {
+      for (const g of rs.groups()) {
+        const pts = g.filter((r) => r.Map !== '0').sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime))
+          .map((r) => this.rowPos(tab, r)).filter(Boolean);
+        if (pts.length < 2) continue;
+        const last = g.at(-1);
+        L.polyline(pts, { color: this.markerColor(tab, g[0]), weight: 2.5, dashArray: '2 6', lineCap: 'round',
+          opacity: this.isOld(last.DateTime) ? 0.35 : 0.9 })
+          .bindTooltip(`Sighting ${esc(g[0].SightNo)}: ${g.length - 1} resight${g.length === 2 ? '' : 's'}`, { sticky: true })
+          .addTo(this.layers.relines);
+      }
     }
     // dotted line joining re-sightings of the same FieldID, oldest to newest
     if (tab === 'sightings' && disp.fieldid_lines === '1') {
@@ -729,8 +750,21 @@ export class MapView {
     }
   }
 
+  // a marker's shape, radius, fill and whether it is labelled; resights follow Settings → General → Resights.
+  // null: not drawn
+  markerLook(tab, r, rs) {
+    const disp = this.app.S.config.display, rad = +disp.marker_radius || 8;
+    const shape = tab === 'marks' && r.Shape ? r.Shape : disp[`${tab}_marker_shape`] || 'Diamond';
+    if (tab !== 'sightings' || !rs?.isResight(r)) return { shape, r: rad, fill: 'filled', label: true };
+    const sh = disp.resight_marker_shape || 'same';
+    if (sh === 'hidden') return null;
+    const pct = Math.max(30, Math.min(150, +disp.resight_marker_size || 70));
+    return { shape: sh === 'same' ? shape : sh, r: Math.max(3, rad * pct / 100), fill: disp.resight_marker_fill || 'hollow',
+      label: disp.resight_labels === '1' };
+  }
+
   title(tab, r) {
-    return { sightings: `Sighting ${r.SightNo}${r.FieldID ? ` (${r.FieldID})` : ''}: ${r.Species || 'unidentified'}`,
+    return { sightings: `Sighting ${r.SightNo}${r.ResightOf ? ` (resight of ${r.ResightOf})` : ''}${r.FieldID ? ` (${r.FieldID})` : ''}: ${r.Species || 'unidentified'}`,
       events: `Event ${r.EventNo}: ${r.EventType}${r.ID ? ` ${r.ID}` : ''}`, marks: r.Name }[tab];
   }
 
@@ -750,7 +784,7 @@ export class MapView {
   }
 
   popupHeading(tab, r) {
-    if (tab === 'sightings') return `Sighting ${r.SightNo || ''}${r.FieldID ? ` · ${r.FieldID}` : ''}`;
+    if (tab === 'sightings') return `Sighting ${r.SightNo || ''}${r.ResightOf ? ` · resight of ${r.ResightOf}` : ''}${r.FieldID ? ` · ${r.FieldID}` : ''}`;
     if (tab === 'events') return `Event ${r.EventNo || ''}`;
     return r.Name || 'Waypoint';
   }
