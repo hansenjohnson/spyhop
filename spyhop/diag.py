@@ -181,13 +181,13 @@ def memory_mb() -> float | None:
 #                  maps, overlays, routes, feeds and logs; survey files only counted (their names are
 #                  survey names, not data)
 #   logs/          spyhop.log (and older rotations), crash.log
-#   current/       the setup in use (templates/current): spyhop-config.json (web addresses' ?query
+#   current/       the current template (templates/current): spyhop-config.json (web addresses' ?query
 #                  removed, in case one holds a key), shortcuts.csv and the species, event and behavior
 #                  lists (not observers.csv: names)
 #   spyhop-local.json   this computer's settings, without the survey team's details
 SAFE_CURRENT = ["spyhop-config.json", "shortcuts.csv", "species.csv", "event_types.csv", "behaviors.csv"]
 # Spyhop's folder (config.Config, feeds.feeds_dir)
-SPYHOP_FOLDERS = [("templates", "the setup in use (current/), saved templates (saved/) and backups (backups/)"),
+SPYHOP_FOLDERS = [("templates", "the current template (current/), saved templates (saved/) and backups (backups/)"),
                   ("charts", "offline maps (.mbtiles), downloaded in Settings → Basemap or added"),
                   ("overlays", "map overlays (GeoJSON, GPX, KML) from Tools → Overlays"),
                   ("routes", "saved routes (GPX), Tools → Routes"),
@@ -272,7 +272,7 @@ def _redact(v):
 
 
 def make_bundle(cfg, extra: dict, dest: Path) -> Path:
-    """Zip the logs, the setup in use, this computer's settings, the folder layout and system details
+    """Zip the logs, the current template, this computer's settings, the folder layout and system details
     (no survey data) for a bug report."""
     root, data_dir = Path(cfg.root), Path(cfg.data_dir)
     dest.mkdir(parents=True, exist_ok=True)
@@ -307,7 +307,7 @@ def make_bundle(cfg, extra: dict, dest: Path) -> Path:
         except (OSError, ValueError, AttributeError):
             pass
         z.writestr("README.txt",
-                   "Spyhop diagnostics bundle. It holds Spyhop's logs, the setup in use (templates/current, without the\n"
+                   "Spyhop diagnostics bundle. It holds Spyhop's logs, the current template (templates/current, without the\n"
                    "observers list, and with any ?query removed from web addresses), this computer's settings (without\n"
                    "the survey team's details), a listing of Spyhop's folders (folders.txt) and system details.\n"
                    "It does not hold any survey data.\n")

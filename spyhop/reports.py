@@ -16,8 +16,8 @@ A report is a small JSON object:
 - time_from / time_to: "YYYY-MM-DDTHH:MM" in the survey clock; blank = open.
 - rules: more conditions, all of which must hold (OPS).
 
-Saved reports are kept in the setup in use, under "reports" in templates/current/spyhop-config.json
-({file name: report}; the file name is only a key), so templates carry them. A new setup starts with
+Saved reports are kept in the current template, under "reports" in templates/current/spyhop-config.json
+({file name: report}; the file name is only a key), so templates carry them. A new current template starts with
 the ones in `spyhop/report_defs/` (Gear, Dead birds, Right whales, Blue whales).
 """
 from __future__ import annotations
@@ -350,7 +350,7 @@ def to_html(rec, res: dict) -> str:
     dates = _dates(rec, res.get("survey")) if rec.survey is not None else ""
     if dates:
         info.append(("Date" if "–" not in dates else "Dates", dates))
-    info += [(labels[k], meta[k]) for k in ("platform_name", "platform_type", "organization", "chief_scientist",
+    info += [(labels[k], meta[k]) for k in ("platform_name", "platform_type", "platform_altitude_ft", "organization", "chief_scientist",
                                             "chief_scientist_email") if meta.get(k)]
     now = rec.now()
     cols = res["columns"]

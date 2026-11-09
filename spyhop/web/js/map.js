@@ -29,6 +29,17 @@ export function shapeSvg(shape, color, r = 8, stroke = '#000') {
 const VESSEL_SVG = (color) => `<svg width="26" height="26" viewBox="-13 -13 26 26">
   <path d="M0,-12 L6,2 L6,10 L-6,10 L-6,2 Z" fill="${color}" stroke="#fff" stroke-width="1.6"/>
   <circle r="2" fill="#fff"/></svg>`;
+// the platform's marker by its type (Survey details): ship, aircraft, tower (it doesn't turn) or a dot
+const PLATFORM_SVG = {
+  Shipboard: VESSEL_SVG,
+  Aerial: (c) => `<svg width="28" height="28" viewBox="-14 -14 28 28">
+  <path d="M0,-12 C1.3,-12 1.8,-10 1.8,-8 L1.8,-3 L11,2 L11,4.5 L1.8,2 L1.8,7 L5,9.5 L5,11.5 L0,10 L-5,11.5 L-5,9.5 L-1.8,7 L-1.8,2 L-11,4.5 L-11,2 L-1.8,-3 L-1.8,-8 C-1.8,-10 -1.3,-12 0,-12 Z"
+    fill="${c}" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/></svg>`,
+  Stationary: (c) => `<svg width="26" height="26" viewBox="-13 -13 26 26">
+  <path d="M-3,-11 L3,-11 L3,-7 L-3,-7 Z M-2,-7 L2,-7 L5,11 L-5,11 Z M-3.5,-1 L3.5,-1 M-4.4,5 L4.4,5" fill="${c}" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/>
+  <path d="M-3.5,-1 L3.5,-1 M-4.4,5 L4.4,5" stroke="#fff" stroke-width="1.2"/></svg>`,
+  Other: (c) => `<svg width="20" height="20" viewBox="-10 -10 20 20"><circle r="6.5" fill="${c}" stroke="#fff" stroke-width="2"/></svg>`,
+};
 
 export class MapView {
   constructor(app, container) {
@@ -491,20 +502,22 @@ export class MapView {
     const ll = [v.lat, v.lon];
     const hdg = v.best_heading ?? v.cog ?? 0;
     const color = v.lost ? '#888' : (disp.vessel_color || '#d00');
+    const kind = PLATFORM_SVG[this.app.platformType()] ? this.app.platformType() : 'Shipboard';
+    const turns = kind === 'Shipboard' || kind === 'Aerial';          // a tower or a dot isn't rotated
     if (!this.vessel) {
-      this.vesselIcon = (c, h) => L.divIcon({ className: 'vessel-icon', iconSize: [26, 26], iconAnchor: [13, 13],
-        html: `<div style="transform:rotate(${h}deg)">${VESSEL_SVG(c)}</div>` });
-      this.vessel = L.marker(ll, { icon: this.vesselIcon(color, hdg), pane: 'vessel', keyboard: false })
+      this.vesselIcon = (c, h, k) => L.divIcon({ className: `vessel-icon platform-${k.toLowerCase()}`, iconSize: [28, 28], iconAnchor: [14, 14],
+        html: `<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;${k === 'Shipboard' || k === 'Aerial' ? `transform:rotate(${h}deg)` : ''}">${PLATFORM_SVG[k](c)}</div>` });
+      this.vessel = L.marker(ll, { icon: this.vesselIcon(color, hdg, kind), pane: 'vessel', keyboard: false })
         .addTo(this.layers.vessel).bindPopup(() => this.vesselPopup());
       this.predictor = L.polyline([ll, ll], { color, weight: 2, dashArray: '6 4', pane: 'vessel', interactive: false }).addTo(this.layers.vessel);
       if (this.app.S.config.settings.follow_vessel) this.map.setView(ll, Math.max(this.map.getZoom(), 11));
     } else {
       this.vessel.setLatLng(ll);
-      if (this._lastIcon !== `${color}${Math.round(hdg)}`) this.vessel.setIcon(this.vesselIcon(color, hdg));
+      if (this._lastIcon !== `${color}${Math.round(hdg)}${kind}`) this.vessel.setIcon(this.vesselIcon(color, hdg, kind));
     }
-    this._lastIcon = `${color}${Math.round(hdg)}`;
+    this._lastIcon = `${color}${Math.round(hdg)}${kind}`;
     // heading vector: length = distance covered in N minutes at the current speed
-    if (disp.heading_vector === '0') this.predictor.setLatLngs([]);
+    if (disp.heading_vector === '0' || !turns) this.predictor.setLatLngs([]);
     else {
       const mins = Math.max(0, +disp.heading_vector_min || 6);
       const ahead = (v.sog || 0) * 1852 * mins / 60;
@@ -523,7 +536,8 @@ export class MapView {
 
   vesselPopup() {
     const v = this.app.S.vessel, fmt = this.app.S.config.settings.latlon_format;
-    return `<b>Vessel</b><table class="pop">
+    const title = { Shipboard: 'Vessel', Aerial: 'Aircraft', Stationary: 'Station', Other: 'Platform' }[this.app.platformType()] || 'Vessel';
+    return `<b>${title}</b><table class="pop">
       <tr><th>Position</th><td>${fmtPos(v.lat, v.lon, fmt)}</td></tr>
       <tr><th>SOG</th><td>${v.sog ?? '—'} kn</td></tr><tr><th>COG</th><td>${fmtBrg(v.cog)}T</td></tr>
       <tr><th>Heading</th><td>${fmtBrg(v.heading)}T</td></tr>

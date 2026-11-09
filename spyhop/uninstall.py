@@ -2,7 +2,7 @@
 
 Where Spyhop keeps things:
   program folder   the code, the start files and its Python set-up (.venv)   updater.PROGRAM_DIR
-  Spyhop's folder  the setup and templates (templates/), this computer's settings (spyhop-local.json),
+  Spyhop's folder  the current and saved templates (templates/), this computer's settings (spyhop-local.json),
                    maps, overlays, routes, feeds, logs                                cfg.root
   data folder      surveys, waypoints, templates, NMEA logs, exports     cfg.data_dir (default cfg.root/data)
   shortcuts        Spyhop.app and the Desktop link (macOS), Desktop and Start-menu shortcuts
@@ -13,8 +13,8 @@ deleted only when asked (each is a separate tick), and a data folder chosen else
 deleted (it may hold other files): its path is given so it can be deleted by hand.
 
 Reinstall downloads a clean copy of the latest version from GitHub first (nothing changes if that
-fails), keeps a zip of the current program files in Spyhop's folder (updates/), then replaces
-everything in the program folder, including the Python set-up, which the start file makes again.
+fails), then replaces everything in the program folder, including the Python set-up, which the
+start file makes again.
 Settings are kept unless "reset" is ticked. Survey data is never touched.
 
 The program can't delete itself while it runs (Windows locks its files), so both write a small
@@ -22,7 +22,9 @@ helper script to a temporary folder and start it with a Python that isn't in the
 The helper waits for Spyhop to close, does the deleting (and, for reinstall, moves the new copy in
 and starts Spyhop again), and writes what it did to spyhop-uninstall.log in that temporary folder.
 
-A program folder that is a git checkout is never deleted or replaced: use git for that.
+A program folder that is a git checkout is deleted or reinstalled only when nothing would be lost:
+no uncommitted changes and no commits that aren't on GitHub. Reinstalling it resets it to the branch
+on GitHub (git fetch, git reset --hard, git clean -fdx), which also removes the Python set-up.
 """
 from __future__ import annotations
 
@@ -106,16 +108,51 @@ def shortcut_paths() -> list[Path]:
 
 
 def _du(p: Path) -> int:
-    if p.is_file():
-        return p.stat().st_size
+    """Size of a file or folder; folders it can't read are skipped (never an error)."""
+    try:
+        if p.is_file():
+            return p.stat().st_size
+    except OSError:
+        return 0
     n = 0
-    for f in p.rglob("*"):
-        try:
-            if f.is_file() and not f.is_symlink():
-                n += f.stat().st_size
-        except OSError:
-            pass
+    for dirpath, _dirs, files in os.walk(p, onerror=lambda e: None):
+        for f in files:
+            try:
+                fp = os.path.join(dirpath, f)
+                if not os.path.islink(fp):
+                    n += os.path.getsize(fp)
+            except OSError:
+                pass
     return n
+
+
+def _git(prog: Path, *args, timeout: int = 30) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(prog), *args], capture_output=True, text=True, timeout=timeout)
+
+
+def git_state(prog: Path, fetch: bool = False) -> str:
+    """"" if a git checkout can be deleted or reset without losing anything, else why not."""
+    if not shutil.which("git"):
+        return "git isn't installed on this computer"
+    try:
+        if fetch:
+            _git(prog, "fetch", "--quiet", timeout=60)
+        st = _git(prog, "status", "--porcelain")
+        if st.returncode != 0:
+            return "git can't read it (" + (st.stderr or st.stdout).strip()[:200] + ")"
+        dirty = [ln for ln in st.stdout.splitlines() if ln.strip()]
+        if dirty:
+            return f"uncommitted changes ({len(dirty)} file{'s' if len(dirty) > 1 else ''})"
+        up = _git(prog, "rev-parse", "--abbrev-ref", "@{u}")
+        if up.returncode != 0:
+            return "a branch that isn't on GitHub (it has no upstream)"
+        ahead = _git(prog, "rev-list", "--count", "@{u}..HEAD")
+        n = int((ahead.stdout or "0").strip() or 0)
+        if n:
+            return f"{n} commit{'s' if n > 1 else ''} not pushed to GitHub"
+    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+        return f"git didn't answer ({e})"
+    return ""
 
 
 def plan(cfg, mode: str = "uninstall", delete_settings: bool = False, delete_data: bool = False) -> dict:
@@ -126,9 +163,12 @@ def plan(cfg, mode: str = "uninstall", delete_settings: bool = False, delete_dat
     problems: list[str] = []
     if mode not in ("uninstall", "reinstall"):
         problems.append("Unknown action.")
-    if updater.git_checkout():
-        problems.append(f"This copy of Spyhop is a git checkout ({prog}). Spyhop won't delete or replace it: "
-                        "use git (or delete the folder yourself).")
+    git = updater.git_checkout()
+    if git:
+        why = git_state(prog)
+        if why:
+            problems.append(f"This copy of Spyhop is a git checkout ({prog}) with {why}. Spyhop deletes or reinstalls it "
+                            "only when nothing would be lost: commit and push first (or delete the folder yourself).")
     if not (prog / "spyhop" / "__init__.py").is_file() or not (prog / "pyproject.toml").is_file():
         problems.append(f"{prog} doesn't look like Spyhop's program folder, so nothing will be deleted.")
     if _risky(prog):
@@ -138,7 +178,7 @@ def plan(cfg, mode: str = "uninstall", delete_settings: bool = False, delete_dat
                         "delete them too. Move the data folder (Settings → General) first.")
     if delete_settings and (_risky(root) or not (root / "templates").is_dir()):
         problems.append(f"{root} doesn't look like Spyhop's own folder, so it won't be deleted.")
-    if mode == "reinstall" and not os.access(prog.parent, os.W_OK):
+    if mode == "reinstall" and not git and not os.access(prog.parent, os.W_OK):
         problems.append(f"Spyhop can't write next to its program folder ({prog.parent}), so it can't put a new copy there.")
     if mode == "reinstall":
         delete_data = False
@@ -146,6 +186,7 @@ def plan(cfg, mode: str = "uninstall", delete_settings: bool = False, delete_dat
     delete: list[dict] = []
     keep: list[dict] = []
     delete.append({"what": "Program and its Python set-up" if mode == "uninstall" else
+                   "Program and its Python set-up (reset to the latest on GitHub with git)" if git else
                    "Program and its Python set-up (replaced by a clean copy)", "path": str(prog)})
     if mode == "uninstall":
         for p in shortcut_paths():
@@ -168,7 +209,7 @@ def plan(cfg, mode: str = "uninstall", delete_settings: bool = False, delete_dat
             d["size"] = _du(Path(d["path"])) if d["what"] != "Shortcut" else 0
         except OSError:
             d["size"] = 0
-    return {"mode": mode, "delete": delete, "keep": keep, "problems": problems, "git": updater.git_checkout(),
+    return {"mode": mode, "delete": delete, "keep": keep, "problems": problems, "git": git,
             "program": str(prog), "spyhop_folder": str(root), "data_folder": str(data), "default_data": default_data,
             "confirm_data": CONFIRM_DATA}
 
@@ -256,7 +297,23 @@ for item in job["delete"]:
         remove(prog)                     # everything, .venv too; the folder is made again below
     else:
         remove(item["path"], keep=item.get("keep", ()))
-if job["mode"] == "reinstall":
+if job["mode"] == "reinstall" and job.get("git"):
+    for args in (["fetch", "--quiet"], ["reset", "--hard", "@{u}"], ["clean", "-fdx"]):
+        r = subprocess.run([job["git"], "-C", str(prog), *args], capture_output=True, text=True)
+        say("git", *args, "->", r.returncode, (r.stdout + r.stderr).strip()[-300:])
+    start = job.get("start") or []
+    if start:
+        try:
+            kw = {"cwd": str(prog)}
+            if os.name == "nt":
+                kw["creationflags"] = 0x00000010
+            else:
+                kw["start_new_session"] = True
+            subprocess.Popen(start, **kw)
+            say("started", start)
+        except OSError as e:
+            say("couldn't start Spyhop:", e)
+elif job["mode"] == "reinstall":
     new = Path(job["staged"])
     prog.mkdir(parents=True, exist_ok=True)
     for c in new.iterdir():
@@ -312,8 +369,16 @@ def start(cfg, mode: str, delete_settings: bool = False, delete_data: bool = Fal
                              f"Close Spyhop and delete {updater.PROGRAM_DIR} yourself.")
     prog, root, data = updater.PROGRAM_DIR, Path(cfg.root), Path(cfg.data_dir)
     work = Path(tempfile.mkdtemp(prefix="spyhop_uninstall_"))
+    git = p["git"]
+    if git:                      # check again, against GitHub as it is now
+        why = git_state(prog, fetch=True)
+        if why:
+            raise UninstallError(f"This copy of Spyhop is a git checkout with {why}. Commit and push first. Nothing was changed.")
     job = {"pid": os.getpid(), "mode": mode, "program": str(prog), "delete": [], "start": []}
-    job["delete"].append({"path": str(prog)})
+    if mode == "reinstall" and git:
+        job["git"] = shutil.which("git")          # reset in place: the folder (and .git) stays
+    else:
+        job["delete"].append({"path": str(prog)})
     if mode == "uninstall":
         job["delete"] += [{"path": x["path"]} for x in p["delete"] if x["what"] == "Shortcut"]
     if delete_settings:
@@ -322,19 +387,19 @@ def start(cfg, mode: str, delete_settings: bool = False, delete_data: bool = Fal
     elif mode == "uninstall" and delete_data and p["default_data"]:
         job["delete"].append({"path": str(data)})
     message = ""
-    if mode == "reinstall":
+    if mode == "reinstall" and git:
+        if launch:
+            job["start"] = _start_command(prog)
+        message = (f"Spyhop's folder {prog} will be reset to the latest on GitHub, its Python set-up removed, and Spyhop "
+                   + ("started again in a new window" if job["start"] else "left for you to start with the Start Spyhop file")
+                   + " once this window closes.")
+    elif mode == "reinstall":
         info = info or updater.check()
         data_zip = updater._get(info["zip"])                       # fails here, before anything changes
         staged_parent = Path(tempfile.mkdtemp(prefix=".spyhop-reinstall-", dir=str(prog.parent)))
         top = updater._extract(data_zip, staged_parent / "x")
         job["staged"] = str(top)
         job["staged_parent"] = str(staged_parent)      # removed once the new copy is moved in
-        if not delete_settings:
-            try:
-                backup = updater._backup(root / "updates")
-                message = f"A copy of the current program files is in {backup}. "
-            except OSError as e:
-                log.warning("reinstall: no backup of the program files: %s", e)
         if launch:
             job["start"] = _start_command(prog)
         message += (f"Spyhop {info.get('latest', '')} will be installed fresh in {prog} and start again in a new window"

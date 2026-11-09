@@ -1,5 +1,5 @@
 // Tools → Reports: pick rows of Sightings, Events or Effort and some of their columns, see the
-// result as you go, and save it (CSV, HTML, PDF). Reports are saved by name in the setup in use
+// result as you go, and save it (CSV, HTML, PDF). Reports are saved by name in the current template
 // (templates/current/spyhop-config.json; the server's reports.py runs them).
 // Run Reports saves several saved reports at once.
 import { $, el, api, toast, confirmBox, promptBox, modal } from './util.js';
@@ -221,7 +221,7 @@ export class ReportsTool {
     }
     this.$result.replaceChildren(head, body, saveRow,
       el('p', { class: 'hint' }, survey && r?.rows?.length ? 'Click a row to show it in its table. Number columns get a total. Exports are saved in the exports folder. ' : '',
-        'Saved reports are part of the setup in use, so they travel in templates (Settings → Templates).'));
+        'Saved reports are part of the current template, so they travel with it (Settings → Templates).'));
   }
 
   // ---------------------------------------------------------------- server

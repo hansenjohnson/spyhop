@@ -36,10 +36,12 @@ LIMITS = {
 
 # columns that may be left blank (everything else visible in the table is required)
 OPTIONAL = {
-    "sightings": {"Behaviors", "Bearing", "BrgRef", "Distance", "DistUnit", "FieldID", "Notes"},
+    "sightings": {"Behaviors", "Bearing", "BrgRef", "Distance", "DistUnit", "Altitude", "FieldID", "Notes"},
     "effort": {"Notes"},
     "events": {"ID", "Notes"},
 }
+# survey details that may be blank (platform altitude matters only for reticle distances: checked there)
+META_OPTIONAL = {"platform_altitude_ft"}
 # Start and End rows need only their time and position
 EFFORT_START_END_REQUIRED = {"DateTime", "Lat", "Lon", "Effort"}
 NOT_DATA = {"RowID", "Map", "VesHdg"}          # internal / display columns
@@ -228,7 +230,8 @@ def run_qc(rec) -> dict:
 
     # ---- survey details
     meta = rec.read_meta()
-    blank = [(k, label) for k, label, _ in schema.SURVEY_META if not (meta.get(k) or "").strip()]
+    blank = [(k, label) for k, label, _ in schema.SURVEY_META
+             if k not in META_OPTIONAL and not (meta.get(k) or "").strip()]
     if blank:
         add("error", "Survey details complete",
             f"{', '.join(l for _, l in blank)} {'is' if len(blank) == 1 else 'are'} blank. Fill {'it' if len(blank) == 1 else 'them'} in under Survey details.",
@@ -550,7 +553,14 @@ def run_qc(rec) -> dict:
             # sighted further away than the visibility recorded at the time
             vis_nm = visibility_nm((stt or {}).get("Visibility"))
             far_nm = None
-            if d is not None and r.get("DistUnit"):
+            if r.get("DistUnit") == "reticle":
+                if not (r.get("Altitude") or meta.get("platform_altitude_ft")):
+                    add("warning", "Plausible bearings and distances",
+                        "Dist is a reticle reading, but there's no altitude (this row's Alt or the survey's Platform altitude), "
+                        "so the animal's position couldn't be worked out.", "sightings", r, "Altitude", name)
+                if vp and sp:
+                    far_nm = geo.haversine_m(vp[0], vp[1], sp[0], sp[1]) / M_PER_NM
+            elif d is not None and r.get("DistUnit"):
                 try:
                     far_nm = geo.to_meters(d, r["DistUnit"]) / M_PER_NM
                 except (KeyError, ValueError):
@@ -602,7 +612,7 @@ def run_qc(rec) -> dict:
 
 # What is checked, for the report's "What is checked" list.
 CHECKS = [
-    ("Survey details complete", "Every survey detail is filled in (platform, organization, chief scientist and email)."),
+    ("Survey details complete", "Every survey detail is filled in (platform, organization, chief scientist and email; the platform altitude only when reticle distances need it)."),
     ("Required fields filled", "Sightings: everything except Behaviors, Bearing, Ref, Dist, Unit, FieldID and Notes. "
      "Effort: everything except Notes (Start and End rows: time and position only). Events: everything except ID and Notes."),
     ("Values from the lists", "Choices are in their lists (species, observers, behaviors, event types, sea state…)."),

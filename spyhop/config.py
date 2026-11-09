@@ -231,6 +231,11 @@ DEFAULT_SETTINGS = {
     "keep_screen_on": False,        # … and keep the screen on too
     "nmea_log_enabled": False,      # write every received NMEA sentence to <data folder>/nmea_logs
     "nmea_log_timestamps": True,
+    "altitude_column": "auto",      # Sightings' Alt column: auto (shown for aerial surveys) | show | hide
+    "reticle_method": "binoculars", # how Unit = reticle readings are taken: binoculars | marks | inclinometer (reticle.py)
+    "reticle_magnification": "7",   # binoculars: a key of reticle.PRESETS, which suggests the angle below
+    "reticle_deg_per_division": 0.573,   # binoculars: degrees per reticle division
+    "reticle_marks": [],            # calibrated marks: [{mark, angle (degrees below the horizontal)}]
     # --- also in spyhop-config.json, under their own keys (see CONFIG_KEYS)
     "online_feeds": [],             # map feeds (Settings → Inputs → Online overlays; feeds.py) → map_feeds
     "online_display": {},           # online overlays to show, set by a template: {ais, radar_us, radar_world,
@@ -250,10 +255,10 @@ DEFAULT_SETTINGS = {
     "tile_cache_enabled": True,
     "last_version": "",             # the Spyhop version that last ran (to say when it was updated)
     "template_url": "",             # web address of the team's template (templates.py)
-    "template_backup": True,        # save a backup (templates/backups) of the setup before using a template
+    "template_backup": True,        # save a backup (templates/backups) of the current template before using another
     "template_last": {},            # the last one from the web: {url, pulled, latest: {date, by, changed, notes}, changed}
     "template_author": "",          # the name last given when saving a template
-    "template_current": {},         # the template this setup came from or was saved to: {name, how: loaded|saved|backup, when}
+    "template_current": {},         # the saved template the current template came from or was saved to: {name, how: loaded|saved|backup, when}
     "template_fingerprints": {},    # {from: use|save, when, files: {part: sha1}}: to list what changed since
     "template_added": {},           # what each template used added, by the backup made before it: {backup: {waypoints:
                                     # [RowIDs], routes, overlays, feeds}}, so restoring that backup removes them
@@ -274,13 +279,18 @@ SHARED_SETTINGS = {
     "keep_screen_on": "Keep the screen on",
     "nmea_log_enabled": "Raw NMEA log",
     "nmea_log_timestamps": "Raw NMEA log time stamps",
+    "altitude_column": "Altitude column",
+    "reticle_method": "Reticle readings",
+    "reticle_magnification": "Binocular magnification",
+    "reticle_deg_per_division": "Degrees per reticle division",
+    "reticle_marks": "Calibrated marks",
 }
 NETWORK_INPUTS = ("udp", "tcp", "gpsd")       # the GPS / NMEA inputs a template carries
 
 # Spyhop's folder:
-#   templates/current/   the setup in use: LIST_FILES, shortcuts.csv and spyhop-config.json (a template, unzipped)
+#   templates/current/   the current template: LIST_FILES, shortcuts.csv and spyhop-config.json (a template, unzipped)
 #   templates/saved/     templates (<name>.spyhop-template.zip)
-#   templates/backups/   the setup as it was before a template was used
+#   templates/backups/   the current template as it was before another was used
 #   spyhop-local.json    this computer's own settings and the open survey
 #   charts/ overlays/ routes/ feeds/ tile_cache/ logs/ data/ (the default survey data folder)
 CONFIG_FILE = "spyhop-config.json"
@@ -317,7 +327,7 @@ def _write_csv(path: Path, header: list[str], rows: list[list[str]]):
 
 
 class Config:
-    """Spyhop's folder: the setup in use (templates/current), this computer's settings
+    """Spyhop's folder: the current template (templates/current), this computer's settings
     (spyhop-local.json) and the other folders. Settings are one dict in memory (self.settings);
     save_settings() writes the shared ones to spyhop-config.json and the rest to spyhop-local.json."""
 
@@ -340,6 +350,8 @@ class Config:
         self.ensure_defaults()
         self.load()
         self._resolve_data_dir()
+        from .layout import tidy_data_folder
+        tidy_data_folder(self)
         self.reload()
 
     # -- paths -----------------------------------------------------------------
@@ -397,9 +409,11 @@ class Config:
             raise ValueError(f"Can't use {p} as the data folder: {e}")
         self.data_dir = p
         self.save_settings({"data_dir": "" if p == self.default_data_dir else str(p)})
+        from .layout import tidy_data_folder
+        tidy_data_folder(self)
         return p
 
-    # -- the setup in use: templates/current -----------------------------------
+    # -- the current template: templates/current -----------------------------------
     def ensure_defaults(self):
         for name, (hdr, rows) in DEFAULT_LISTS.items():
             if not self.list_path(name).exists():

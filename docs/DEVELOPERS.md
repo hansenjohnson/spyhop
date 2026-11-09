@@ -28,13 +28,14 @@ spyhop/
   recorder.py     every edit goes through here: validation, computed fields, surveys, tracker, export
   store.py        CSV tables with atomic writes and undo/redo; the track file
   schema.py       the columns of each table, and the fixed lists
-  config.py       Spyhop's folder; the setup in use (templates/current) and this computer's settings (spyhop-local.json)
+  config.py       Spyhop's folder; the current template (templates/current) and this computer's settings (spyhop-local.json)
   layout.py       the one-time move from the 0.27 folder layout (remove before 1.0)
   nmea.py         NMEA 0183 parser, vessel state, instrument readings, raw log
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
   qc.py           the quality control check (thresholds in LIMITS)
-  reports.py      Tools → Reports: report specs → rows and columns, CSV/HTML pages; saved reports in the setup in use (Config.reports)
-  report_defs/    the starting saved reports of a new setup
+  reticle.py      Unit = reticle: angle below the horizon/horizontal → distance (Lerczak & Hobbs 1998), presets, calibrated marks
+  reports.py      Tools → Reports: report specs → rows and columns, CSV/HTML pages; saved reports in the current template (Config.reports)
+  report_defs/    the starting saved reports of a new current template
   routes.py       the routes folder (Tools → Routes): list, read, save, delete GPX files
   feeds.py        map feeds (Settings → Inputs): ArcGIS / GeoJSON fetch, presets, the saved copy in <Spyhop>/feeds
   templates.py    templates (Settings → Templates): spyhop-config.json + the list CSVs (+ waypoints, routes, overlays); read, compare, use, save (templates/saved), fetch from the web, backups (templates/backups), current_status

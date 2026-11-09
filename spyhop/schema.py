@@ -15,12 +15,13 @@ from __future__ import annotations
 
 
 def col(key, type="text", label=None, list=None, auto=False, width=None, hidden=False,
-        default="", copy=True, skip=False, help=""):
+        default="", copy=True, skip=False, help="", optional=None):
     """skip=True: a new row's cursor jumps over this column (filled in later, e.g. IDs).
-    help: one-line description shown under the table when the column is selected."""
+    help: one-line description shown under the table when the column is selected.
+    optional: the name of a Settings → General choice that shows or hides the column (it's always in the CSV)."""
     return {"key": key, "type": type, "label": label or key, "list": list, "auto": auto,
             "width": width, "hidden": hidden, "default": default, "copy": copy, "skip": skip,
-            "help": help}
+            "help": help, "optional": optional}
 
 
 FIXED_LISTS = {
@@ -34,17 +35,19 @@ FIXED_LISTS = {
     "effort": ["Start", "ON", "OFF", "End", "ERROR"],   # ERROR: a trackline break (GPS jump or loss)
     "images": ["None", "Photo", "Video", "Photo + Video", "Drone"],
     "brgref": ["M", "T", "R"],
-    "distunit": ["m", "km", "nm", "mi", "yd"],
+    "distunit": ["m", "km", "nm", "mi", "yd", "reticle"],
     "shapes": ["Circle", "Diamond", "Square", "Triangle", "Star"],
     "colors": ["red", "orange", "gold", "yellow", "green", "darkgreen", "teal", "cyan", "blue", "navy",
                "purple", "magenta", "pink", "brown", "black", "gray", "white"],
-    "platform_type": ["Vessel", "Plane", "Land", "Other"],
+    "platform_type": ["Shipboard", "Aerial", "Stationary", "Other"],
 }
 
 # Survey details kept with each survey in <survey>_metadata.csv
 SURVEY_META = [
-    ("platform_name", "Platform name", "Vessel (or aircraft, station…) name"),
-    ("platform_type", "Platform type", "Vessel, Plane, Land or Other"),
+    ("platform_name", "Platform name", "Vessel, aircraft or station name"),
+    ("platform_type", "Platform type", "Shipboard, Aerial, Stationary or Other"),
+    ("platform_altitude_ft", "Platform altitude (ft)",
+     "Observers’ average eye height above the water (ship or station), or the usual survey altitude (aircraft)"),
     ("organization", "Organization", "Organization running the survey"),
     ("chief_scientist", "Chief scientist", "Chief scientist for this survey"),
     ("chief_scientist_email", "Chief scientist email", "name@example.org"),
@@ -84,8 +87,12 @@ TABS = {
                 help="Bearing from the vessel to the animals, 0–360°; negative counts back from 360 (−10 = 350, e.g. 10° to port for a relative bearing). Its reference is in Ref."),
             col("BrgRef", "choice", "Ref", list="brgref", width=45,
                 help="Bearing reference: M = magnetic (compass), T = true, R = relative to the bow (000 = dead ahead)."),
-            col("Distance", "float", "Dist", width=55, help="Distance from the vessel to the animals. Its unit is in Unit."),
-            col("DistUnit", "choice", "Unit", list="distunit", width=45, help="Unit of Dist: m, km, nm, mi or yd."),
+            col("Distance", "float", "Dist", width=55,
+                help="Distance from the platform to the animals, in Unit. With Unit = reticle: the reading (reticles below the horizon, a calibrated mark, or degrees below the horizontal; Settings → General → Reticles)."),
+            col("DistUnit", "choice", "Unit", list="distunit", width=60,
+                help="Unit of Dist: m, km, nm, mi, yd, or reticle (a reading turned into a distance with the platform altitude)."),
+            col("Altitude", "float", "Alt (ft)", width=60, optional="altitude",
+                help="Platform altitude (ft) for this sighting: eye height, or the aircraft’s altitude. Filled in from the survey details; used to turn reticle readings into distances. Show or hide it in Settings → General."),
             col("SigLat", "lat", "SigLat",
                 help="Animal latitude, calculated from Bearing and Dist (the vessel position if those are blank). You can also type it."),
             col("SigLon", "lon", "SigLon",

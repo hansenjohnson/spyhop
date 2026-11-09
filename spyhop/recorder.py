@@ -17,7 +17,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import __version__, geo, schema, tzguess
+from . import __version__, geo, reticle, schema, tzguess
 from .config import Config
 from .nmea import NmeaDecoder, RawLog, VesselState
 import uuid
@@ -77,6 +77,7 @@ class Recorder:
         self.survey: dict | None = None
         self.pending_resume: str | None = None
         self._last_track_t = 0.0
+        self._platform_cache, self._platform_cache_t = "", 0.0     # platform type, for the tracker
         self.rawlog: RawLog | None = None
         # Tracking only runs for an open, active survey that someone has started or continued.
         if self.cfg.settings.get("tracking_enabled"):
@@ -277,11 +278,11 @@ class Recorder:
     # recorded with the survey details but not shown or edited: (field, label)
     SYSTEM_META = [("spyhop_version_created", "Started with Spyhop version"),
                    ("template_created", "Template in use when the survey started"),
-                   ("template_created_matches", "Setup matched that template when the survey started"),
+                   ("template_created_matches", "Current template matched that saved template when the survey started"),
                    ("spyhop_version_saved", "Details last saved with Spyhop version")]
 
     def _template_meta(self) -> dict:
-        """Which template the setup in use is (templates.current_status), for a new survey's details."""
+        """Which saved template the current template matches (templates.current_status), for a new survey's details."""
         from . import templates
         try:
             st = templates.current_status(self.cfg)
@@ -309,6 +310,7 @@ class Recorder:
                         sysv[r["field"]] = r.get("value") or ""
         sysv.update(system or {})
         sysv["spyhop_version_saved"] = __version__
+        self._platform_cache_t = 0.0                    # the tracker reads the platform type again
         rows = [{"field": k, "label": label, "value": meta.get(k, "")} for k, label, _ in schema.SURVEY_META]
         rows += [{"field": k, "label": label, "value": sysv.get(k, "")} for k, label in self.SYSTEM_META]
         atomic_write_csv(p, ["field", "label", "value"], rows)
@@ -323,8 +325,16 @@ class Recorder:
             if k == "platform_type" and v:
                 match = next((o for o in schema.FIXED_LISTS["platform_type"] if o.lower() == v.lower()), None)
                 if match is None:
-                    raise ValueErrorMsg("Platform type must be Vessel, Plane, Land or Other.")
+                    raise ValueErrorMsg("Platform type must be Shipboard, Aerial, Stationary or Other.")
                 v = match
+            if k == "platform_altitude_ft" and v:
+                try:
+                    f = float(v)
+                except ValueError:
+                    raise ValueErrorMsg("Platform altitude must be a number of feet.")
+                if not 0 < f <= 60000:
+                    raise ValueErrorMsg("Platform altitude must be more than 0 and at most 60000 ft.")
+                v = f"{f:g}"
             if k == "chief_scientist_email" and v and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v):
                 raise ValueErrorMsg(f"“{v}” doesn't look like an email address.")
             meta[k] = v
@@ -338,6 +348,11 @@ class Recorder:
         self.cfg.save_settings({"last_meta": meta})
         self.emit({"type": "reload"})
         return meta
+
+    def platform(self) -> tuple[str, str]:
+        """(platform type, platform altitude in ft) of the open survey, else of the last survey details."""
+        meta = self.read_meta() if self.survey else (self.cfg.settings.get("last_meta") or {})
+        return meta.get("platform_type") or "", meta.get("platform_altitude_ft") or ""
 
     def survey_info(self) -> dict | None:
         if self.survey is None:
@@ -717,7 +732,7 @@ class Recorder:
     def compute(self, tab: str, row: dict, changed: set[str], old: dict | None = None) -> list[str]:
         warnings = []
         if tab == "sightings":
-            keys = {"Bearing", "BrgRef", "Distance", "DistUnit", "Lat", "Lon", "VesHdg"}
+            keys = {"Bearing", "BrgRef", "Distance", "DistUnit", "Lat", "Lon", "VesHdg", "Altitude"}
             b, d = row.get("Bearing", ""), row.get("Distance", "")
             if b == "" or d == "":
                 # No bearing/distance: the animal is taken to be at the vessel, unless
@@ -752,7 +767,19 @@ class Recorder:
                         else "no vessel heading on this row"))
                     return warnings
                 unit = row.get("DistUnit") or self.cfg.settings.get("distance_unit", "nm")
-                slat, slon = geo.destination(lat, lon, true_b, geo.to_meters(float(d), unit))
+                if unit == "reticle":
+                    alt = row.get("Altitude") or self.platform()[1]
+                    if not alt:
+                        warnings.append("Set the platform altitude (Survey tab, or this row's Alt) to turn the reticle reading into a distance.")
+                        return warnings
+                    try:
+                        dist_m = reticle.distance_m(float(d), float(alt), self.cfg.settings)
+                    except reticle.ReticleError as e:
+                        warnings.append(f"{e} The animal's position wasn't calculated.")
+                        return warnings
+                else:
+                    dist_m = geo.to_meters(float(d), unit)
+                slat, slon = geo.destination(lat, lon, true_b, dist_m)
                 row["SigLat"], row["SigLon"] = f"{slat:.6f}", f"{slon:.6f}"
         return warnings
 
@@ -780,7 +807,19 @@ class Recorder:
         else:
             b = true_b
         unit = row.get("DistUnit") or "nm"
-        d = geo.haversine_m(vlat, vlon, slat, slon) / geo.UNIT_TO_M.get(unit, 1852.0)
+        dm = geo.haversine_m(vlat, vlon, slat, slon)
+        d = None
+        if unit == "reticle":
+            alt = row.get("Altitude") or self.platform()[1]
+            try:
+                d = reticle.reading_for(dm, float(alt), self.cfg.settings) if alt else None
+            except (ValueError, ZeroDivisionError):
+                d = None
+            if d is None or d < 0:                 # no reading for it (marks, no altitude): give it in meters
+                unit, d = "m", dm
+                row["DistUnit"] = "m"
+        else:
+            d = dm / geo.UNIT_TO_M.get(unit, 1852.0)
         row["BrgRef"] = ref
         row["Bearing"] = f"{b % 360:.0f}"
         row["Distance"] = f"{d:.3g}" if d < 100 else f"{d:.0f}"
@@ -848,6 +887,8 @@ class Recorder:
             row["BrgRef"] = self.cfg.settings.get("bearing_reference", "M")
         if "DistUnit" in row:
             row["DistUnit"] = self.cfg.settings.get("distance_unit", "nm")
+        if "Altitude" in row:
+            row["Altitude"] = self.platform()[1]
         if spec.get("seq"):
             row[spec["seq"]] = str(t.next_seq(spec["seq"]))
         if tab == "marks":
@@ -987,6 +1028,11 @@ class Recorder:
     def tick_tracker(self):
         s = self.cfg.settings
         if not s.get("tracking_enabled") or not self.survey_active():
+            return
+        if self._platform_cache_t < time.time() - 30:          # read the survey details at most every 30 s
+            self._platform_cache = self.platform()[0]
+            self._platform_cache_t = time.time()
+        if self._platform_cache == "Stationary":                # it doesn't move: only Start and End points
             return
         interval = max(1, min(300, int(s.get("tracking_interval", 10) or 10)))
         now = time.time()
@@ -1220,7 +1266,7 @@ class Recorder:
     # columns of the merged CSV, in order
     MERGED_EFFORT = ["Effort", "Visibility", "SeaState", "Weather", "Glare", "Port", "Recorder", "Starboard"]
     MERGED_SIGHTING = ["SightNo", "Species", "Count", "Calves", "NumConf", "IDrel", "Behaviors", "Observer",
-                       "Bearing", "BrgRef", "Distance", "DistUnit", "SigLat", "SigLon", "VesHdg", "Images", "FieldID"]
+                       "Bearing", "BrgRef", "Distance", "DistUnit", "Altitude", "SigLat", "SigLon", "VesHdg", "Images", "FieldID"]
     MERGED_EVENT = ["EventNo", "EventType", "EventID"]
 
     def merged_rows(self, pts: list[dict] | None = None) -> tuple[list[str], list[dict]]:
@@ -1413,7 +1459,8 @@ class Recorder:
     def bootstrap(self) -> dict:
         return {
             "config": self.cfg.public(),
-            "schema": {"tabs": schema.TABS, "fixed_lists": schema.FIXED_LISTS, "survey_meta": schema.SURVEY_META},
+            "schema": {"tabs": schema.TABS, "fixed_lists": schema.FIXED_LISTS, "survey_meta": schema.SURVEY_META,
+                       "reticle": {"methods": reticle.METHODS, "presets": {k: list(v) for k, v in reticle.PRESETS.items()}}},
             "survey": self.survey_info(),
             "resume_prompt": self.pending_resume,
             "surveys": self.list_surveys(),

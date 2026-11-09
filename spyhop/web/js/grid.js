@@ -9,7 +9,7 @@ export class Grid {
     this.app = app;
     this.tab = tab;
     this.spec = app.S.schema.tabs[tab];
-    this.cols = this.spec.columns.filter((c) => !c.hidden);
+    this.cols = this.visibleCols();
     this.container = container;
     this.sel = null;          // {id, key}
     this.editing = null;      // {td, input, col, row, original}
@@ -20,6 +20,15 @@ export class Grid {
     this.wrap.addEventListener('keydown', (e) => this.onKey(e));
     this.wrap.addEventListener('mousedown', (e) => this.onMouse(e));
     this.wrap.addEventListener('dblclick', (e) => this.onDbl(e));
+  }
+
+  // columns shown: not hidden, and optional ones (e.g. Altitude) only when Settings → General says so
+  visibleCols() { return this.spec.columns.filter((c) => !c.hidden && this.app.columnShown(c)); }
+  refreshColumns() {
+    const cols = this.visibleCols();
+    if (cols.map((c) => c.key).join() === this.cols.map((c) => c.key).join()) return;
+    this.cols = cols;
+    this.render();
   }
 
   get rows() { return this.app.S.tables[this.tab].rows; }

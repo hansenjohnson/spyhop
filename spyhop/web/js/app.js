@@ -134,6 +134,17 @@ class App {
   }
 
   unit() { return this.S.config.settings.distance_unit || 'nm'; }
+  // the platform of the open survey (else of the last survey details): Shipboard, Aerial, Stationary, Other or ''
+  platformType() { return this.S.survey?.meta?.platform_type || this.S.config.settings.last_meta?.platform_type || ''; }
+  // an optional column (schema optional=…) is shown or not: Settings → General → Altitude column
+  columnShown(c) {
+    if (!c.optional) return true;
+    if (c.optional === 'altitude') {
+      const m = this.S.config.settings.altitude_column || 'auto';
+      return m === 'show' || (m === 'auto' && this.platformType() === 'Aerial');
+    }
+    return true;
+  }
   // the survey clock for timeParts(): 'local', 'UTC', a fixed 'UTC±hh:mm', or (from the platform's
   // position) the IANA zone the server found
   clock() {
@@ -480,6 +491,7 @@ class App {
         this.S.config.settings = m.settings;
         if (this.S.survey) this.S.survey.tracking = !!m.settings.tracking_enabled;
         this.refreshFormats();
+        for (const g of Object.values(this.grids)) g.refreshColumns?.();
         this.updateStatus();
         if (this.tab === 'survey' && !document.activeElement?.closest('#pane-survey input[type=text], #pane-survey textarea')) this.renderSurvey();
         if (this.tab === 'settings' && !document.activeElement?.closest('#pane-settings')) this.renderSettings();
@@ -564,7 +576,9 @@ class App {
     if (document.title !== title) document.title = title;
     $('#sf-survey').classList.toggle('alert', !sv);
     const tr = $('#sf-track');
-    tr.textContent = st.tracking_enabled ? `● Tracking ${st.tracking_interval}s` : '○ Tracking off';
+    const still = this.platformType() === 'Stationary';          // a stationary platform records no trackline
+    tr.textContent = still && st.tracking_enabled ? '◆ Stationary (no trackline)' : st.tracking_enabled ? `● Tracking ${st.tracking_interval}s` : '○ Tracking off';
+    tr.title = still ? 'A stationary platform doesn’t move, so Spyhop records only its Start and End positions, not a trackline.' : '';
     tr.classList.toggle('on', !!st.tracking_enabled);
     const eff = last?.Effort || '—';
     $('#sf-effort').replaceChildren('Effort ', el('span', { class: `pill ${eff === 'ON' ? 'on' : 'off'}` }, eff));
@@ -868,7 +882,7 @@ class App {
       el('h4', {}, 'Spyhop folder'),
       el('p', {}, 'Spyhop’s own files are in ', el('span', { class: 'mono' }, S.config.root), '. ',
         el('a', { href: '#', id: 'open-app-folder', onclick: (e) => { e.preventDefault(); this.open('app'); } }, 'Open folder')),
-      el('p', { class: 'hint' }, 'It holds templates/ (current: the setup in use, i.e. the lists, shortcuts and spyhop-config.json with the shared settings, map display and saved reports; saved: your templates; backups), spyhop-local.json (this computer’s own settings), offline charts, map overlays, routes, map feeds, the tile cache and logs. Spyhop always uses this folder.'));
+      el('p', { class: 'hint' }, 'It holds templates/ (current: the current template, i.e. the lists, shortcuts and spyhop-config.json with the shared settings, map display and saved reports; saved: your saved templates; backups), spyhop-local.json (this computer’s own settings), offline charts, map overlays, routes, map feeds, the tile cache and logs. Spyhop always uses this folder.'));
   }
 
   async exportData() {
@@ -1108,7 +1122,7 @@ class App {
     };
     const body = el('div', {},
       el('p', {}, re
-        ? 'Spyhop closes, downloads a clean copy of the latest version, replaces its program folder with it (Python packages are set up again when it starts) and opens again in a new window. A copy of the current program files is kept in Spyhop’s folder (updates/).'
+        ? 'Spyhop closes, downloads a clean copy of the latest version, replaces its program folder with it (Python packages are set up again when it starts) and opens again in a new window.'
         : 'Spyhop closes and removes itself from this computer. This can’t be undone.'),
       el('label', { class: 'check' }, setBox, el('span', {}, re
         ? 'Also reset the settings, templates, offline maps, overlays, routes and feeds (Spyhop’s folder) to a fresh start'
@@ -1425,7 +1439,7 @@ class App {
       el('div', { class: 'summary-details' }, kv([['Started', fmtT(sv.start_time)],
         ['Ended', sv.ended ? fmtT(sv.end_time) : 'still active'],
         ['Duration', t0 ? fmtDuration((t1 - t0) / 1000) : '—'],
-        ['Platform', platform || '—'], ['Organization', meta.organization || '—'], ['Chief scientist', meta.chief_scientist || '—'],
+        ['Platform', platform || '—'], ['Platform altitude', meta.platform_altitude_ft ? `${meta.platform_altitude_ft} ft` : '—'], ['Organization', meta.organization || '—'], ['Chief scientist', meta.chief_scientist || '—'],
         ['Chief scientist email', meta.chief_scientist_email ? el('a', { href: `mailto:${meta.chief_scientist_email}` }, meta.chief_scientist_email) : '—']])),
       el('h3', {}, 'Sightings by species'),
       spRows.length ? tbl(['Species', 'Sightings', 'Number', 'Calves'], spRows) : el('p', { class: 'hint' }, 'No sightings yet.'),
@@ -1466,7 +1480,7 @@ class App {
   }
 
   // ---------------------------------------------------------------- templates (templates.py)
-  // Settings → Templates: a team's setup in one file, kept in templates/saved of Spyhop's folder (the one in use: templates/current)
+  // Settings → Templates: the current template (templates/current) and the saved templates (templates/saved)
   renderTemplates() {
     const pane = $('#pane-templates');
     if (!pane) return;
@@ -1484,9 +1498,9 @@ class App {
     const cur = L?.current?.name && L.templates.find((p) => p.name === L.current.name);
     const btn = (label, attrs, fn) => el('button', { ...attrs, onclick: fn }, label);
 
-    // ---- this computer's setup and the templates in the folder
+    // ---- the current template and the saved templates
     const kids = [
-      el('p', {}, 'A template is your team’s Spyhop setup in one small file, so every computer records the same way: the species, event types, observers and behaviors lists, keyboard shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log, network GPS / NMEA inputs), the map feeds and which online overlays are on, and, if you choose, waypoints, routes and overlays. Update the template and use it again whenever the team changes something. The setup in use is itself a template, unzipped, in templates/current of Spyhop’s folder; saved templates are in templates/saved. Share one by uploading it (or copying it to a USB stick). Offline charts, survey data, serial GPS ports and the data folder are never in a template.'),
+      el('p', {}, 'A template is your team’s Spyhop settings in one small file, so every computer records the same way: the species, event types, observers and behaviors lists, keyboard shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log, network GPS / NMEA inputs), the map feeds and which online overlays are on, and, if you choose, waypoints, routes and overlays. Update the template and use it again whenever the team changes something. The current template is the one in use, kept unzipped in templates/current of Spyhop’s folder; saved templates are zip files in templates/saved. Share one by uploading it (or copying it to a USB stick). Offline charts, survey data, serial GPS ports and the data folder are never in a template.'),
     ];
     if (!L) kids.push(el('p', { class: 'hint' }, tp.loading ? 'Reading the templates folder…' : ''));
     else {
@@ -1494,14 +1508,14 @@ class App {
       const c = L.current;
       if (c?.name && cur) {
         const how = { saved: 'Saved to', loaded: 'Loaded from', backup: 'Restored from a backup, then' }[c.how] || 'From';
-        curText = el('p', { id: 'tpl-current' }, el('b', {}, 'This computer’s setup: '), `${how} `, el('span', { class: 'mono' }, cur.name),
+        curText = el('p', { id: 'tpl-current' }, el('b', {}, 'Current template: '), `${how} `, el('span', { class: 'mono' }, cur.name),
           c.when ? ` (${when(c.when)})` : '', cur.matches ? ' — no changes since.'
             : cur.differs?.length ? ` — changed since: ${cur.differs.join(', ')}.` : '.');
-      } else if (c?.how === 'backup') curText = el('p', { id: 'tpl-current' }, el('b', {}, 'This computer’s setup: '), `restored from a backup${c.when ? ` (${when(c.when)})` : ''}.`);
-      else curText = el('p', { id: 'tpl-current' }, el('b', {}, 'This computer’s setup: '), c?.name ? `from ${c.name}, which is no longer in the folder.` : 'not saved as a template yet.');
+      } else if (c?.how === 'backup') curText = el('p', { id: 'tpl-current' }, el('b', {}, 'Current template: '), `restored from a backup${c.when ? ` (${when(c.when)})` : ''}.`);
+      else curText = el('p', { id: 'tpl-current' }, el('b', {}, 'Current template: '), c?.name ? `from ${c.name}, which is no longer in the folder.` : 'not saved yet.');
       kids.push(curText);
       kids.push(el('p', { class: 'hint' }, 'Templates in ', el('span', { class: 'mono' }, L.folder)));
-      if (!L.templates.length) kids.push(el('p', { class: 'hint', id: 'tpl-none' }, 'No templates here yet. Save this computer’s setup as a template, or get one from a web address below.'));
+      if (!L.templates.length) kids.push(el('p', { class: 'hint', id: 'tpl-none' }, 'No saved templates yet. Save the current template, or get one from a web address below.'));
       else {
         kids.push(el('table', { class: 'summary tpl-list', id: 'tpl-list' },
           el('thead', {}, el('tr', {}, ['Template', 'Latest change', 'Compared with here', ''].map((h) => el('th', {}, h)))),
@@ -1518,7 +1532,7 @@ class App {
               el('td', {}, status),
               el('td', { class: 'tpl-actions' },
                 btn('Use this template…', { class: 'tpl-use', disabled: !!(p.error || p.problems?.length) }, () => this.checkTemplate({ template: p.name })),
-                btn('Update…', { class: 'tpl-update', title: 'Replace this template with this computer’s setup' }, () => this.saveTemplate(p.name)),
+                btn('Update…', { class: 'tpl-update', title: 'Replace this saved template with the current template' }, () => this.saveTemplate(p.name)),
                 el('a', { class: 'button', href: `/api/templates/file/${encodeURIComponent(p.name)}`, download: p.name }, 'Download')));
           }))));
       }
@@ -1526,7 +1540,7 @@ class App {
     kids.push(el('div', { class: 'btnrow' },
       btn('Save as a new template…', { id: 'tpl-save-new', class: 'primary' }, () => this.saveTemplate(null)),
       btn('Open the templates folder', {}, () => this.open('templates')),
-      btn('Open the setup in use', { title: 'templates/current: the lists, shortcuts and spyhop-config.json in use' }, () => this.open('current')),
+      btn('Open the current template', { title: 'templates/current: the lists, shortcuts and spyhop-config.json in use' }, () => this.open('current')),
       btn('Refresh', {}, () => this.loadTemplates())));
 
     // ---- what a template did / would change (from the list, the web or a backup)
@@ -1559,7 +1573,7 @@ class App {
     // ---- backups
     const bk = L?.backups || [];
     kids.push(el('h4', {}, 'Backups'),
-      el('p', { class: 'hint' }, 'Spyhop saves a backup of this computer’s setup before using a template (unless you untick it), in ',
+      el('p', { class: 'hint' }, 'Spyhop saves a backup of the current template before using another (unless you untick it), in ',
         el('span', { class: 'mono' }, L?.backups_folder || 'templates/backups'), '. A backup is itself a template.'),
       bk.length ? el('table', { class: 'summary', id: 'tpl-backups' }, el('tbody', {}, bk.slice(0, 5).map((b) => el('tr', {},
         el('td', {}, when(b.modified)), el('td', { class: 'mono' }, b.name),
@@ -1568,7 +1582,7 @@ class App {
         btn('Save a backup now', { id: 'btn-tpl-backup' }, () => this.backupTemplate()),
         btn('Open the backups folder', {}, () => this.open('backups'))),
       el('details', { class: 'hint' }, el('summary', {}, 'How to share a template with the team'),
-        el('p', {}, 'Save this computer’s setup as a template (or Update the team’s template with it), giving your name and what you changed: that’s added to the template’s record of changes. Then upload the file in place of the old one, keeping the same link (in Google Drive: Manage versions → Upload new version). Others press Check with that link.'),
+        el('p', {}, 'Save the current template (or Update the team’s saved template with it), giving your name and what you changed: that’s added to the template’s record of changes. Then upload the file in place of the old one, keeping the same link (in Google Drive: Manage versions → Upload new version). Others press Check with that link.'),
         el('p', {}, 'Templates are ordinary zip files named .spyhop-template.zip, so they open in any zip tool: the lists and shortcuts are CSV files, and everything else is in spyhop-config.json. SharePoint and OneDrive links usually need a sign-in, so they don’t work. See docs/TEMPLATES.md.')));
     return sec('Templates', ...kids);
   }
@@ -1614,7 +1628,7 @@ class App {
     const cancel = el('button', { onclick: () => { tp.result = null; this.renderTemplates(); } }, 'Cancel');
     if (!r.problems.length) {
       if (!todo.length) {
-        box.push(el('p', { id: 'tpl-uptodate' }, el('b', {}, 'This computer already has this setup.')),
+        box.push(el('p', { id: 'tpl-uptodate' }, el('b', {}, 'The current template is already the same as this one.')),
           el('div', { class: 'btnrow' }, el('button', { id: 'btn-tpl-use', onclick: () => this.useTemplate() },
             r.kind === 'web' || r.kind === 'file' ? 'Keep a copy in the templates folder' : 'Mark it as in use'), cancel));
       } else {
@@ -1622,7 +1636,7 @@ class App {
           onchange: (e) => { tp.backup = e.target.checked; } });
         const verb = r.kind === 'backup' ? 'Restore' : r.kind === 'folder' ? 'Use it' : 'Pull it';
         box.push(
-          el('label', { class: 'check' }, backup, el('span', {}, 'Save a backup of this computer’s setup first, in templates/backups (it can be restored to undo)')),
+          el('label', { class: 'check' }, backup, el('span', {}, 'Save a backup of the current template first, in templates/backups (it can be restored to undo)')),
           el('div', { class: 'btnrow' }, el('button', { id: 'btn-tpl-use', class: 'primary', onclick: () => this.useTemplate() },
             tp.busy === 'use' ? 'Working…' : `${verb}: ${todo.length} change${todo.length > 1 ? 's' : ''}`), cancel));
       }
@@ -1664,8 +1678,8 @@ class App {
       : since ? (info.files?.length ? `Changed on this computer since ${since}.` : `Nothing has changed on this computer since ${since}.`)
         : 'Spyhop doesn’t know what changed, so it says all.';
     const body = el('div', { class: 'stack-form' },
-      name ? el('p', { class: 'warnbox' }, el('b', {}, `This replaces ${name} `), 'with this computer’s setup. If this is the team’s template, check with whoever looks after it first; the change is added to the template’s record of changes.')
-        : el('p', {}, 'This saves this computer’s setup as a new template in the templates folder, with your change added to its record of changes.'),
+      name ? el('p', { class: 'warnbox' }, el('b', {}, `This replaces ${name} `), 'with the current template. If this is the team’s template, check with whoever looks after it first; the change is added to the template’s record of changes.')
+        : el('p', {}, 'This saves the current template as a new saved template (templates/saved), with your change added to its record of changes.'),
       name ? null : el('label', { class: 'stack' }, 'Template name', fname, el('span', { class: 'hint' }, 'Saved as <name>.spyhop-template.zip')),
       el('label', { class: 'stack' }, 'Your name', by),
       el('label', { class: 'stack' }, 'What you changed', notes),
@@ -1696,19 +1710,19 @@ class App {
     return true;
   }
 
-  // Before a survey starts: if the setup in use isn't saved as a template, offer to save it, so the
+  // Before a survey starts: if the current template isn't saved, offer to save it, so the
   // survey's details can say which template it was recorded with. Returns false to stop.
   async offerTemplateSave() {
     let st;
     try { st = (await api('/api/templates/status')).status; } catch { return true; }
     if (!st || st.saved) return true;
     const known = st.name && st.changed?.length;
-    const choice = await modal({ title: 'Save the setup as a template first?', width: 'min(560px, 94vw)',
+    const choice = await modal({ title: 'Save the current template first?', width: 'min(560px, 94vw)',
       body: el('div', { id: 'tpl-start-prompt' },
         el('p', {}, known
-          ? ['The setup in use has changed since it was saved as ', el('span', { class: 'mono' }, st.name), ` (${st.changed.join(', ')}).`]
-          : 'The setup in use (lists, shortcuts, map display, saved reports and settings) isn’t saved as a template.'),
-        el('p', {}, 'Saving it first means this survey’s details record exactly which setup it was made with, and the team can use the same one.')),
+          ? ['The current template has changed since it was saved as ', el('span', { class: 'mono' }, st.name), ` (${st.changed.join(', ')}).`]
+          : 'The current template (lists, shortcuts, map display, saved reports and settings) hasn’t been saved.'),
+        el('p', {}, 'Saving it first means this survey’s details record exactly which template it was made with, and the team can use the same one.')),
       buttons: [{ label: 'Cancel', value: null }, { label: 'Start without saving', value: 'skip' },
         ...(known ? [{ label: `Update ${st.name.replace(/\.spyhop-template\.zip$|\.zip$/i, '')}…`, value: 'update' }] : []),
         { label: 'Save as a new template…', value: 'save', primary: true }] });
@@ -1745,7 +1759,7 @@ class App {
       let text = over.length ? `${over.length === 1 ? 'This' : 'These'} will be replaced or removed on this computer: ${over.map((f) => f.file).join(', ')}.` : '';
       if (adds.length) text += `${text ? ' ' : ''}Added: ${adds.map((f) => f.unit === 'waypoints' ? `${f.add} waypoint${f.add > 1 ? 's' : ''}` : f.file).join(', ')}.`;
       text += backup ? ' A backup is saved first.' : ' No backup will be saved, so changes made here to these will be lost.';
-      if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and Quality Control will flag values that are no longer in a list. Changing the setup during a survey is unusual: are you sure?';
+      if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and Quality Control will flag values that are no longer in a list. Changing the template during a survey is unusual: are you sure?';
       if (!await confirmBox('Use this template?', text, r.kind === 'backup' ? 'Restore' : 'Use it', true)) return;
     }
     tp.busy = 'use'; this.renderTemplates();
@@ -1765,6 +1779,52 @@ class App {
       toast(`Backup saved: ${r.path}`);
     } catch { return; }
     await this.loadTemplates();
+  }
+
+  // Settings → General → Altitude and reticles: the Sightings Alt column, and how Unit = reticle
+  // readings become distances (spyhop/reticle.py)
+  reticleSection(sec, sel) {
+    const st = this.S.config.settings, R = this.S.schema.reticle || { methods: {}, presets: {} };
+    const method = st.reticle_method || 'binoculars';
+    const kids = [
+      el('p', { class: 'hint' }, 'Automatic shows the Alt column for aerial surveys and hides it for shipboard and stationary ones (Survey tab → Platform type). It is always kept in the file.'),
+      el('div', { class: 'grid2' },
+        el('label', { class: 'row' }, 'Altitude column in Sightings', sel('altitude_column', [['auto', 'Automatic'], ['show', 'Always shown'], ['hide', 'Hidden']])),
+        el('label', { class: 'row' }, 'Reticle readings are', sel('reticle_method', Object.entries(R.methods)))),
+    ];
+    if (method === 'binoculars') {
+      const per = el('input', { type: 'number', id: 'reticle-per', min: 0.001, max: 10, step: 0.001, value: st.reticle_deg_per_division,
+        onchange: (e) => this.saveSettings({ reticle_deg_per_division: +e.target.value }) });
+      kids.push(el('div', { class: 'grid2' },
+        el('label', { class: 'row' }, 'Binocular magnification', el('select', { id: 'reticle-mag', onchange: (e) => {
+          const p = R.presets[e.target.value];
+          this.saveSettings({ reticle_magnification: e.target.value, ...(p && p[1] ? { reticle_deg_per_division: p[1] } : {}) });
+        } }, Object.entries(R.presets).map(([k, [label]]) => el('option', { value: k, selected: String(st.reticle_magnification) === k }, label)))),
+        el('label', { class: 'row' }, 'Degrees per reticle division', per)),
+        el('p', { class: 'hint' }, 'Count the reticles down from the horizon to the animals and type that number in Dist (Unit = reticle). The angle of one division depends on the binoculars: the magnification suggests a value, but check the manual or calibrate them. Many 7×50 and 10× marine binoculars have a 10-mil scale (0.573° per division; some count 5-mil half divisions, 0.286°); Fujinon 25×150 big-eyes are 0.0771° per division (Kinzey & Gerrodette 2001).'));
+    } else if (method === 'marks') {
+      const draft = (this.marksDraft ||= (st.reticle_marks || []).map((m) => ({ ...m })));
+      if (!draft.length) draft.push({ mark: '', angle: '' });
+      const rows = draft.map((m, i) => el('tr', {},
+        el('td', {}, el('input', { type: 'text', size: 6, value: m.mark, class: 'mark-mark', oninput: (e) => { m.mark = e.target.value; } })),
+        el('td', {}, el('input', { type: 'text', size: 7, value: m.angle, class: 'mark-angle', oninput: (e) => { m.angle = e.target.value; } })),
+        el('td', {}, el('button', { class: 'icon', title: 'Remove', onclick: () => { draft.splice(i, 1); this.renderSettings(); } }, '✕'))));
+      kids.push(el('table', { class: 'edit-table', id: 'reticle-marks' },
+        el('thead', {}, el('tr', {}, el('th', {}, 'Mark'), el('th', {}, 'Degrees below the horizontal'), el('th', {}))), el('tbody', {}, rows)),
+        el('div', { class: 'btnrow' },
+          el('button', { onclick: () => { draft.push({ mark: '', angle: '' }); this.renderSettings(); } }, 'Add mark'),
+          el('button', { class: 'primary', id: 'reticle-marks-save', onclick: async () => {
+            try {
+              const r = await api('/api/settings', { updates: { reticle_marks: draft.filter((m) => String(m.mark).trim() || String(m.angle).trim()) } });
+              this.S.config.settings = r.settings; this.marksDraft = null; toast('Calibration table saved'); this.renderSettings();
+            } catch {}
+          } }, 'Save table')),
+        el('p', { class: 'hint' }, 'Each mark (numbered, e.g. on an aircraft’s window or wing strut, or a calibrated scale) and the angle below the horizontal it stands for. Type the mark in Dist (Unit = reticle).'));
+    } else {
+      kids.push(el('p', { class: 'hint' }, 'Type the angle below the horizontal, in degrees, in Dist (Unit = reticle), as the inclinometer reads it (90° is straight down).'));
+    }
+    kids.push(el('p', { class: 'hint' }, 'With Unit = reticle, the animals’ position comes from the bearing, the reading and the platform altitude (the row’s Alt, filled in from the survey’s Platform altitude), allowing for the curvature of the earth (Lerczak & Hobbs 1998). A reading at or above the horizon gives no distance.'));
+    return sec('Altitude and reticles', ...kids);
   }
 
   // ---------------------------------------------------------------- settings
@@ -1814,12 +1874,13 @@ class App {
       sec('Bearings, distances and time',
         el('div', { class: 'grid2' },
           el('label', { class: 'row' }, 'Default bearing reference', sel('bearing_reference', [['M', 'Magnetic (compass)'], ['T', 'True'], ['R', 'Relative to bow']])),
-          el('label', { class: 'row' }, 'Default distance unit', sel('distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards']])),
+          el('label', { class: 'row' }, 'Default distance unit', sel('distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards'], ['reticle', 'Reticle (a reading: see Reticles)']])),
           el('label', { class: 'row' }, 'Magnetic variation (° E+/W−, or auto)', variation,
             el('span', { class: 'hint' }, ` now ${this.variation() === null ? '—' : this.variation().toFixed(1) + '°'}`)),
           el('label', { class: 'row' }, 'Lat/lon format', sel('latlon_format', [['DDM', 'Deg + decimal min'], ['DD', 'Decimal degrees'], ['DMS', 'Deg min sec']])),
           el('label', { class: 'row' }, 'Clock', sel('timezone', this.clockOptions()), this.clockHint())),
         el('p', { class: 'hint' }, 'Each sighting row stores its own bearing reference and distance unit, so changing these defaults never changes old rows. “auto” variation uses the World Magnetic Model if installed, otherwise the GPS. The clock setting changes how all times are shown; the files always store the UTC offset with each time.')),
+      this.reticleSection(sec, sel),
       sec('GPS / NMEA inputs', el('p', {}, 'GPS and instrument inputs are in ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('inputs'); } }, 'Settings → Inputs'),
         '; live readings and raw NMEA logging in ',

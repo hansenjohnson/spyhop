@@ -6,6 +6,22 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.29.0 — 2026-11-09
+
+- **Platform types:** **Shipboard**, **Aerial**, **Stationary** and **Other** (were Vessel, Plane, Land and Other). The map marks the platform with a ship, an aircraft, a tower or a dot. A **stationary** platform records only its Start and End positions, with no trackline in between, and the status bar says so.
+- **Platform altitude (ft)** in the survey details: the observers' eye height on a ship or station, or the survey altitude for an aircraft.
+- **Alt (ft) column in Sightings:** filled in from the Platform altitude and editable. **Settings → General → Altitude column** shows it automatically for aerial surveys (hidden for shipboard and stationary ones), or always shows or hides it.
+- **Reticle distances:** a new distance unit, **reticle**. Dist is then a reading, turned into a distance with the sighting's altitude, allowing for the curvature of the earth (Lerczak & Hobbs 1998); SigLat/SigLon follow. **Settings → General → Altitude and reticles** chooses how readings are taken:
+  - **binocular reticles** counted down from the horizon (a magnification that suggests the angle of one division, which you can correct)
+  - **calibrated marks** (a table of mark numbers and angles)
+  - **inclinometer** degrees below the horizontal
+  
+  These settings travel in templates. Quality Control flags reticle sightings that have no altitude.
+- **"Template" throughout:** the app no longer talks about the computer's "setup". The one in use is the **current template**, and the zips are **saved templates**.
+- **A `templates` folder left in the data folder** (e.g. kept by a `.DS_Store`) is now emptied into `templates/saved` and `templates/backups` and removed. Files Spyhop doesn't know are left, with a note.
+- **Uninstall and reinstall** now work on a git checkout when nothing would be lost, i.e. no uncommitted changes and nothing unpushed; otherwise the dialog says why. Reinstalling a git checkout resets it to its branch on GitHub and removes the Python set-up. Reinstall no longer keeps a copy of the old program files.
+- **AIS:** the vessel popup no longer shows the source (often a very long string).
+
 ## 0.28.0 — 2026-11-09
 
 - **New folder layout.** Everything a team shares now lives in a `templates` folder in Spyhop's folder:

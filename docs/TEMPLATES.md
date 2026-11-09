@@ -1,6 +1,6 @@
 # Templates
 
-A **template** is your team's Spyhop setup in one small file, so every computer can be set up to record the same way. It holds:
+A **template** is your team's Spyhop settings in one small file, so every computer can be set up to record the same way. It holds:
 
 - the species, event types, observers and behaviors lists, and the keyboard shortcuts
 - the map display (marker shapes and colors, track styles, text sizes)
@@ -21,9 +21,9 @@ Templates live in the **`templates` folder in Spyhop's own folder** (Settings �
 
 | Folder | What it holds |
 |---|---|
-| `templates/current/` | **The setup in use**: `species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv`, `shortcuts.csv` and `spyhop-config.json`. It is a template, unzipped: everything you change in Settings → Dropdowns, Shortcuts, General and Inputs, and in Tools → Reports, is saved here. |
+| `templates/current/` | **The current template**: `species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv`, `shortcuts.csv` and `spyhop-config.json`. It is a template, unzipped: everything you change in Settings → Dropdowns, Shortcuts, General and Inputs, and in Tools → Reports, is saved here. |
 | `templates/saved/` | Your templates, `<name>.spyhop-template.zip`, and copies of the ones you got from the web. |
-| `templates/backups/` | The setup as it was before each template was used. |
+| `templates/backups/` | The current template as it was before each other template was used. |
 
 This computer's own settings, which never go in a template (the data folder, serial ports, the window layout, the last survey details, which survey is open), are in `spyhop-local.json` next to the `templates` folder.
 
@@ -31,16 +31,16 @@ You can edit the files in `templates/current` by hand (keep a copy first), then 
 
 ## Managing templates
 
-Templates are managed in **Settings → Templates**. Spyhop lists every template in `templates/saved`. For each one it shows the latest change, whether it matches this computer's setup, and which template is in use. From the list you can:
+Templates are managed in **Settings → Templates**. Spyhop lists every template in `templates/saved`. For each one it shows the latest change, whether it matches the current template, and which template is in use. From the list you can:
 
 - **Use this template…:** see what would change, then use it (a backup is saved first).
-- **Update…:** replace the template with this computer's setup, adding your name and what changed to its record of changes.
+- **Update…:** replace the template with the current template, adding your name and what changed to its record of changes.
 - **Download:** get the file, to upload it for the team.
 - **Save as a new template…** (under the list): give it a name, your name and what changed.
 
 Spyhop names the templates it saves **`<name>.spyhop-template.zip`**. They are ordinary zip files of the same files as `templates/current`, so they open in any zip tool. Spyhop also reads a template saved under another name ending in `.zip`.
 
-**Starting a survey:** if the setup in use isn't saved as a template (or has changed since it was saved), Start New Survey offers to save it first (**Save as a new template…**, or **Update…** the template it came from), or to start without saving. Each survey's details record, behind the scenes, the Spyhop version and the template the setup came from, and whether it still matched that template when the survey started.
+**Starting a survey:** if the current template isn't saved as a template (or has changed since it was saved), Start New Survey offers to save it first (**Save as a new template…**, or **Update…** the template it came from), or to start without saving. Each survey's details record, behind the scenes, the Spyhop version and the saved template the current template came from, and whether it still matched that template when the survey started.
 
 A team usually keeps its template on the web too, so each computer can get the latest when it has internet (**Get a template from the web**). Nothing is downloaded until someone presses **Check**. A template is small (usually well under 100 KB), so checking at sea costs very little. Spyhop keeps a copy of each template it gets from the web in the templates folder, so it can be used again offline.
 
@@ -72,7 +72,7 @@ The lists and shortcuts stay as CSV files so they can be edited in a spreadsheet
 
 **Only the parts in the template are changed.** For example, a template with only `species.csv` and `observers.csv` changes only those two lists on each computer.
 
-**Lists, shortcuts, map display and settings are replaced.** The shared settings are: lat/lon format, clock (time zone), bearing reference, distance unit, magnetic variation, track point interval, track break speed and gap, effort reminder, keep the computer awake and the screen on, and the raw NMEA log (on/off and time stamps). The template's network GPS / NMEA inputs replace this computer's network inputs; **serial ports, file replays and the simulator stay as they are**, since port names differ between computers. Everything else in Settings (the data folder, the view and split, follow vessel, the browsing cache…) belongs to the computer and is never in a template.
+**Lists, shortcuts, map display and settings are replaced.** The shared settings are: lat/lon format, clock (time zone), bearing reference, distance unit, magnetic variation, track point interval, track break speed and gap, effort reminder, keep the computer awake and the screen on, the raw NMEA log (on/off and time stamps), the Altitude column choice, and how reticle readings are taken (method, binocular magnification and degrees per division, calibrated marks). The template's network GPS / NMEA inputs replace this computer's network inputs; **serial ports, file replays and the simulator stay as they are**, since port names differ between computers. Everything else in Settings (the data folder, the view and split, follow vessel, the browsing cache…) belongs to the computer and is never in a template.
 
 **Saved reports go as a set.** If the template has saved reports, each computer ends up with exactly those reports: any others of its own are removed. A template with no saved reports leaves each computer's reports alone.
 
@@ -119,7 +119,7 @@ You can also type the **path of a zip or folder on this computer**, such as a te
 
 1. Press **Use this template…** on a template in the list. For the team's template on the web, paste its address once under **Get a template from the web** (Spyhop remembers it) and press **Check**.
 2. Spyhop lists what would happen to each part of the template: new, changed, same, removed, or *already here — this computer's is kept*, with row counts and the settings that would change (e.g. *Clock: local → UTC*). It also shows the minimum Spyhop version, which online overlays it switches on, the template's recent changes and any problems.
-3. Leave **Save a backup of this computer's setup first** ticked. Backups go in `templates/backups`.
+3. Leave **Save a backup of the current template first** ticked. Backups go in `templates/backups`.
 4. Press **Use it** (or **Pull it** for a template from the web). The template's files replace the ones in `templates/current`, and the new lists, shortcuts, settings and inputs are used straight away, with no need to restart. A template from the web is also saved in `templates/saved`, replacing an older copy with the same name.
 
 **A template with any problem isn't used at all.** Problems are parts Spyhop can't read: a list missing its `name` column, a `spyhop-config.json` that isn't valid, or a saved report with a mistake. Spyhop names them, and nothing on the computer changes.

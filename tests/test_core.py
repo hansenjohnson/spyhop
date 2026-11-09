@@ -562,9 +562,9 @@ def test_missing_data_folder_falls_back_with_notice(tmp_path):
 
 
 def test_survey_details_saved_remembered_and_exported(rec):
-    m = rec.set_meta({"platform_name": "R/V Example", "platform_type": "vessel", "organization": "NEAQ",
+    m = rec.set_meta({"platform_name": "R/V Example", "platform_type": "shipboard", "organization": "NEAQ",
                       "chief_scientist": "A. Person", "bogus": "x"})
-    assert m["platform_type"] == "Vessel" and "bogus" not in m
+    assert m["platform_type"] == "Shipboard" and "bogus" not in m
     with pytest.raises(ValueErrorMsg):
         rec.set_meta({"platform_type": "Boat"})
     assert rec.survey_info()["meta"]["platform_name"] == "R/V Example"
@@ -574,9 +574,9 @@ def test_survey_details_saved_remembered_and_exported(rec):
     rec.start_survey("Next leg")                                    # details carried over
     assert rec.read_meta()["organization"] == "NEAQ"
     rec.end_survey()
-    rec.start_survey("Plane day", meta={"platform_type": "Plane", "platform_name": "N123"})
+    rec.start_survey("Plane day", meta={"platform_type": "Aerial", "platform_name": "N123"})
     m2 = rec.read_meta()
-    assert m2["platform_type"] == "Plane" and m2["platform_name"] == "N123" and m2["organization"] == "NEAQ"
+    assert m2["platform_type"] == "Aerial" and m2["platform_name"] == "N123" and m2["organization"] == "NEAQ"
     assert rec.read_meta("Test")["platform_name"] == "R/V Example"   # older survey unchanged
 
 
@@ -720,7 +720,7 @@ def _qc(rec):
 
 
 def _complete_meta(rec):
-    rec.set_meta({"platform_name": "R/V Test", "platform_type": "Vessel", "organization": "NEAQ",
+    rec.set_meta({"platform_name": "R/V Test", "platform_type": "Shipboard", "organization": "NEAQ",
                   "chief_scientist": "A. Person", "chief_scientist_email": "a@example.org"})
 
 
@@ -2105,7 +2105,7 @@ def test_reinstall_replaces_program_keeps_data(tmp_path, monkeypatch):
     assert '9.9.9' in (prog / "spyhop" / "__init__.py").read_text()
     assert not (prog / "old_only.txt").exists() and not (prog / ".venv").exists()
     assert (cfg.data_dir / "S1_sightings.csv").exists() and (cfg.current_dir / "species.csv").exists()
-    assert list((cfg.root / "updates").glob("*.zip"))
+    assert not (cfg.root / "updates").exists()                # no copy of the old program is kept
     assert not list(tmp_path.glob(".spyhop-reinstall-*"))
 
 
@@ -2181,3 +2181,125 @@ def test_survey_records_template_and_version(tmp_path):
     rec.tables["marks"].add({"Name": "W", "Lat": "41", "Lon": "-70"})
     cfg.save_list("observers", [dict(zip(DEFAULT_LISTS["observers"][0], r)) for r in DEFAULT_LISTS["observers"][1]])
     assert templates.current_status(cfg) == {"name": "Team.spyhop-template.zip", "saved": True, "changed": []}
+
+
+def test_reticle_distances():
+    """0.29: Lerczak & Hobbs (1998) distances from angles below the horizon/horizontal."""
+    import math
+    from spyhop import reticle as rt
+    b = {"reticle_method": "binoculars", "reticle_deg_per_division": 0.573}
+    h_ft = 10 / rt.FT                                                   # 10 m eye height
+    assert abs(rt.distance_m(0, h_ft, b) - 11290) < 60                  # 0 reticles: the horizon, ~3.57 √h km
+    near = rt.distance_m(10, h_ft, b)
+    assert abs(near - 10 / math.tan(rt.dip(10) + math.radians(5.73))) < 1   # close in, the flat formula agrees
+    d = rt.distance_m(1.3, 33, b)
+    assert abs(rt.reading_for(d, 33, b) - 1.3) < 1e-6                   # map pick → reading, and back
+    inc = {"reticle_method": "inclinometer"}
+    assert abs(rt.distance_m(30, 750, inc) - 750 * rt.FT / math.tan(math.radians(30))) < 1
+    marks = {"reticle_method": "marks", "reticle_marks": [{"mark": "1", "angle": 30}, {"mark": "2", "angle": 45}]}
+    assert abs(rt.distance_m(2, 1000, marks) - 1000 * rt.FT) < 1
+    assert rt.reading_for(500, 1000, marks) is None
+    with pytest.raises(rt.ReticleError, match="isn't in the calibration table"):
+        rt.distance_m(3, 1000, marks)
+    with pytest.raises(rt.ReticleError, match="above the horizon"):
+        rt.distance_m(-1, 33, b)
+    with pytest.raises(ValueError, match="must be a number"):
+        rt.check_marks([{"mark": "A", "angle": 10}])
+    assert rt.check_marks([{"mark": "1", "angle": "12.5"}, {"mark": "", "angle": ""}]) == [{"mark": "1", "angle": 12.5}]
+
+
+def test_reticle_sighting_altitude_and_platforms(tmp_path):
+    """0.29: Unit = reticle places the animal from the bearing, the reading and the altitude; Alt is filled
+    from the survey's Platform altitude; a Stationary platform records no trackline in the background."""
+    from spyhop import reticle as rt, geo
+    rec = Recorder(tmp_path)
+    rec.decoder.feed(with_checksum("GPRMC,120000,A,4154.000,N,07020.000,W,10.0,045.0,041126,14.5,W"))
+    rec.cfg.save_settings({"reticle_method": "binoculars", "reticle_deg_per_division": 0.573, "distance_unit": "reticle",
+                           "tracking_interval": 1})
+    rec.start_survey("R", meta={"platform_type": "Shipboard", "platform_altitude_ft": "33"})
+    r = rec.new_row("sightings", {"Bearing": "90", "BrgRef": "T", "Distance": "1"}, lat=41.0, lon=-70.0)["row"]
+    row = next(x for x in rec.tables["sightings"].rows if x["RowID"] == r["RowID"])
+    assert row["Altitude"] == "33" and row["DistUnit"] == "reticle"
+    got = geo.haversine_m(41.0, -70.0, float(row["SigLat"]), float(row["SigLon"]))
+    assert abs(got - rt.distance_m(1, 33, rec.cfg.settings)) < 2
+    rec.edit("sightings", r["RowID"], {"Altitude": "66"})                      # a higher eye: further away
+    row = next(x for x in rec.tables["sightings"].rows if x["RowID"] == r["RowID"])
+    assert geo.haversine_m(41.0, -70.0, float(row["SigLat"]), float(row["SigLon"])) > got * 1.2
+    with pytest.raises(ValueErrorMsg, match="Platform altitude must be a number"):
+        rec.set_meta({"platform_altitude_ft": "high"})
+    with pytest.raises(ValueErrorMsg, match="Shipboard, Aerial, Stationary or Other"):
+        rec.set_meta({"platform_type": "Vessel"})
+    rec.end_survey()
+    # a stationary platform: no background track points
+    rec.start_survey("S", meta={"platform_type": "Stationary", "platform_altitude_ft": "60"})
+    n = len(rec.track.points)
+    rec._last_track_t = 0
+    rec.tick_tracker()
+    assert len(rec.track.points) == n
+    rec.decoder.feed(with_checksum("GPRMC,120001,A,4154.000,N,07020.000,W,10.0,045.0,041126,14.5,W"))
+    rec._last_track_t = 0
+    rec.tick_tracker()
+    assert len(rec.track.points) == n                                         # still nothing
+    rec.set_meta({"platform_type": "Other"})                                  # a moving platform again
+    rec._last_track_t = 0
+    rec.tick_tracker()
+    assert len(rec.track.points) == n + 1
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+def test_uninstall_reinstall_git_checkout(tmp_path, monkeypatch):
+    """0.29: a git checkout can be reinstalled (reset to GitHub's branch, .venv removed) or uninstalled only
+    when nothing would be lost; otherwise the plan says why."""
+    import subprocess as _sp, sys as _sys
+    from spyhop import uninstall, updater, shortcut
+    from spyhop.config import Config
+    g = lambda *a, cwd=None: _sp.run(["git", *a], cwd=cwd, check=True, capture_output=True, text=True)  # noqa: E731
+    remote = tmp_path / "remote.git"
+    g("init", "--bare", "-b", "main", str(remote))
+    prog = _fake_program(tmp_path)
+    (prog / ".gitignore").write_text(".venv/\n")
+    g("init", "-b", "main", cwd=prog)
+    g("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A", cwd=prog)
+    g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "v1", cwd=prog)
+    g("remote", "add", "origin", str(remote), cwd=prog)
+    g("push", "-u", "origin", "main", cwd=prog)
+    monkeypatch.setattr(updater, "PROGRAM_DIR", prog)
+    monkeypatch.setattr(shortcut, "ROOT", prog)
+    cfg = Config(tmp_path / "spy")
+    assert uninstall.plan(cfg, "reinstall")["problems"] == []
+    (prog / "spyhop" / "__init__.py").write_text('__version__ = "local edit"\n')
+    p = uninstall.plan(cfg, "reinstall")
+    assert p["problems"] and "uncommitted changes" in p["problems"][0]
+    g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-am", "local", cwd=prog)
+    assert "not pushed" in uninstall.plan(cfg, "uninstall")["problems"][0]
+    g("reset", "--hard", "HEAD~1", cwd=prog)
+    # reinstall: reset to the remote's branch, the Python set-up removed, the folder and .git kept
+    dead = _sp.Popen([_sys.executable, "-c", "pass"]); dead.wait()
+    monkeypatch.setattr(uninstall.os, "getpid", lambda: dead.pid)
+    (prog / "stray.txt").write_text("x")
+    assert "uncommitted" in uninstall.plan(cfg, "reinstall")["problems"][0]      # untracked files count too
+    (prog / "stray.txt").unlink()
+    r = uninstall.start(cfg, "reinstall", launch=False)
+    log = _wait_helper(r["helper_log"])
+    assert "git reset" in log and not (prog / ".venv").exists() and (prog / ".git").is_dir()
+    assert (prog / "spyhop" / "__init__.py").read_text() == '__version__ = "0.1"\n'
+
+
+def test_templates_left_in_data_folder_are_tidied(tmp_path):
+    """0.29: a templates folder left in the data folder (e.g. kept by a .DS_Store) is emptied into
+    templates/saved and backups, and removed; files Spyhop doesn't know are left, with a notice."""
+    from spyhop.config import Config
+    Config(tmp_path / "S")                                         # a 0.28 folder
+    d = tmp_path / "S" / "data" / "templates"
+    (d / "backups").mkdir(parents=True)
+    (d / ".DS_Store").write_bytes(b"x")
+    (d / "Old.spyhop-template.zip").write_bytes(b"PK1")
+    (d / "backups" / "b1.spyhop-template.zip").write_bytes(b"PK2")
+    cfg = Config(tmp_path / "S")
+    assert not d.exists()
+    assert (cfg.saved_dir / "Old.spyhop-template.zip").read_bytes() == b"PK1"
+    assert (cfg.backups_dir / "b1.spyhop-template.zip").is_file()
+    d.mkdir()
+    (d / "notes.txt").write_text("mine")
+    cfg = Config(tmp_path / "S")
+    assert (d / "notes.txt").exists() and any("doesn't know" in n for n in cfg.notices)

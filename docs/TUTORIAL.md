@@ -67,7 +67,7 @@ Behind the scenes they are plain CSV files in `templates/current` in Spyhop's fo
 
 After editing a file, save it and press **Reload config files**. Keep the header row as it is.
 
-If your team shares a template, use **Settings → Templates** instead. Paste the address of the team's template under **Get a template from the web** and press **Check** to see what would change, then **Pull it**; or press **Use this template…** on a template already in the list. This replaces this computer's lists, shortcuts, map display, saved reports and shared settings, so keep the backup option ticked. To save your own setup as a template, press **Save as a new template…**. See docs/TEMPLATES.md.
+If your team shares a template, use **Settings → Templates** instead. Paste the address of the team's template under **Get a template from the web** and press **Check** to see what would change, then **Pull it**; or press **Use this template…** on a template already in the list. This replaces this computer's lists, shortcuts, map display, saved reports and shared settings, so keep the backup option ticked. To save your own current template, press **Save as a new template…**. See docs/TEMPLATES.md.
 
 ## Plan a route
 

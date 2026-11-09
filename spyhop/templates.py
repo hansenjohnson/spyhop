@@ -1,7 +1,7 @@
-"""Templates (Settings → Templates): a team's Spyhop setup in one small file, so every computer can
-be set up to record the same way, and a computer can switch between setups.
+"""Templates (Settings → Templates): a team's Spyhop settings in one small file, so every computer can
+be set up to record the same way, and a computer can switch between templates.
 
-The setup in use is itself a template, unzipped, in templates/current of Spyhop's folder:
+The current template (the one in use) is kept unzipped in templates/current of Spyhop's folder:
 
     spyhop-config.json   everything that isn't a table: the record of changes, the shared settings, the
                          network GPS / NMEA inputs, the map feeds (addresses and how to draw them), which
@@ -359,7 +359,7 @@ def newest_first(history: list[dict]) -> list[dict]:
 
 # ------------------------------------------------------------------ this computer
 def local_history(cfg) -> list[dict]:
-    """The record of changes of the setup in use (the template it last used or saved), oldest first."""
+    """The record of changes of the current template (the template it last used or saved), oldest first."""
     return [e for e in (_history_entry(x) for x in cfg.history) if e]
 
 
@@ -421,7 +421,7 @@ def local_counts(cfg) -> dict:
 
 
 def config_doc(cfg, include=(), min_spyhop=None, online=None, note: str = "", backup: bool = False) -> dict:
-    """spyhop-config.json for this computer's setup."""
+    """spyhop-config.json for the current template."""
     include = [k for k in OPTIONAL if k in (include or ())]
     history = local_history(cfg)
     if note:                                   # a backup notes itself in its own copy of the record
@@ -449,7 +449,7 @@ def config_doc(cfg, include=(), min_spyhop=None, online=None, note: str = "", ba
 
 def make_zip(cfg, note: str = "", backup: bool = False, include=(), min_spyhop: str | None = None,
              online: dict | None = None) -> bytes:
-    """A zip of this computer's setup: a template another computer can use, or a backup (which always
+    """A zip of the current template: a template another computer can use, or a backup (which always
     has the waypoints, routes and overlays, and says when there were no saved reports)."""
     include = OPTIONAL if backup else include
     buf = io.BytesIO()
@@ -773,7 +773,7 @@ def online_summary(t) -> dict | None:
 
 
 def fingerprints(cfg) -> dict[str, str]:
-    """A hash of each part of this computer's setup a template can hold, by its label in compare(),
+    """A hash of each part of the current template a template can hold, by its label in compare(),
     to tell later what changed."""
     t = read_template(unzip(make_zip(cfg, include=OPTIONAL)))
     h = lambda o: hashlib.sha1(json.dumps(o, sort_keys=True, default=str).encode()).hexdigest()  # noqa: E731
@@ -916,7 +916,7 @@ def add_waypoints_to_file(cfg, rows: list[dict], remove_ids=()) -> list[str]:
 
 # ------------------------------------------------------------------ the templates folder
 def list_templates(cfg) -> list[dict]:
-    """The templates in the templates folder, newest first, each compared with this computer's setup."""
+    """The templates in the templates folder, newest first, each compared with the current template."""
     d = templates_dir(cfg)
     out = []
     files = [p for p in d.iterdir() if p.is_file() and not p.name.startswith(".") and is_template_name(p.name)] if d.is_dir() else []
@@ -960,7 +960,7 @@ def changed_from_template(cfg, name: str) -> list[str]:
 
 def save_template(cfg, name: str, by: str, changed: str, notes: str, overwrite: bool = False,
                   include=(), min_spyhop: str | None = None, online: dict | None = None) -> Path:
-    """Save this computer's setup as a template in the templates folder, adding an entry to its record of
+    """Save the current template as a template in the templates folder, adding an entry to its record of
     changes. A new template continues this computer's record; updating one continues the record of the
     template replaced. include: any of OPTIONAL (waypoints, routes, overlays)."""
     min_spyhop = clean_min_version(min_spyhop)
@@ -988,13 +988,13 @@ def save_template(cfg, name: str, by: str, changed: str, notes: str, overwrite: 
 
 
 def _core_differs(cfg, t: dict) -> list[str]:
-    """The parts of the setup (not waypoints, routes or overlays) that differ from a template."""
+    """The parts of the current template (not waypoints, routes or overlays) that differ from a template."""
     return [r["file"] for r in compare(cfg, t) if r["status"] not in ("same", "kept")
             and r["file"] != WAYPOINTS and not r["file"].startswith(("routes/", "overlays/"))]
 
 
 def current_status(cfg) -> dict:
-    """Is the setup in use saved as a template? {name: the template it matches (or came from), saved:
+    """Is the current template saved as a template? {name: the template it matches (or came from), saved:
     True if templates/saved has a template with the same lists, shortcuts, settings, display and
     reports, changed: the parts that differ from the template it came from}. Waypoints, routes and
     overlays don't count: they change during surveys."""
@@ -1035,7 +1035,7 @@ def save_backup(cfg) -> Path:
     while p.exists():
         p = d / f"spyhop-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{n}{TEMPLATE_SUFFIX}"
         n += 1
-    p.write_bytes(make_zip(cfg, f"Backup of this computer's setup (Spyhop {__version__})", backup=True))
+    p.write_bytes(make_zip(cfg, f"Backup of the current template (Spyhop {__version__})", backup=True))
     return p
 
 

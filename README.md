@@ -37,7 +37,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
 - **Summary and reports:**
   - a Summary (totals, conditions, observers, a map), saved as HTML or PDF
   - **Reports:** pick species or event types, conditions and columns from any table, see the result live, and save it as CSV, HTML or PDF; save reports by name, share them in templates, and run them all at once
-- **Templates:** save a team's setup (lists, shortcuts, map display, saved reports, shared settings and network inputs, map feeds, and optionally waypoints, routes and overlays) as one small `.spyhop-template.zip` file, switch between templates, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer gets the latest with one button, keeping a backup.
+- **Templates:** save a team's settings as a template (lists, shortcuts, map display, saved reports, shared settings and network inputs, map feeds, and optionally waypoints, routes and overlays) as one small `.spyhop-template.zip` file, switch between templates, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer gets the latest with one button, keeping a backup.
 - **Export:** separate CSVs, a merged time-ordered CSV (sightings, effort, events and track) with the conditions on every row, GPX, GeoJSON, the summary and saved reports, in one zip.
 
 ## System requirements
@@ -113,7 +113,7 @@ The **tutorial** in **Settings → About** (also [docs/TUTORIAL.md](docs/TUTORIA
 
 - [docs/TUTORIAL.md](docs/TUTORIAL.md): a short tour of the main tasks.
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md): the full reference, covering every tab, the files Spyhop writes, export formats, offline maps, and the differences from the OpenCPN plugin.
-- [docs/TEMPLATES.md](docs/TEMPLATES.md): sharing a team's setup (lists, settings, saved reports and more) across computers.
+- [docs/TEMPLATES.md](docs/TEMPLATES.md): sharing a team's template (lists, settings, saved reports and more) across computers.
 - [docs/DEVELOPERS.md](docs/DEVELOPERS.md): running from source, the code layout and the tests.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
 

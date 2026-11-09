@@ -246,7 +246,6 @@ export class OnlineOverlays {
     if (Number.isFinite(+p.nav_status) && NAV_STATUS[+p.nav_status]) rows.push(['Status', NAV_STATUS[+p.nav_status]]);
     const seen = seenDate(p.seen);
     if (seen) { const t = timeParts(seen, app.clock()); rows.push(['Last heard', `${t.time.slice(0, 5)} ${t.abbr} (${ago(seen)})`]); }
-    if (p.source) rows.push(['Source', p.source]);
     const wrap = el('div', { html: `<b>${esc(p.name || 'Unnamed vessel')}</b><table class="pop">${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(String(v))}</td></tr>`).join('')}</table>` });
     const v = app.S.vessel;
     if (v && v.lat !== null && v.lat !== undefined) wrap.append(el('div', { class: 'pop-rel' }, `${fmtDist(distM([v.lat, v.lon], ll), app.unit())} from the vessel, bearing ${fmtBrg(bearing([v.lat, v.lon], ll))}T`));

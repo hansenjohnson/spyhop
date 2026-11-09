@@ -3,7 +3,7 @@ Config.__init__) before 1.0.0.
 
 0.27 kept the lists, shortcuts.csv and display.csv at the top of Spyhop's folder, the settings,
 the open survey and the template history in settings/, saved reports in reports/, and templates in
-<survey data folder>/templates (with backups/ inside). 0.28 keeps the setup in use in
+<survey data folder>/templates (with backups/ inside). 0.28 keeps the current template in
 templates/current, templates in templates/saved and templates/backups, and this computer's settings
 in spyhop-local.json. See config.Config.
 """
@@ -114,8 +114,49 @@ def move_old_layout(cfg) -> bool:
         p.unlink(missing_ok=True)
     for d in (old_settings, rdir, root / "filters"):
         shutil.rmtree(d, ignore_errors=True)
-    cfg.notices.append("Spyhop's files have a new layout: the setup in use is in templates/current (lists, shortcuts and "
-                       "spyhop-config.json), templates are in templates/saved"
+    cfg.notices.append("Spyhop's files have a new layout: the current template is in templates/current (lists, shortcuts and "
+                       "spyhop-config.json), saved templates are in templates/saved"
                        + (f" ({moved_templates} moved from the data folder)" if moved_templates else "")
                        + ", and this computer's own settings are in spyhop-local.json.")
     return True
+
+
+JUNK = {".ds_store", "thumbs.db", "desktop.ini"}
+
+
+def tidy_data_folder(cfg) -> None:
+    """A templates (or 0.14–0.23 config_packs) folder left in the survey data folder: templates go to
+    templates/saved, backups to templates/backups, system clutter (.DS_Store…) is deleted, and the folder
+    goes once it's empty. Runs at every start, since the data folder can be changed or plugged in later."""
+    moved, left = 0, []
+    for name in ("templates", "config_packs"):
+        d = Path(cfg.data_dir) / name
+        if not d.is_dir():
+            continue
+        for p in sorted(d.rglob("*"), key=lambda q: len(q.parts), reverse=True):
+            low = p.name.lower()
+            try:
+                if p.is_dir():
+                    _rmdir_if_empty(p)
+                elif low in JUNK or low.startswith("._"):
+                    p.unlink()
+                elif low.endswith(TEMPLATE_EXT):
+                    dest = (cfg.backups_dir if p.parent.name == "backups" else cfg.saved_dir) / p.name
+                    if dest.exists():
+                        if dest.read_bytes() == p.read_bytes():
+                            p.unlink()
+                        else:
+                            left.append(str(p))
+                    else:
+                        _move(p, dest)
+                        moved += 1
+                else:
+                    left.append(str(p))
+            except OSError:
+                left.append(str(p))
+        _rmdir_if_empty(d)
+    if moved:
+        cfg.notices.append(f"Moved {moved} template file{'s' if moved > 1 else ''} from the data folder to templates/saved in Spyhop's folder.")
+    if left:
+        cfg.notices.append("The data folder still has a templates folder with files Spyhop doesn't know what to do with: "
+                           + ", ".join(left[:4]) + (" …" if len(left) > 4 else "") + ". Move or delete them yourself.")

@@ -16,7 +16,7 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 
 from .recorder import Recorder, ValueErrorMsg
-from . import awake, __version__, diag, feeds, reports, routes, schema, templates, uninstall, updater
+from . import awake, __version__, diag, feeds, reports, reticle, routes, schema, templates, uninstall, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports, clean_path
 from .store import safe_name
@@ -511,6 +511,22 @@ class App:
         body = await request.json()
         updates = body.get("updates", {})
         restart = "nmea_sources" in updates
+        try:
+            if "reticle_marks" in updates:
+                updates["reticle_marks"] = reticle.check_marks(updates["reticle_marks"])
+            if "reticle_deg_per_division" in updates:
+                v = float(updates["reticle_deg_per_division"])
+                if not 0 < v <= 10:
+                    raise ValueError("One reticle division must be more than 0° and at most 10°.")
+                updates["reticle_deg_per_division"] = v
+            if updates.get("reticle_method") not in (None, *reticle.METHODS):
+                raise ValueError("Unknown way of taking reticle readings.")
+            if updates.get("reticle_magnification") not in (None, *reticle.PRESETS):
+                raise ValueError("Unknown binocular magnification.")
+            if updates.get("altitude_column") not in (None, "auto", "show", "hide"):
+                raise ValueError("The Altitude column is auto, show or hide.")
+        except (TypeError, ValueError) as e:
+            raise ValueErrorMsg(str(e) if str(e) and not str(e).startswith("could not convert") else "That isn't a number.")
         self.rec.cfg.save_settings(updates)
         if "keep_awake" in updates or "keep_screen_on" in updates:
             self.sync_awake()
@@ -1211,7 +1227,7 @@ class App:
                        status=templates.current_status(cfg))
 
     async def templates_status(self, request):
-        """Is the setup in use saved as a template? (templates.current_status; asked before a survey starts)"""
+        """Is the current template saved as a template? (templates.current_status; asked before a survey starts)"""
         st = await asyncio.get_running_loop().run_in_executor(None, templates.current_status, self.rec.cfg)
         return json_ok(status=st)
 
