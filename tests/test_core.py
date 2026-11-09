@@ -1287,7 +1287,7 @@ def test_save_lists_and_shortcuts(tmp_path):
     assert [s["name"] for s in cfg.lists["species"]] == ["Fin whale", "Sei whale"]
     for bad, words in (([{"name": "A", "species_code": "X"}, {"name": "a", "species_code": "Y"}], "already used"),
                        ([{"name": "A", "species_code": "X"}, {"name": "B", "species_code": "x"}], "Code “x” is already used"),
-                       ([{"name": "A", "color": "not a colour!"}], "isn't a colour"),
+                       ([{"name": "A", "color": "not a color!"}], "isn't a color"),
                        ([{"name": "", "species_code": "X"}], "Name is empty"),
                        ([], "can't be empty")):
         with pytest.raises(ValueError, match=words):
@@ -1311,7 +1311,7 @@ def test_save_lists_and_shortcuts(tmp_path):
     for bad, words in (([{"combo": "Mod+1", "action": "undo"}, {"combo": "mod+1", "action": "redo"}], "already used"),
                        ([{"combo": "Mod+1", "action": "fly"}], "isn't an action"),
                        ([{"combo": "Mod+1", "action": "add:surfacings"}], "no surfacings table"),
-                       ([{"combo": "Mod+1", "action": "add:sightings", "prefill": "Colour=red"}], "no column “Colour”"),
+                       ([{"combo": "Mod+1", "action": "add:sightings", "prefill": "Color=red"}], "no column “Color”"),
                        ([{"combo": "Mod+1", "action": "undo", "prefill": "Species=X"}], "only shortcuts that add"),
                        ([{"combo": "Q", "action": "undo"}], "needs Mod or Alt")):
         with pytest.raises(ValueError, match=words):
@@ -1769,7 +1769,7 @@ def test_template_check_use_backup(tmp_path):
     good = _template_zip({"spyhop-config.csv": manifest, "species.csv": species, "observers.csv": observers,
                           "display.csv": "key,value\r\nmarker_radius,11\r\n",
                           "reports/team_gear.json": gear, "notes.txt": "hello"}, top="team-cfg-abc123/")
-    bad = _template_zip({"species.csv": "colour\r\nred\r\n", "reports/x.json": "{nope"})
+    bad = _template_zip({"species.csv": "color\r\nred\r\n", "reports/x.json": "{nope"})
     base, stop = _serve({"/good.zip": (200, "application/zip", good), "/bad.zip": (200, "application/zip", bad),
                          "/page": (200, "text/html", b"<!DOCTYPE html><html>sign in</html>"),
                          "/private": (403, "text/plain", b"no")})
@@ -2127,3 +2127,180 @@ def test_veslat_veslon_become_lat_lon(tmp_path):
     spec = reports.clean({"name": "Old", "table": "effort", "columns": ["time", "VesLat", "VesLon"],
                           "rules": [{"column": "VesLat", "op": "not_blank"}]})
     assert spec["columns"] == ["time", "Lat", "Lon"] and spec["rules"][0]["column"] == "Lat"
+
+
+def test_prefetch_estimate_counts_without_listing(tmp_path):
+    """0.27: the download estimate counts tiles arithmetically: a huge area at high zooms is instant
+    (listing every tile held up the server for minutes), and a download that big is refused at once."""
+    import asyncio, time as _t
+    from spyhop.config import Config
+    from spyhop.tiles import TileService
+    cfg = Config(tmp_path)
+    cfg.tile_sources = [{"name": "Esri test", "url": "https://example.org/{z}/{y}/{x}", "kind": "raster", "max_zoom": "19"}]
+    ts = TileService(cfg)
+    bounds = [30, -80, 50, -60]
+
+    async def go():
+        t0 = _t.monotonic()
+        plan = await ts.plan_prefetch(0, bounds, 0, 18)
+        assert _t.monotonic() - t0 < 0.5 and plan["total"] > 10_000_000 and plan["jobs"] == []
+        small = await ts.plan_prefetch(0, bounds, 0, 4, jobs_limit=50000)
+        assert small["total"] == len(small["jobs"]) == sum(ts._count_in(bounds, z) for z in range(5))
+        assert small["jobs"][0][0] == "raster"
+        t0 = _t.monotonic()
+        with pytest.raises(ValueError, match="limit"):
+            await ts.start_prefetch(0, bounds, 0, 18, name="Too big")
+        assert _t.monotonic() - t0 < 0.5
+    asyncio.run(go())
+
+
+def test_file_replay_reads_spyhop_logs_and_plain_nmea(tmp_path):
+    """FILE input: a Spyhop raw log (time stamp, input, sentence) is paced by its time stamps;
+    a plain NMEA file by the RMC times; a quoted path (Windows' Copy as path) still works."""
+    import asyncio, time as _t
+    from spyhop.sources import SourceManager, Simulator, clean_path
+    from spyhop.nmea import NmeaDecoder, with_checksum
+    sim = Simulator(lat=42.5, lon=-69.0)
+    stamped, plain = [], []
+    for k in range(6):
+        for ln in sim.step(1.0):
+            body = ln.split("*")[0][1:].split(",")
+            if body[0][2:] in ("RMC", "GGA"):
+                body[1] = f"1200{k:02d}.00"          # a log 6 s long
+            ln = with_checksum(",".join(body))
+            stamped.append(f"2026-07-01T12:00:{k:02d}.000Z\tGPS 1\t{ln}")
+            plain.append(ln)
+    (tmp_path / "a.nmea").write_text("\n".join(stamped) + "\n")
+    (tmp_path / "b.nmea").write_text("\r\n".join(plain) + "\r\n")
+    assert clean_path(f' "{tmp_path / "a.nmea"}" ') == str(tmp_path / "a.nmea")
+
+    async def run(name, speed):
+        dec = NmeaDecoder()
+        sm = SourceManager(dec)
+        t0 = _t.time()
+        await sm.start([{"type": "file", "path": f'"{tmp_path / name}"', "speed": speed, "loop": False}])
+        await asyncio.wait_for(asyncio.gather(*sm.tasks), 10)
+        took = _t.time() - t0
+        st = sm.status[0]
+        await sm.stop()
+        return dec, st, took
+
+    dec, st, took = asyncio.run(run("a.nmea", 10))
+    assert st["state"] == "finished" and st["at"] == len(stamped)
+    assert dec.state.lat and abs(dec.state.lat - 42.5) < 0.01
+    assert 0.4 < took < 3            # 5 s of log at ×10
+    dec, st, took = asyncio.run(run("b.nmea", 10))
+    assert st["state"] == "finished" and dec.state.lat and abs(dec.state.lat - 42.5) < 0.01
+    assert 0.4 < took < 3
+
+
+def test_diagnostics_bundle_lists_folders_without_data(tmp_path):
+    import zipfile, json as _json
+    from spyhop import diag
+    from spyhop.config import Config
+    cfg = Config(tmp_path / "spy")
+    (cfg.routes_dir / "Leg A.gpx").write_text("<gpx/>")
+    (cfg.data_dir / "SecretSurvey_sightings.csv").write_text("a,b\n1,2\n")
+    (cfg.data_dir / "templates").mkdir()
+    (cfg.data_dir / "templates" / "Ship.spyhop-template.zip").write_bytes(b"PK")
+    cfg.save_settings({"online_feeds": [{"url": "https://x.org/f.json?key=SECRET"}]})
+    z = diag.make_bundle(cfg.root, cfg.data_dir, cfg.settings_path, {"survey": "none"}, tmp_path / "out")
+    zz = zipfile.ZipFile(z)
+    names = zz.namelist()
+    assert "folders.txt" in names and "settings/settings.json" in names and "config/behaviors.csv" in names
+    assert "config/observers.csv" not in names
+    f = zz.read("folders.txt").decode()
+    assert "Leg A.gpx" in f and "Ship.spyhop-template.zip" in f and "routes/" in f
+    assert "SecretSurvey" not in f and "1 files" in f
+    s = zz.read("settings/settings.json").decode()
+    assert "SECRET" not in s and "https://x.org/f.json?…" in s
+    assert not any("SecretSurvey" in n for n in names)
+
+
+def _fake_program(tmp_path):
+    prog = tmp_path / "prog"
+    (prog / "spyhop").mkdir(parents=True)
+    (prog / "spyhop" / "__init__.py").write_text('__version__ = "0.1"\n')
+    (prog / "pyproject.toml").write_text("")
+    (prog / ".venv" / "bin").mkdir(parents=True)
+    (prog / ".venv" / "bin" / "python").write_text("")
+    return prog
+
+
+def _wait_helper(log_path, secs=20):
+    import time as _t
+    t0 = _t.time()
+    while _t.time() - t0 < secs:
+        if Path(log_path).exists() and "done" in Path(log_path).read_text():
+            return Path(log_path).read_text()
+        _t.sleep(0.2)
+    raise AssertionError("helper didn't finish: " + (Path(log_path).read_text() if Path(log_path).exists() else "no log"))
+
+
+def test_uninstall_plan_and_run(tmp_path, monkeypatch):
+    import subprocess as _sp, sys as _sys
+    from spyhop import uninstall, updater, shortcut
+    from spyhop.config import Config
+    prog = _fake_program(tmp_path)
+    monkeypatch.setattr(updater, "PROGRAM_DIR", prog)
+    monkeypatch.setattr(shortcut, "ROOT", prog)
+    cfg = Config(tmp_path / "spy")
+    (cfg.data_dir / "S1_sightings.csv").write_text("x\n")
+    # nothing is deleted beyond the program unless ticked; a chosen data folder is never deleted
+    p = uninstall.plan(cfg, "uninstall")
+    assert not p["problems"] and [d["path"] for d in p["delete"]] == [str(prog)]
+    assert {k["path"] for k in p["keep"]} == {str(cfg.root), str(cfg.data_dir)}
+    # survey data needs DELETE typed
+    with pytest.raises(uninstall.UninstallError):
+        uninstall.start(cfg, "uninstall", True, True, confirm="")
+    # a git checkout is never deleted
+    (prog / ".git").mkdir()
+    assert uninstall.plan(cfg, "uninstall")["problems"]
+    (prog / ".git").rmdir()
+    # run it: settings deleted, the default data folder inside Spyhop's folder kept
+    dead = _sp.Popen([_sys.executable, "-c", "pass"]); dead.wait()
+    monkeypatch.setattr(uninstall.os, "getpid", lambda: dead.pid)
+    r = uninstall.start(cfg, "uninstall", delete_settings=True, delete_data=False)
+    _wait_helper(r["helper_log"])
+    assert not prog.exists()
+    assert (cfg.data_dir / "S1_sightings.csv").exists()
+    assert not (cfg.root / "settings").exists() and not (cfg.root / "routes").exists()
+
+
+def test_uninstall_refuses_unsafe_folders(tmp_path, monkeypatch):
+    from spyhop import uninstall, updater
+    from spyhop.config import Config
+    cfg = Config(tmp_path / "spy")
+    monkeypatch.setattr(updater, "PROGRAM_DIR", Path.home())
+    assert uninstall.plan(cfg, "uninstall")["problems"]
+    prog = _fake_program(tmp_path)
+    monkeypatch.setattr(updater, "PROGRAM_DIR", prog)
+    cfg2 = Config(prog / "inside")                     # Spyhop's folder inside the program folder
+    assert any("inside the program folder" in x for x in uninstall.plan(cfg2, "uninstall")["problems"])
+
+
+def test_reinstall_replaces_program_keeps_data(tmp_path, monkeypatch):
+    import io as _io, zipfile as _zf, subprocess as _sp, sys as _sys
+    from spyhop import uninstall, updater, shortcut
+    from spyhop.config import Config
+    prog = _fake_program(tmp_path)
+    (prog / "old_only.txt").write_text("stale")
+    monkeypatch.setattr(updater, "PROGRAM_DIR", prog)
+    monkeypatch.setattr(shortcut, "ROOT", prog)
+    cfg = Config(tmp_path / "spy")
+    (cfg.data_dir / "S1_sightings.csv").write_text("x\n")
+    buf = _io.BytesIO()
+    with _zf.ZipFile(buf, "w") as z:
+        z.writestr("org-spyhop-abc/spyhop/__init__.py", '__version__ = "9.9.9"\n')
+        z.writestr("org-spyhop-abc/pyproject.toml", "")
+        z.writestr("org-spyhop-abc/start-spyhop.sh", "")
+    monkeypatch.setattr(updater, "_get", lambda url, accept=None: buf.getvalue())
+    dead = _sp.Popen([_sys.executable, "-c", "pass"]); dead.wait()
+    monkeypatch.setattr(uninstall.os, "getpid", lambda: dead.pid)
+    r = uninstall.start(cfg, "reinstall", info={"zip": "x", "latest": "9.9.9"}, launch=False)
+    _wait_helper(r["helper_log"])
+    assert '9.9.9' in (prog / "spyhop" / "__init__.py").read_text()
+    assert not (prog / "old_only.txt").exists() and not (prog / ".venv").exists()
+    assert (cfg.data_dir / "S1_sightings.csv").exists() and (cfg.root / "settings").exists()
+    assert list((cfg.root / "updates").glob("*.zip"))
+    assert not list(tmp_path.glob(".spyhop-reinstall-*"))

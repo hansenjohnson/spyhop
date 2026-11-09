@@ -117,14 +117,27 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
         ["UNK", "Unknown"],
         ["NA", "None"],             # an empty watch position: may fill several positions at once
     ]),
-    "behaviors": (["name", "behavior_code"], [
-        ["Travel", "TR"], ["Mill", "MI"], ["Feed", "FE"], ["Surface feed", "SF"],
-        ["Subsurface feed", "SS"], ["Bubble net", "BN"], ["Skim feed", "SK"],
-        ["Rest / log", "RE"], ["Social / SAG", "SO"], ["Breach", "BR"],
-        ["Flipper slap", "FS"], ["Tail slap / lobtail", "TS"], ["Fluke-up dive", "FU"],
-        ["Fluke-down dive", "FD"], ["Nursing", "NU"], ["Bow riding", "BO"],
-        ["Avoidance", "AV"], ["Approach vessel", "AP"], ["Entangled", "EN"],
-        ["Other", "OT"],
+    "behaviors": (["name", "behavior_code", "definition"], [
+        ["Travel", "TR", "Moving steadily in one direction, with regular surfacings and dives."],
+        ["Mill", "MI", "Moving slowly in changing directions, with no clear heading; not obviously feeding or resting."],
+        ["Feed", "FE", "Feeding seen or strongly suggested (prey at the surface, birds working, defecation), depth unknown."],
+        ["Surface feed", "SF", "Feeding at the surface: mouth open, lunging or gulping prey at or near the surface."],
+        ["Subsurface feed", "SS", "Feeding below the surface: repeated long, regular dives in one area, often with fluke-up dives."],
+        ["Bubble net", "BN", "Bubbles blown in a ring, cloud or line to trap prey, usually followed by a vertical lunge."],
+        ["Skim feed", "SK", "Swimming slowly at the surface with the mouth open, filtering prey (e.g. right whales skimming copepods)."],
+        ["Rest / log", "RE", "Lying still or nearly still at the surface (logging), with little or no forward movement."],
+        ["Social / SAG", "SO", "Interacting with other animals: physical contact, rolling, chasing; a surface active group (SAG)."],
+        ["Breach", "BR", "Leaping clear of the water, or nearly so, and landing with a splash."],
+        ["Flipper slap", "FS", "Raising a pectoral flipper and slapping it on the water."],
+        ["Tail slap / lobtail", "TS", "Raising the flukes and slapping them on the water."],
+        ["Fluke-up dive", "FU", "Diving with the flukes raised clear of the water, usually a deep or long dive."],
+        ["Fluke-down dive", "FD", "Diving without showing the flukes, usually a shallow or short dive."],
+        ["Nursing", "NU", "A calf positioned under or beside its mother's belly, apparently nursing."],
+        ["Bow riding", "BO", "Riding the pressure wave at a vessel's bow or in its wake."],
+        ["Avoidance", "AV", "Moving away from the vessel, changing heading or diving as the vessel approaches."],
+        ["Approach vessel", "AP", "Moving toward the vessel or staying close beside it."],
+        ["Entangled", "EN", "Fishing gear, line or debris seen on the animal."],
+        ["Other", "OT", "A behavior not in this list: describe it in Comments."],
     ]),
 }
 
@@ -154,9 +167,9 @@ DEFAULT_SHORTCUTS = ["combo", "action", "prefill"], [
 
 # what each list's columns are called in Settings → Dropdowns, and which must be unique
 LIST_COLUMNS = {
-    "species": {"name": "Name", "species_code": "Code", "color": "Colour"},
-    "event_types": {"name": "Name", "event_code": "Code", "color": "Colour"},
-    "behaviors": {"name": "Name", "behavior_code": "Code"},
+    "species": {"name": "Name", "species_code": "Code", "color": "Color"},
+    "event_types": {"name": "Name", "event_code": "Code", "color": "Color"},
+    "behaviors": {"name": "Name", "behavior_code": "Code", "definition": "Definition"},
     "observers": {"name": "Initials", "full_name": "Full name"},
 }
 UNIQUE_COLUMNS = {"name", "species_code", "event_code", "behavior_code"}
@@ -225,7 +238,7 @@ DEFAULT_DISPLAY = {
     "show_track_off": "1",
     "fade_enabled": "0",            # fade the track, sightings and events older than fade_hours (not waypoints)
     "fade_hours": "2",
-    "overlay_colors": "{}",         # colours chosen in Tools → Overlays: JSON {file: "#rrggbb"}
+    "overlay_colors": "{}",         # colors chosen in Tools → Overlays: JSON {file: "#rrggbb"}
 }
 
 DEFAULT_SETTINGS = {
@@ -494,7 +507,7 @@ class Config:
             if not row["name"]:
                 problems.append(f"Row {i}: {cols['name']} is empty.")
             if row.get("color") and not _COLOR.match(row["color"]):
-                problems.append(f"Row {i}: “{row['color']}” isn't a colour (use a name like red, or #rrggbb).")
+                problems.append(f"Row {i}: “{row['color']}” isn't a color (use a name like red, or #rrggbb).")
             for c, prev in seen.items():
                 v = row.get(c, "").lower()
                 if v and v in prev:

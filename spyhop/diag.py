@@ -8,8 +8,8 @@ The log has a start-up header (version, Python, system, folders), survey actions
 errors with tracebacks (server and the Spyhop window), slow moments, and a
 performance snapshot every 5 minutes. It never contains survey data values.
 
-Save diagnostics… (Survey) zips the logs, settings and system details
-for a bug report: see make_bundle().
+Save diagnostics… (Settings → About) zips the logs, settings, a listing of the
+folders and system details for a bug report: see make_bundle().
 """
 from __future__ import annotations
 
@@ -175,29 +175,135 @@ def memory_mb() -> float | None:
     return None
 
 
-SAFE_CONFIG = ["display.csv", "shortcuts.csv", "tile_sources.csv"]
+# What a diagnostics bundle holds (no survey data, no people's names):
+#   system.txt     versions, system, folders and what the window/inputs were doing
+#   folders.txt    what is in the Spyhop folder and the data folder: names and sizes of the
+#                  settings, maps, overlays, routes, feeds, reports and templates; survey files
+#                  only counted (their names are survey names, not data)
+#   logs/          spyhop.log (and older rotations), crash.log
+#   settings/      settings.json (without the survey team, and with web addresses' ?query removed
+#                  in case one holds a key), template_history.json, the one-time migration markers
+#   config/        display, shortcuts and the species/event/behavior lists (not observers.csv: names)
+SAFE_CONFIG = ["display.csv", "shortcuts.csv", "species.csv", "event_types.csv", "behaviors.csv"]
+SETTINGS_FILES = ["template_history.json"]          # besides settings.json and the *.txt markers
+# Spyhop folder layout (config.Config, feeds.feeds_dir, reports.user_dir, templates.templates_dir)
+SPYHOP_FOLDERS = [("settings", "settings, template history, one-time migration markers"),
+                  ("charts", "offline maps (.mbtiles), downloaded in Settings → Basemap or added"),
+                  ("overlays", "map overlays (GeoJSON, GPX, KML) from Tools → Overlays"),
+                  ("routes", "saved routes (GPX), Tools → Routes"),
+                  ("feeds", "online overlay feeds (GeoJSON kept for offline use)"),
+                  ("reports", "report definitions (JSON), Tools → Reports"),
+                  ("tile_cache", "online map tiles kept for offline use"),
+                  ("logs", "these logs")]
+DATA_FOLDERS = [("templates", "templates (.spyhop-template.zip) and backups/"),
+                ("nmea_logs", "raw NMEA logs"), ("exports", "exports and reports")]
+
+
+def _size(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n} B"
+
+
+def _tree(d: Path, names: bool = True, depth: int = 2, limit: int = 60) -> list[str]:
+    """Lines describing a folder: its files (names and sizes, or just a count) and sub-folders."""
+    if not d.is_dir():
+        return ["    (missing)"]
+    out, files, total = [], [], 0
+    try:
+        entries = sorted(d.iterdir(), key=lambda p: (p.is_dir(), p.name.lower()))
+    except OSError as e:
+        return [f"    (can't read: {e})"]
+    for p in entries:
+        try:
+            if p.is_dir():
+                if depth > 1:
+                    sub = _tree(p, names, depth - 1, limit)
+                    out.append(f"    {p.name}/")
+                    out += ["  " + x for x in sub]
+                else:
+                    n = sum(1 for _ in p.rglob("*"))
+                    out.append(f"    {p.name}/  ({n} items)")
+            else:
+                sz = p.stat().st_size
+                total += sz
+                files.append((p.name, sz))
+        except OSError:
+            continue
+    if names:
+        out = [f"    {n}  {_size(z)}" for n, z in files[:limit]] + \
+              ([f"    … and {len(files) - limit} more files"] if len(files) > limit else []) + out
+    else:
+        out = [f"    {len(files)} files, {_size(total)}"] + out
+    return out
+
+
+def folder_report(root: Path, data_dir: Path) -> str:
+    lines = [f"Spyhop folder: {root}"]
+    top = [p for p in sorted(root.glob("*")) if p.is_file()] if root.is_dir() else []
+    lines += [f"    {p.name}  {_size(p.stat().st_size)}" for p in top]
+    for name, what in SPYHOP_FOLDERS:
+        lines.append(f"  {name}/  — {what}")
+        lines += _tree(root / name, names=name != "tile_cache", depth=1 if name == "tile_cache" else 2)
+    lines.append("")
+    lines.append(f"Data folder: {data_dir}" + ("  (the default, inside the Spyhop folder)" if data_dir == root / "data" else ""))
+    for name, what in DATA_FOLDERS:
+        lines.append(f"  {name}/  — {what}")
+        lines += _tree(data_dir / name, names=name == "templates")
+    other = [p for p in sorted(data_dir.glob("*")) if p.name not in {n for n, _ in DATA_FOLDERS}] if data_dir.is_dir() else []
+    nfiles = sum(1 for p in other if p.is_file())
+    size = sum(p.stat().st_size for p in other if p.is_file())
+    lines.append(f"  survey files and waypoints: {nfiles} files, {_size(size)} (names not listed)")
+    dirs = [p for p in other if p.is_dir()]
+    if dirs:
+        lines.append(f"  other folders: {len(dirs)}")
+    return "\n".join(lines) + "\n"
+
+
+def _redact(v):
+    """Drop the ?query part of web addresses (it may hold an access key)."""
+    if isinstance(v, str):
+        return v.split("?", 1)[0] + "?…" if "://" in v and "?" in v else v
+    if isinstance(v, list):
+        return [_redact(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _redact(x) for k, x in v.items()}
+    return v
 
 
 def make_bundle(root: Path, data_dir: Path, settings_path: Path, extra: dict, dest: Path) -> Path:
-    """Zip the logs, settings and system details (no survey data) for a bug report."""
+    """Zip the logs, settings, folder layout and system details (no survey data) for a bug report."""
     dest.mkdir(parents=True, exist_ok=True)
     out = dest / f"spyhop_diagnostics_{__version__}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         info = system_info(root, data_dir) | extra
         z.writestr("system.txt", "\n".join(f"{k}: {v}" for k, v in info.items()) + "\n")
+        try:
+            z.writestr("folders.txt", folder_report(Path(root), Path(data_dir)))
+        except Exception as e:  # noqa: BLE001 — the report must still be made
+            z.writestr("folders.txt", f"(couldn't list the folders: {e})\n")
         for p in sorted(log_dir(root).glob("*.log*")):
-            z.write(p, f"logs/{p.name}")
+            if p.resolve() != out.resolve():
+                z.write(p, f"logs/{p.name}")
         try:
             s = json.loads(settings_path.read_text(encoding="utf-8"))
             s.pop("last_meta", None)                  # names and email of the survey team
-            z.writestr("settings.json", json.dumps(s, indent=2))
+            z.writestr("settings/settings.json", json.dumps(_redact(s), indent=2, ensure_ascii=False))
         except (OSError, ValueError):
             pass
+        sdir = settings_path.parent
+        for p in [sdir / n for n in SETTINGS_FILES] + sorted(sdir.glob("*.txt")):
+            if p.is_file() and p.stat().st_size < 2 * 1024 ** 2:
+                z.write(p, f"settings/{p.name}")
         for name in SAFE_CONFIG:
             p = root / name
             if p.exists():
                 z.write(p, f"config/{name}")
         z.writestr("README.txt", io.StringIO(
-            "Spyhop diagnostics bundle. It holds Spyhop's logs, its settings (without survey team names),\n"
-            "display/shortcut/map settings and system details. It does not hold any survey data.\n").getvalue())
+            "Spyhop diagnostics bundle. It holds Spyhop's logs, its settings (without the survey team's names,\n"
+            "and with any ?query removed from web addresses), the display, shortcut and list settings (not the\n"
+            "observers list), a listing of Spyhop's folders (folders.txt) and system details.\n"
+            "It does not hold any survey data.\n").getvalue())
     return out

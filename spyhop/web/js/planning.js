@@ -66,7 +66,7 @@ export function systematicPoints(start, brg, legs, legM, spacingM, side) {
 // across (at right angles to `dir`) leads onto the reciprocal sawtooth (its waypoints on the
 // opposite line from the outbound ones), which comes back through the outbound pattern, crossing
 // each leg at its middle, and ends level with the start on the far line.
-// Worked out on a flat plane around the start (metres along, metres to starboard): over a survey
+// Worked out on a flat plane around the start (meters along, meters to starboard): over a survey
 // area the difference from great circles is negligible, and the two patterns line up exactly.
 export function sawtoothPoints(start, dir, legs, legM, angle, side, ret) {
   const rad = Math.PI / 180;
@@ -154,7 +154,7 @@ export class Planner {
     try {
       const s = JSON.parse(localStorage.getItem(STORE) || 'null');
       if (s) {
-        // a style never changed from the old orange default takes the new grey dotted one
+        // a style never changed from the old orange default takes the new gray dotted one
         const st = s.style && Object.keys(OLD_DEFAULT_STYLE).every((k) => s.style[k] === OLD_DEFAULT_STYLE[k]) ? null : s.style;
         return { ...DEFAULTS, ...s, manual: { ...DEFAULTS.manual, ...s.manual }, sys: { ...DEFAULTS.sys, ...s.sys }, saw: { ...DEFAULTS.saw, ...sawFromOld(s.saw) }, style: { ...STYLE_DEFAULTS, ...st } };
       }
@@ -305,7 +305,7 @@ export class Planner {
       else {
         const t = timeParts(new Date(Date.now() + eta.seconds * 1000), app.clock());
         wrap.append(el('div', { class: 'pop-rel pop-eta' }, el('b', {}, `ETA ${t.time.slice(0, 5)} ${t.abbr}`),
-          ` · in ${fmtDuration(eta.seconds)} · ${(eta.metres / M_PER_NM).toFixed(1)} nm along the route at ${this.state.speed} kn`));
+          ` · in ${fmtDuration(eta.seconds)} · ${(eta.meters / M_PER_NM).toFixed(1)} nm along the route at ${this.state.speed} kn`));
       }
     }
     wrap.append(el('div', { class: 'pop-btns' }, el('a', { href: '#', onclick: (e) => {
@@ -331,16 +331,16 @@ export class Planner {
       if (d < best.d - 1e-12) best = { k, d, t };
     }
     const leg = (j) => distM(r[j].ll, r[j + 1].ll);
-    let metres;
+    let meters;
     if (best.k === 0 && best.t === 0) {                  // not on the route yet: go to its start first
-      metres = distM(v, r[0].ll);
-      for (let j = 0; j < i; j++) metres += leg(j);
+      meters = distM(v, r[0].ll);
+      for (let j = 0; j < i; j++) meters += leg(j);
     } else {
       if (i <= best.k) return { passed: true };
-      metres = distM(v, r[best.k + 1].ll);
-      for (let j = best.k + 1; j < i; j++) metres += leg(j);
+      meters = distM(v, r[best.k + 1].ll);
+      for (let j = best.k + 1; j < i; j++) meters += leg(j);
     }
-    return { metres, seconds: metres / (kn * M_PER_NM / 3600) };
+    return { meters, seconds: meters / (kn * M_PER_NM / 3600) };
   }
 
   // the vessel moved: refresh an open waypoint popup; redraw a draft that starts at the vessel
@@ -508,6 +508,14 @@ export class Planner {
     this.applyDesign({ mode: this.state.mode, speed: this.state.speed, start: 'first', name: `Route ${i}`, manual: { points: [] },
       sys: { ...DEFAULTS.sys }, saw: { ...this.state.saw }, style: this.state.style });
     this.render();
+    // show where to design it (the editor may look the same as before when it was already empty)
+    const d = document.getElementById('route-design');
+    if (d) {
+      d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      d.classList.add('flash');
+      setTimeout(() => d.classList.remove('flash'), 1200);
+    }
+    toast(`New route “${this.state.name}”: design it below`, 'info', 3000);
   }
 
   async saveRoute(asNew = false) {
@@ -598,7 +606,7 @@ export class Planner {
       el('input', { type: 'number', value: get(), step: attrs.step || 'any', min: attrs.min ?? 0, max: attrs.max, style: 'width:7em',
         onchange: (e) => { set(e.target.value); this.changed(true); } }), attrs.unit ? el('span', { class: 'hint' }, attrs.unit) : null);
 
-    const design = sec('Design',
+    const design = el('section', { class: 'settings-sec', id: 'route-design' }, el('h3', {}, 'Design'),
       el('div', { class: 'btnrow' }, el('b', {}, 'Mode:'),
         ...[['manual', 'Manual — click points on the map'], ['systematic', 'Systematic — parallel legs'], ['sawtooth', 'Systematic — sawtooth (zig-zag)']]
           .map(([v, l]) => radio('plan-mode', v, l, s.mode, (m) => { s.mode = m; this.adding = false; this.picking = false; this.updateClickMode(); this.changed(true); }))),
@@ -701,7 +709,7 @@ export class Planner {
     const setStyle = (k, v) => { st[k] = v; this.save(); this.draw(); };
     const looks = sec('Appearance',
       el('div', { class: 'grid2' },
-        el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Colour'),
+        el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Color'),
           el('input', { type: 'color', value: st.color, oninput: (e) => setStyle('color', e.target.value) })),
         el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Line style'),
           el('select', { onchange: (e) => setStyle('line', e.target.value) },

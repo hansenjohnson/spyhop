@@ -6,6 +6,18 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.27.0 — 2026-11-09
+
+- **Behaviors:** the checklist is now a single list you can work from the keyboard: ↑/↓ move, Space ticks, a letter jumps to the first behavior starting with it (press it again for the next), Enter saves. The filter box is gone. The highlighted behavior's **definition** is shown at the bottom. Definitions come from a new **Definition** column in `behaviors.csv` (Settings → Dropdowns → Behaviors): the built-in behaviors have one, and the column is added to existing lists.
+- **Drop-down lists** opened from the keyboard no longer show two highlighted entries when the mouse pointer happens to be over the list; the mouse moves the one highlight when it moves.
+- **New route** scrolls to the Design section (and says so), even when the editor was already empty.
+- **Settings → Shortcuts:** the pre-fill boxes are wide enough for their text.
+- **FILE input:** **Choose…** opens the computer's own file chooser. A path pasted with quotes (Windows' *Copy as path*) or starting with `~` works, and a missing file is reported when you apply. Spyhop's own raw NMEA logs replay at the pace they were recorded, using their time stamps; plain NMEA files are paced by their RMC/GGA/GLL/ZDA times. The status shows the line being replayed, and says when another input higher in the list is supplying the position (inputs higher up are preferred).
+- **Uninstall and reinstall** (Settings → About): **Uninstall Spyhop…** removes the program, its Python set-up and its shortcuts; ticking a box also deletes the settings, lists, maps, overlays, routes, feeds and reports. Survey data is deleted only if that is ticked too and DELETE is typed, and a data folder you chose yourself is never deleted. **Reinstall a clean copy…** downloads the latest version from GitHub and replaces the program with it (keeping a zip of the old one), sets up its Python packages again and restarts. Your surveys are always kept, and your settings unless you tick reset. Neither can be used during a survey or on a git checkout.
+- **Diagnostics:** the zip now includes `folders.txt`, a listing of Spyhop's folder and the data folder (survey files are only counted). It also includes the template history and list files, though not the observers list. Web addresses in the settings have their `?…` part removed, in case it holds a key.
+- **Delete Survey Data…** is the new name of *Clear Survey Data…*.
+- **American spelling** throughout (color, behavior, gray, center, meter…). The AIS statuses now read *Restricted maneuverability* and *Constrained by draft*.
+
 ## 0.26.0 — 2026-11-08
 
 - **Lat and Lon:** the Sightings and Effort columns VesLat and VesLon are now **Lat** and **Lon**, so they suit any platform (vessel, plane, land station). Survey files from earlier versions are converted when they're opened (a backup of each original is kept), past surveys shown as overlays are read either way, and saved reports that use the old names keep working. The merged export already used Lat and Lon.
@@ -14,11 +26,11 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
 - **Refresh** is the name of every button that reads a folder again: Settings → Basemap and Tools → Routes (were *Look for new files*), and new Refresh buttons for the survey list, Tools → Overlays and Tools → Reports.
 - **Tools → Instruments** links to the GPS / NMEA inputs in Settings → Inputs.
 - **AIS:** the map's credits line names each AIS network once, without station IDs (the full source is still in each vessel's popup).
-- **Tutorial:** a fuller *Try it with the simulator* section (it pointed to the wrong tab): switching it on, steering it, practising a survey, and switching it off.
+- **Tutorial:** a fuller *Try it with the simulator* section (it pointed to the wrong tab): switching it on, steering it, practicing a survey, and switching it off.
 
 ## 0.25.0 — 2026-11-07
 
-- **Overlay colours:** in Tools → Overlays, click an overlay's colour to draw it in another colour on the map (↺ goes back to its own colours). The colours are kept with the map display, so they are remembered and travel in templates.
+- **Overlay colors:** in Tools → Overlays, click an overlay's color to draw it in another color on the map (↺ goes back to its own colors). The colors are kept with the map display, so they are remembered and travel in templates.
 - **Sawtooth routes:** the return crossover now runs straight across the pattern, at right angles to the survey direction (090° or 270° for a survey heading 000°), onto the reciprocal sawtooth.
 - **Quality Control → Fix** puts the ERROR row in the Effort table one second after the last good track point before the break, so in the merged export it comes after that track point rather than tying with it.
 
@@ -28,7 +40,7 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
   - Templates are saved as **`<name>.spyhop-template.zip`** in a **`templates`** folder in the survey data folder; the old `config_packs` folder is renamed the first time 0.24 runs. Older `.spyhop.zip` files are still read.
   - Your settings for templates (web address, backup folder, the template in use…) carry over.
 - **One `spyhop-config.json` in each template** holds everything that isn't a table: the format, the minimum Spyhop version and which optional parts it has, the record of changes, the shared settings, the network inputs, the map feeds, which online overlays are on, the map display and the saved reports. The lists and shortcuts stay as CSV files, and waypoints, routes and overlays as their own files. This replaces `spyhop-pack.json`, `spyhop-settings.json`, `spyhop-config.csv`, `display.csv` and the `reports` folder in a template (all still read from older templates).
-  - **Map feeds travel as their address, name, colour and refresh time only.** The saved copy of each feed's data (sometimes several MB) is no longer put in templates; each computer downloads the feed itself. Templates are now usually well under 100 KB.
+  - **Map feeds travel as their address, name, color and refresh time only.** The saved copy of each feed's data (sometimes several MB) is no longer put in templates; each computer downloads the feed itself. Templates are now usually well under 100 KB.
   - Templates now need Spyhop 0.24.0 or newer (the lowest minimum version).
   - This computer's record of changes moved from `spyhop-config.csv` in Spyhop's folder to `settings/template_history.json`.
 - **Sawtooth routes, reworked:**
@@ -58,14 +70,14 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
 ## 0.21.0 — 2026-11-07
 
 - **Online overlays**, in a new section of **Settings → Inputs** and in the map's layers menu:
-  - **AIS vessels** from Open Waters AIS (free, no account): the vessels in view, every 30 s, coloured by type and pointing the way they're heading; click one for its details and its distance and bearing from you. Option to hide vessels that aren't moving.
+  - **AIS vessels** from Open Waters AIS (free, no account): the vessels in view, every 30 s, colored by type and pointing the way they're heading; click one for its details and its distance and bearing from you. Option to hide vessels that aren't moving.
   - **Weather radar**: US (NOAA NEXRAD, via the Iowa Environmental Mesonet, every 5 minutes) and worldwide (RainViewer, every 10 minutes), with an opacity setting.
-  - **Map feeds**: add any ArcGIS FeatureServer / MapServer layer or service, or a GeoJSON file, with its own colour and refresh. Ready-made: NOAA's **right whale Seasonal Management Areas** (shown solid while in effect, dashed otherwise) and **right whale Slow Zones / DMAs** (NEFSC). The last copy of each feed is kept, so it still shows offline.
+  - **Map feeds**: add any ArcGIS FeatureServer / MapServer layer or service, or a GeoJSON file, with its own color and refresh. Ready-made: NOAA's **right whale Seasonal Management Areas** (shown solid while in effect, dashed otherwise) and **right whale Slow Zones / DMAs** (NEFSC). The last copy of each feed is kept, so it still shows offline.
 
 ## 0.20.0 — 2026-11-07
 
 - **Tools → Routes** (was Route) keeps any number of routes, in a new `routes` folder in Spyhop's folder (one GPX file each, so a route can also go straight to a chart plotter).
-  - **Saved routes** at the top of the tab lists them, with mode, waypoints, length and date. **Show** puts any of them on the map on every tab (in their own colours; *Saved routes* in the layers menu); **Open** loads one to edit or activate; **Zoom to**; **Delete**.
+  - **Saved routes** at the top of the tab lists them, with mode, waypoints, length and date. **Show** puts any of them on the map on every tab (in their own colors; *Saved routes* in the layers menu); **Open** loads one to edit or activate; **Zoom to**; **Delete**.
   - **Save route** / **Save as new…** / **New route** in the editor; the route being edited is marked, with *changed* until it's saved, and Spyhop asks before discarding changes.
   - GPX files copied into the folder are listed after **Look for new files**.
   - **Save as map overlay** is gone: show a saved route instead. (Overlays saved from routes before stay in Tools → Overlays.)
@@ -140,7 +152,7 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
 
 ## 0.13.0 — 2026-11-06
 
-- **New default map: Seascape depths (feet)**, Open Waters' Seascape bathymetry with depth shading, contours and soundings in feet. It's drawn with MapLibre GL (bundled, BSD licence). Its style, tiles and fonts go through Spyhop's tile cache, so they work offline once viewed or downloaded. Not for navigation.
+- **New default map: Seascape depths (feet)**, Open Waters' Seascape bathymetry with depth shading, contours and soundings in feet. It's drawn with MapLibre GL (bundled, BSD license). Its style, tiles and fonts go through Spyhop's tile cache, so they work offline once viewed or downloaded. Not for navigation.
 - Removed **NOAA charts (tiled)**, which no longer works, and **OpenSeaMap seamarks**. "NOAA charts (dynamic)" is now called **NOAA charts**.
 - **Downloading map areas for offline use was fixed and reworked** (Survey → Settings → Map and offline charts):
   - **What was wrong:** a download kept nothing when "save tiles as you view them" was off. Zoomed in past the default highest zoom, it got no tiles at all. And it gave no reason when tiles failed.
@@ -156,9 +168,9 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
   - Add, delete and reorder shortcuts, restore the defaults, and Save.
   - Keys used twice, keys without Mod or Alt, and unknown actions or columns are refused, and keys the browser may take are marked.
 - **Survey → Dropdowns** (new, after Shortcuts) edits the Species, Events, Behaviors and Observers lists.
-  - Add, remove, reorder and sort entries, and pick colours.
+  - Add, remove, reorder and sort entries, and pick colors.
   - Names and codes must be unique.
-  - **While a survey is under way the lists are greyed out and can't be changed.**
+  - **While a survey is under way the lists are grayed out and can't be changed.**
 - The CSV files can still be edited in a spreadsheet for big changes.
 - Group config: a GitHub link to a `.zip` file in a repository now downloads that file alone, not a zip of the whole repository.
 - **Group config moved to Survey → File.** **Make a pack from this computer…** now asks for your name, what changed and the file name. It fills in which files changed since the last pull or pack, and adds the row to `spyhop-config.csv` itself.
@@ -168,7 +180,7 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
 ## 0.11.0 — 2026-11-06
 
 - **Group config** (Survey → Settings): a team keeps its config files on the web, and each computer pulls them.
-  - What can be shared: the species, event types, observers and behaviours lists, shortcuts, map display, map sources and report templates.
+  - What can be shared: the species, event types, observers and behaviors lists, shortcuts, map display, map sources and report templates.
   - Where the pack can be: a public GitHub repository (or a folder in one), a Dropbox or Google Drive link, a zip on a website, or a zip or folder on this computer.
   - **Check for new config** shows each file that would be added, changed or removed (with row counts), the pack's recent changes from its `spyhop-config.csv`, and any problems. A pack with problems can't be pulled.
   - **Pull and overwrite** replaces this computer's copies of the pack's files, with no merging. A pack's report templates replace all of this computer's templates. It can save a backup zip first, in a folder you choose. A backup can be pulled again to undo.
@@ -205,7 +217,7 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
 
 - **Route waypoint popups show an ETA:** the time at which the vessel reaches that waypoint following the route from where it is now, at the survey speed, with the time and distance to go. A waypoint already behind the vessel says *passed*.
 - **Off-effort tracklines** are now solid by default, and thinner than on effort (1.5 px against 3 px).
-- **Line styles:** each of the on- and off-effort tracks can be solid, dashed, dotted or dash-dot, set in Settings → Map display → Trackline, next to its colour, width and on/off. The HTML summary uses the same styles.
+- **Line styles:** each of the on- and off-effort tracks can be solid, dashed, dotted or dash-dot, set in Settings → Map display → Trackline, next to its color, width and on/off. The HTML summary uses the same styles.
 - **Settings → Map display** now holds everything about the map's look (markers, trackline, lines and vectors, fading). Font sizes moved to their own *Text size* section.
 - **Waypoints no longer fade.** Fading applies only to the trackline, sightings and events.
 - **The merged CSV includes the track:** one `Track` row per track point, with position, new `SOG` and `COG` columns, its Effort label and the conditions in force at the time, in time order with the other records.
@@ -238,7 +250,7 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
   - New check: a sighting further away than the visibility recorded at the time.
 - **Route:**
   - Click a waypoint of an active route for a popup: its name and position, its distance and bearing from the vessel (kept up to date), and **View the route**.
-  - The default look is grey and dotted.
+  - The default look is gray and dotted.
   - **Import GPX…** loads a route. One exported by Spyhop comes back exactly as it was designed; any other GPX loads as a manual route.
 - The Vis column no longer wraps.
 - On start, the launchers install any Python packages a new version needs (this version adds `tzfpy`, the offline time-zone map).
@@ -248,7 +260,7 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
 - **Planning is now Survey → Route**, with:
   - **Activate route:** locks the waypoints (no dragging or editing) and keeps the route on the map from every tab. Deactivate to edit it again.
   - a **Route** entry in the map's layers menu to show or hide it
-  - **Appearance:** colour, line style (solid, dashed, dotted, dash-dot), line width and waypoint size, also used in saved overlays
+  - **Appearance:** color, line style (solid, dashed, dotted, dash-dot), line width and waypoint size, also used in saved overlays
   - **Clear route**
   - right-click the map → **Start route here**, which opens the Route tab with that point as the start
 - **Summary moved into Reports.** Ctrl/Cmd+4 now opens Reports, and existing shortcuts are updated.
@@ -266,7 +278,7 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
 - **Survey → About** is a tab of its own (it was in File). The version badge in the status bar opens it.
 - The Survey tabs are now in this order: File, Settings, Shortcuts, Waypoints, Planning, NMEA, Summary, Quality Control, Reports, About.
 - Removed the 📂 overlay button from the map; overlays are imported in Survey → Waypoints.
-- Overlays honour simple style properties (`stroke`, `stroke-width`, `marker-color`, `dash`), so saved plans keep their orange dashed look.
+- Overlays honor simple style properties (`stroke`, `stroke-width`, `marker-color`, `dash`), so saved plans keep their orange dashed look.
 
 ## 0.5.0 — 2026-11-05
 
@@ -283,7 +295,7 @@ Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstruc
 - **Marks are now Waypoints**, in Survey → Waypoints, together with the map overlays. `marks.csv` is renamed `waypoints.csv`.
 - **Negative bearings** are accepted: −10 is stored as 350, which is handy for relative bearings to port.
 - **Map popups** show only the essentials: time, position, species and number (or event and ID), the current distance and bearing from the vessel, and a link to the row.
-- **Merged CSV:** times are read more leniently, and sightings before any effort row are labelled "no effort row yet". The file also gains a SpyhopVersion column.
+- **Merged CSV:** times are read more leniently, and sightings before any effort row are labeled "no effort row yet". The file also gains a SpyhopVersion column.
 - Removed **Quit Spyhop**; close the Terminal window instead.
 - The survey details file records which Spyhop version started the survey and which last saved it.
 

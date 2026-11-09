@@ -765,7 +765,7 @@ class Recorder:
                         else "no vessel heading on this row"))
                     return warnings
                 unit = row.get("DistUnit") or self.cfg.settings.get("distance_unit", "nm")
-                slat, slon = geo.destination(lat, lon, true_b, geo.to_metres(float(d), unit))
+                slat, slon = geo.destination(lat, lon, true_b, geo.to_meters(float(d), unit))
                 row["SigLat"], row["SigLon"] = f"{slat:.6f}", f"{slon:.6f}"
         return warnings
 

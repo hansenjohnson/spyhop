@@ -359,7 +359,7 @@ class NmeaDecoder:
         return True
 
     def _depth_fields(self, f):
-        # feet,f,metres,M,fathoms,F
+        # feet,f,meters,M,fathoms,F
         if len(f) > 2 and _f(f[2]) is not None:
             return _f(f[2])
         if _f(f[0]) is not None:

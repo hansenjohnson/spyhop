@@ -138,7 +138,7 @@ table.grid td.editing { padding: 0; outline: 2px solid var(--sel-cell); outline-
 .dropdown { position: fixed; z-index: 3000; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; overflow-y: auto;
   box-shadow: 0 4px 16px rgba(0,0,0,.25); font-size: var(--grid-font); }
 .dd-item { padding: 0.25em 0.6em; cursor: pointer; display: flex; align-items: center; gap: 0.3em; white-space: nowrap; }
-.dd-item.hi, .dd-item:hover { background: var(--accent); color: var(--accent-text); }
+.dd-item.hi { background: var(--accent); color: var(--accent-text); }
 .dd-item .dd-code { margin-left: auto; padding-left: 1em; opacity: 0.7; font-size: 0.85em; }
 .dd-none { padding: 0.3em 0.6em; color: var(--muted); font-style: italic; }
 
@@ -149,9 +149,12 @@ table.grid td.editing { padding: 0; outline: 2px solid var(--sel-cell); outline-
 .modal-body { overflow: auto; }
 .modal-buttons { display: flex; justify-content: flex-end; gap: 0.5em; margin-top: 1em; }
 label.stack { display: flex; flex-direction: column; gap: 0.4em; }
-.ms-filter { width: 100%; margin-bottom: 0.5em; }
-.ms-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.15em 0.8em; max-height: 50vh; overflow: auto; }
-.ms-item { display: flex; align-items: center; gap: 0.3em; padding: 0.15em 0; cursor: pointer; }
+.ms-list { max-height: 50vh; overflow: auto; border: 1px solid var(--line); border-radius: 4px; outline: none; }
+.ms-list:focus-visible, .ms-list:focus { border-color: var(--accent); }
+.ms-item { display: flex; align-items: center; gap: 0.4em; padding: 0.2em 0.5em; cursor: pointer; user-select: none; }
+.ms-item.hi { background: var(--accent); color: var(--accent-text); }
+.ms-item.hi .dd-code { color: inherit; opacity: 0.8; }
+.ms-def { min-height: 3.6em; margin-top: 0.5em; padding: 0.4em 0.6em; background: var(--panel2); border-radius: 4px; font-size: 0.95em; line-height: 1.35; }
 .ms-item .dd-code { margin-left: auto; color: var(--muted); font-size: 0.85em; }
 #toasts { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 5000; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
 .toast { pointer-events: auto; background: #233; color: #fff; padding: 0.5em 1em; border-radius: 6px; box-shadow: 0 3px 12px rgba(0,0,0,.3); max-width: 70vw; cursor: pointer; }
@@ -182,7 +185,7 @@ label.row input[type=number] { width: 5.5em; }
 .nmea-src { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; padding: 0.3em 0; border-bottom: 1px dashed var(--line); }
 .nmea-status { margin: 0.5em 0; }
 .src-st.error { color: var(--alert); }
-.src-st.receiving, .src-st.simulating { color: var(--ok); }
+.src-st.receiving, .src-st.simulating, .src-st.replaying { color: var(--ok); }
 .src-st .err { color: var(--alert); }
 pre.raw { max-height: 240px; overflow: auto; background: var(--panel2); padding: 0.5em; font-size: 0.85em; }
 .overlay-list { margin: 0.3em 0; padding-left: 1.2em; }
@@ -383,6 +386,7 @@ a.button:hover { border-color: var(--accent); }
 table.edit-table td { vertical-align: middle; padding: 0.2em 0.4em; }
 table.edit-table input[type=text] { width: 100%; box-sizing: border-box; min-width: 6em; }
 table.edit-table select { max-width: 22em; }
+table.edit-table input[data-col=definition] { min-width: 30em; }
 table.edit-table input.invalid { border-color: #c0392b; background: #fdecea; }
 table.edit-table tr.bad td { background: #fdf3f2; }
 td.rowbtns { white-space: nowrap; width: 1%; }
@@ -485,3 +489,12 @@ table.overlay-table td { vertical-align: middle; }
 .feed-active { color: var(--ok); font-weight: 600; }
 .overlay-table input.ov-color { width: 2.2em; height: 1.5em; padding: 0; border: 1px solid var(--line, #ccc); vertical-align: middle; cursor: pointer; }
 .overlay-table button.ov-color-reset { padding: 0 0.3em; vertical-align: middle; }
+/* brief highlight when a section is jumped to (New Route) */
+.settings-sec.flash { animation: sec-flash 1.2s ease-out; }
+@keyframes sec-flash { from { background: color-mix(in srgb, var(--accent, #2a7fff) 22%, transparent); } to { background: transparent; } }
+/* Settings → About → Uninstall or reinstall */
+.indent { margin-left: 1.8em; margin-bottom: 0.4em; }
+.uninstall-plan ul { margin: 0.2em 0 0.6em; padding-left: 1.4em; }
+.uninstall-plan li { margin-bottom: 0.25em; }
+.uninstall-plan .mono { font-size: 0.85em; word-break: break-all; }
+.modal-back.closing { z-index: 6000; }

@@ -1,5 +1,5 @@
 // Water depth under the cursor, read from a MapLibre style's raster-dem source (Seascape).
-// Seascape's DEM is Terrarium-encoded: elevation = R*256 + G + B/256 − 32768 metres.
+// Seascape's DEM is Terrarium-encoded: elevation = R*256 + G + B/256 − 32768 meters.
 // Negative values are depths below chart datum; 0, 1 and 2 are codes for water of unknown
 // depth, drying foreshore and land. The tiles come through Spyhop's tile cache, so this
 // works offline wherever the map has been viewed or downloaded.

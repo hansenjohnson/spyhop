@@ -4,7 +4,7 @@ Spyhop records a vessel-based whale survey: sightings, effort and conditions, ev
 
 ## Find your way around
 
-- **Map** (left): the vessel, its trackline (green on effort, a thinner grey line off effort), sightings, events and waypoints.
+- **Map** (left): the vessel, its trackline (green on effort, a thinner gray line off effort), sightings, events and waypoints.
   - The layers button (top right) switches base maps and overlays.
   - The buttons on the left: ⌖ follow the vessel, 📏 measure, ◎ range rings, ⤢ zoom to the whole survey.
   - Right-click the map for: add a sighting, event or waypoint here; measure from here; **Start route here**.
@@ -27,7 +27,7 @@ You don't need a GPS to try Spyhop. The simulator is a pretend vessel that steam
 2. Change the new input's type to **SIMULATOR**. Four boxes appear:
    - **Heading °T** and **Speed kn**: the course and speed it steams (for example 090 and 10).
    - **Start lat** and **Start lon**: where it starts, in decimal degrees (for example 41.9 and −70.33, in Cape Cod Bay; west and south are negative).
-3. Press **Apply** (it reads **Apply — unsaved changes** until you do). The vessel appears on the map and starts moving. The map follows it while the **⌖** button on the map is on (Mod+Shift+C centres on it once).
+3. Press **Apply** (it reads **Apply — unsaved changes** until you do). The vessel appears on the map and starts moving. The map follows it while the **⌖** button on the map is on (Mod+Shift+C centers on it once).
 4. Open **Tools → Instruments** to see the readings it sends; the status bar at the top shows its position, course and speed.
 
 **Steer it**
@@ -36,12 +36,12 @@ You don't need a GPS to try Spyhop. The simulator is a pretend vessel that steam
 - To follow a planned route, turn at each waypoint as you would at sea (Tools → Routes shows the course of each leg).
 - To move it somewhere else, change **Start lat** / **Start lon** and press **Apply**; it starts again from there.
 
-**Practise a survey**
+**Practice a survey**
 
 1. In the Survey tab, press **Start New Survey…** and call it something like *Practice*.
 2. Record effort, sightings and events as described in *Record data* below: the simulator's positions, times and readings fill in the rows like a real GPS.
 3. When you're done, **End Survey**, then try **Quality Control**, the **Summary** and **Export Data…** on it.
-4. To get rid of it, open it and press **Clear Survey Data…**.
+4. To get rid of it, open it and press **Delete Survey Data…**.
 
 **Switch it off**
 
@@ -55,9 +55,9 @@ Edit the drop-down lists in **Settings → Dropdowns** (Species, Events, Behavio
 
 Behind the scenes they are plain CSV files, which you can also edit in Excel, Numbers or a text editor for big changes. Each editor has an **Open** button for its file and a **Reload from the file** button:
 
-- **species.csv:** species names, map colours and codes (e.g. `RIWH`). The code labels sightings on the map, and Reports use it.
+- **species.csv:** species names, map colors and codes (e.g. `RIWH`). The code labels sightings on the map, and Reports use it.
 - **observers.csv:** observer codes and full names. `NA` (None) is a placeholder for an empty watch position, and can fill several positions at once.
-- **event_types.csv:** event names, colours and codes (e.g. `GRPT` for Gear Reported).
+- **event_types.csv:** event names, colors and codes (e.g. `GRPT` for Gear Reported).
 - **behaviors.csv**, and **display.csv** (the map's look, also set in Settings → General).
 - **shortcuts.csv:** keyboard shortcuts.
   - Each row has a key (e.g. `Mod+Shift+R`; Mod is Ctrl on Windows and ⌘ on a Mac), an action, and optional prefills.

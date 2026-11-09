@@ -16,9 +16,9 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 
 from .recorder import Recorder, ValueErrorMsg
-from . import awake, __version__, diag, feeds, reports, routes, schema, templates, updater
+from . import awake, __version__, diag, feeds, reports, routes, schema, templates, uninstall, updater
 from .browser import find_chrome, html_to_pdf, PdfError
-from .sources import SourceManager, list_serial_ports
+from .sources import SourceManager, list_serial_ports, clean_path
 from .store import safe_name
 mimetypes.add_type("text/javascript", ".mjs")   # the MapLibre modules
 from . import tiles as tiles_mod
@@ -75,20 +75,30 @@ def open_path(p: Path):
         subprocess.Popen(["xdg-open", str(p)])
 
 
+def _as_q(s: str) -> str:
+    """A string for inside AppleScript double quotes."""
+    return str(s).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _ps_q(s: str) -> str:
+    """A string for inside PowerShell single quotes."""
+    return str(s).replace("'", "''")
+
+
 def choose_folder_dialog(start: str) -> str | None:
     """Native folder chooser via the operating system (no GUI toolkit needed)."""
     system = platform.system()
     try:
         if system == "Darwin":
             script = ('POSIX path of (choose folder with prompt "Choose the folder for Spyhop survey data" '
-                      f'default location (POSIX file "{start}"))')
+                      f'default location (POSIX file "{_as_q(start)}"))')
             r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=600)
             return r.stdout.strip().rstrip("/") or None if r.returncode == 0 else None
         if system == "Windows":
             ps = ("Add-Type -AssemblyName System.Windows.Forms;"
                   "$f=New-Object System.Windows.Forms.FolderBrowserDialog;"
                   "$f.Description='Choose the folder for Spyhop survey data';"
-                  f"$f.SelectedPath='{start}';"
+                  f"$f.SelectedPath='{_ps_q(start)}';"
                   "if($f.ShowDialog() -eq 'OK'){$f.SelectedPath}")
             r = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", ps],
                                capture_output=True, text=True, timeout=600)
@@ -103,6 +113,37 @@ def choose_folder_dialog(start: str) -> str | None:
     except (OSError, subprocess.TimeoutExpired):
         pass
     raise ValueErrorMsg("Couldn't show a folder chooser on this computer — type or paste the folder's path instead.")
+
+
+def choose_file_dialog(start: str, prompt: str = "Choose a file") -> str | None:
+    """Native file chooser via the operating system (no GUI toolkit needed). `start` is a folder."""
+    system = platform.system()
+    try:
+        if system == "Darwin":
+            script = (f'POSIX path of (choose file with prompt "{_as_q(prompt)}" '
+                      f'default location (POSIX file "{_as_q(start)}"))')
+            r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=600)
+            return r.stdout.strip() or None if r.returncode == 0 else None
+        if system == "Windows":
+            ps = ("Add-Type -AssemblyName System.Windows.Forms;"
+                  "$f=New-Object System.Windows.Forms.OpenFileDialog;"
+                  f"$f.Title='{_ps_q(prompt)}';"
+                  f"$f.InitialDirectory='{_ps_q(start)}';"
+                  "$f.Filter='NMEA logs (*.nmea;*.txt;*.log)|*.nmea;*.txt;*.log|All files (*.*)|*.*';"
+                  "if($f.ShowDialog() -eq 'OK'){$f.FileName}")
+            r = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", ps],
+                               capture_output=True, text=True, timeout=600)
+            return r.stdout.strip() or None
+        for cmd in (["zenity", "--file-selection", f"--title={prompt}", f"--filename={start}/"],
+                    ["kdialog", "--getopenfilename", start]):
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            except FileNotFoundError:
+                continue
+            return r.stdout.strip() or None if r.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    raise ValueErrorMsg("Couldn't show a file chooser on this computer — type or paste the file's path instead.")
 
 
 def json_ok(data=None, **kw):
@@ -225,7 +266,8 @@ class App:
     def nmea_status(self, raw=True) -> dict:
         d = self.rec.decoder
         out = {"sources": list(self.sources.status.values()), "counts": d.counts,
-               "errors": d.errors, "log": self.rec.raw_log_status()}
+               "errors": d.errors, "log": self.rec.raw_log_status(),
+               "position_source": d.state.source if d.state.updated and time.time() - d.state.updated < 10 else ""}
         if raw:
             out["raw"] = list(d.raw)[-60:]
         return out
@@ -422,7 +464,7 @@ class App:
     async def survey_clear(self, request):
         body = await request.json()
         if not self.rec.survey or body.get("confirm") != self.rec.survey["prefix"]:
-            raise ValueErrorMsg("Confirmation didn't match the survey name; nothing was cleared.")
+            raise ValueErrorMsg("Confirmation didn't match the survey name; nothing was deleted.")
         self.rec.clear_survey()
         return json_ok()
 
@@ -436,6 +478,17 @@ class App:
         loop = asyncio.get_running_loop()
         start = str(self.rec.cfg.data_dir)
         path = await loop.run_in_executor(None, choose_folder_dialog, start)
+        return json_ok(path=path)
+
+    async def pick_file(self, request):
+        """Show the computer's own file chooser (for a FILE input's NMEA log) and return the path (or null)."""
+        b = await request.json() if request.can_read_body else {}
+        cur = clean_path(str(b.get("current") or ""))
+        start = str(Path(cur).parent) if cur and Path(cur).parent.is_dir() else str(self.rec.cfg.data_dir / "nmea_logs")
+        if not Path(start).is_dir():
+            start = str(self.rec.cfg.data_dir)
+        path = await asyncio.get_running_loop().run_in_executor(
+            None, choose_file_dialog, start, str(b.get("prompt") or "Choose an NMEA log to replay"))
         return json_ok(path=path)
 
     async def export(self, request):
@@ -546,6 +599,13 @@ class App:
         used for this run only; the rest are saved in Settings."""
         b = await request.json()
         srcs = b.get("sources") or []
+        for x in srcs:
+            if x.get("type") == "file" and x.get("enabled", True):
+                x["path"] = clean_path(str(x.get("path") or ""))
+                if not x["path"]:
+                    raise ValueErrorMsg("A FILE input needs the path of an NMEA log: press Choose… or paste it.")
+                if not Path(x["path"]).is_file():
+                    raise ValueErrorMsg(f"There's no file at {x['path']}. Check the path, or press Choose… to find it.")
         saved = [{k: v for k, v in x.items() if k != "session"} for x in srcs if not x.get("session")]
         self.extra_sources = [x for x in srcs if x.get("session")]
         self.rec.cfg.save_settings({"nmea_sources": saved})
@@ -1237,6 +1297,42 @@ class App:
         asyncio.create_task(later())
         return json_ok(restarting=True)
 
+    # ---- uninstall / reinstall (Settings → About; uninstall.py)
+    def _uninstall_args(self, b):
+        return (str(b.get("mode") or "uninstall"), bool(b.get("delete_settings")), bool(b.get("delete_data")))
+
+    async def uninstall_plan(self, request):
+        b = await request.json() if request.can_read_body else {}
+        mode, ds, dd = self._uninstall_args(b)
+        p = await asyncio.get_running_loop().run_in_executor(None, uninstall.plan, self.rec.cfg, mode, ds, dd)
+        p["survey_active"] = bool(self.rec.survey_active())
+        return json_ok(plan=p)
+
+    async def uninstall_start(self, request):
+        b = await request.json() if request.can_read_body else {}
+        mode, ds, dd = self._uninstall_args(b)
+        if self.rec.survey_active():
+            raise ValueErrorMsg("A survey is under way. End it (Survey tab) before you uninstall or reinstall Spyhop.")
+        try:
+            res = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: uninstall.start(self.rec.cfg, mode, ds, dd, str(b.get("confirm") or ""), b.get("update")))
+        except (uninstall.UninstallError, updater.UpdateError) as e:
+            raise ValueErrorMsg(str(e))
+        log.warning("%s: %s", mode, res["message"])
+        self._broadcast_soon({"type": "closing", "message": res["message"]})
+
+        def _exit():
+            raise web.GracefulExit()            # stops run_app; on_cleanup closes the inputs and files
+
+        async def later():
+            await asyncio.sleep(1.0)
+            await self.sources.stop()
+            if self.rec.rawlog:
+                self.rec.rawlog.close()
+            asyncio.get_running_loop().call_soon(_exit)
+        asyncio.create_task(later())
+        return json_ok(result=res)
+
     async def qc_fix(self, request):
         """Quality Control → Fix: mark a trackline jump or GPS gap with an ERROR Effort row."""
         b = await request.json()
@@ -1288,6 +1384,8 @@ class App:
         r.add_post("/api/update/check", self.update_check)
         r.add_post("/api/update/install", self.update_install)
         r.add_post("/api/update/restart", self.update_restart)
+        r.add_post("/api/uninstall/plan", self.uninstall_plan)
+        r.add_post("/api/uninstall/start", self.uninstall_start)
         r.add_post("/api/summary/pdf", self.summary_pdf)
         r.add_get("/api/reports", self.reports_list)
         r.add_post("/api/reports/run", self.report_run)
@@ -1305,6 +1403,7 @@ class App:
         r.add_post("/api/survey/clear", self.survey_clear)
         r.add_post("/api/data-dir", self.data_dir)
         r.add_post("/api/pick-folder", self.pick_folder)
+        r.add_post("/api/pick-file", self.pick_file)
         r.add_post("/api/export", self.export)
         r.add_get("/api/download/{name}", self.download)
         r.add_post("/api/settings", self.settings)

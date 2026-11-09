@@ -107,7 +107,7 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
     pdf,
   };
   // the PDF's legend: one entry per point symbol, named by its species / event type when the
-  // symbol stands for just one (colours by species), else "Sightings" / "Events"
+  // symbol stands for just one (colors by species), else "Sightings" / "Events"
   const legend = [];
   for (const [tab, title] of [['sightings', 'Sightings'], ['events', 'Events']]) {
     const by = new Map();

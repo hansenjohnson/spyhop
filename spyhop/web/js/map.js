@@ -358,7 +358,7 @@ export class MapView {
           L.DomEvent.on(a, 'click', (e) => { L.DomEvent.stop(e); fn(); });
           return a;
         };
-        self.followBtn = mk('btn-follow', '⌖', 'Follow the vessel (Mod+Shift+C centres once)', () => self.setFollow(!self.app.S.config.settings.follow_vessel, true));
+        self.followBtn = mk('btn-follow', '⌖', 'Follow the vessel (Mod+Shift+C centers once)', () => self.setFollow(!self.app.S.config.settings.follow_vessel, true));
         self.measureBtn = mk('btn-measure', '📏', 'Measure bearing and distance: click points, double-click or Esc to finish', () => self.toggleMeasure());
         mk('btn-rings', '◎', 'Range rings around the vessel', () => self.toggleLayer(self.layers.rings));
         mk('btn-fit', '⤢', 'Zoom to the whole survey', () => self.fitSurvey());
@@ -842,7 +842,7 @@ export class MapView {
       item('Add waypoint here', () => this.app.addRow('marks', {}, ll)),
       item('Start route here', () => this.app.planner.startHere(ll)),
       item('Measure from here', () => this.startMeasure(ll)),
-      item('Centre map here', () => this.map.panTo(ll)),
+      item('Center map here', () => this.map.panTo(ll)),
       item('Copy position', () => navigator.clipboard?.writeText(fmtPos(ll.lat, ll.lng, fmt)).then(() => toast('Position copied'))));
     const p = e.containerPoint;
     menu.style.left = `${p.x}px`; menu.style.top = `${p.y}px`;
@@ -857,7 +857,7 @@ export class MapView {
   // Each overlay file can be shown or hidden (Tools → Overlays); hidden ones are remembered.
   hiddenOverlays() { try { return new Set(JSON.parse(localStorage.getItem('wsr.overlayHidden') || '[]')); } catch { return new Set(); } }
   overlayVisible(name) { return !this.hiddenOverlays().has(name); }
-  // colours chosen in Tools → Overlays (display.csv overlay_colors), else one made from the file name
+  // colors chosen in Tools → Overlays (display.csv overlay_colors), else one made from the file name
   overlayColors() {
     try { const c = JSON.parse(this.app.S.config.display.overlay_colors || '{}'); return c && typeof c === 'object' ? c : {}; } catch { return {}; }
   }
@@ -876,7 +876,7 @@ export class MapView {
       fillOpacity: 0.1, dashArray: f?.properties?.dash || null };
   }
   markerColor(name, f) { const custom = this.customOverlayColor(name); return (!custom && f?.properties?.['marker-color']) || custom || colorFor(name); }
-  // after a colour change (here, from another window or from a template)
+  // after a color change (here, from another window or from a template)
   restyleOverlays() {
     for (const [name, gl] of Object.entries(this.overlayLayers || {})) {
       gl.eachLayer((l) => {

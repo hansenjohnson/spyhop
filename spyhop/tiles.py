@@ -467,32 +467,49 @@ class TileService:
 
     # -- pre-fetch an area for offline use --------------------------------------
     @staticmethod
-    def _tiles_in(bounds, z, limit_bounds=None):
+    def _tile_range(bounds, z, limit_bounds=None):
+        """(x0, x1, y0, y1) of the tiles covering bounds [s, w, n, e] at zoom z, or None."""
         s, w, n, e = bounds
         if limit_bounds:                        # TileJSON bounds: [west, south, east, north]
             lw, ls, le, ln = limit_bounds
             w, s, e, n = max(w, lw), max(s, ls), min(e, le), min(n, ln)
             if w >= e or s >= n:
-                return []
+                return None
         x0, y0 = lonlat_to_tile(w, n, z)
         x1, y1 = lonlat_to_tile(e, s, z)
+        return (x0, x1, y0, y1) if x1 >= x0 and y1 >= y0 else None
+
+    @classmethod
+    def _tiles_in(cls, bounds, z, limit_bounds=None):
+        r = cls._tile_range(bounds, z, limit_bounds)
+        if not r:
+            return []
+        x0, x1, y0, y1 = r
         return [(z, x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)]
 
-    async def plan_prefetch(self, idx: int, bounds: list[float], zmin: int, zmax: int) -> dict:
-        """What a pre-fetch would download: {jobs, total, zmax (clamped), skipped, note}."""
+    @classmethod
+    def _count_in(cls, bounds, z, limit_bounds=None) -> int:
+        r = cls._tile_range(bounds, z, limit_bounds)
+        return (r[1] - r[0] + 1) * (r[3] - r[2] + 1) if r else 0
+
+    async def plan_prefetch(self, idx: int, bounds: list[float], zmin: int, zmax: int, jobs_limit: int | None = None) -> dict:
+        """What a pre-fetch would download: {jobs, total, zmax (clamped), skipped, note}. The tiles are only
+        counted (arithmetic, instant at any zoom); the list of jobs is built only when jobs_limit is given
+        and the total is within it. (Listing every tile for an estimate at high zooms over a large area
+        held up the whole server for minutes: 0.27.)"""
         src = self.source(idx)
         if not src:
             raise ValueError("Unknown map layer.")
         zmin, zmax = int(zmin), int(zmax)
         if zmin > zmax:
             raise ValueError("The lowest zoom must not be above the highest.")
-        jobs, skipped, note = [], [], ""
+        skipped, note, levels, extra = [], "", [], []
         if src.get("kind") == "style":
             sets, glyphs, skipped = await self._gl_plan(idx)
             for ts in sets:
                 for z in range(max(zmin, ts["minzoom"]), min(zmax, ts["maxzoom"]) + 1):
-                    jobs += [("gl", ts["template"], *t) for t in self._tiles_in(bounds, z, ts["bounds"])]
-            jobs += [("file", g) for g in glyphs]
+                    levels.append((("gl", ts["template"]), z, ts["bounds"]))
+            extra = [("file", g) for g in glyphs]
         else:
             if _no_bulk(src["url"]):
                 raise ValueError("OpenStreetMap's tile policy doesn't allow bulk downloading. "
@@ -501,9 +518,14 @@ class TileService:
             if zmax > top:
                 note = f"{src['name']} only goes up to zoom {top}; the map zooms in further on those tiles."
                 zmax = top
-            for z in range(zmin, zmax + 1):
-                jobs += [("raster", *t) for t in self._tiles_in(bounds, z)]
-        return {"jobs": jobs, "total": len(jobs), "zmax": zmax, "skipped": skipped, "note": note}
+            levels = [(("raster",), z, None) for z in range(zmin, zmax + 1)]
+        total = sum(self._count_in(bounds, z, lb) for _p, z, lb in levels) + len(extra)
+        jobs = []
+        if jobs_limit is not None and total <= jobs_limit:
+            for pre, z, lb in levels:
+                jobs += [(*pre, *t) for t in self._tiles_in(bounds, z, lb)]
+            jobs += extra
+        return {"jobs": jobs, "total": total, "zmax": zmax, "skipped": skipped, "note": note}
 
     async def start_prefetch(self, idx: int, bounds: list[float], zmin: int, zmax: int, limit=50000, name: str = "") -> dict:
         if self.prefetch_state["running"]:
@@ -519,7 +541,7 @@ class TileService:
             if old.get("spyhop_source") != (src or {}).get("name"):
                 made = f"made from {old['spyhop_source']}" if old.get("spyhop_source") else "not made by a Spyhop download"
                 raise ValueError(f"There's already a chart called {fn} ({made}). Choose another name.")
-        plan = await self.plan_prefetch(idx, bounds, zmin, zmax)
+        plan = await self.plan_prefetch(idx, bounds, zmin, zmax, jobs_limit=limit)
         if plan["total"] > limit:
             raise ValueError(f"That is {plan['total']:,} tiles — more than the {limit:,} limit. "
                              "Zoom the map in, or lower the highest zoom.")

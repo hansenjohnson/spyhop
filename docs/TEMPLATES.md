@@ -2,8 +2,8 @@
 
 A **template** is your team's Spyhop setup in one small file, so every computer can be set up to record the same way. It holds:
 
-- the species, event types, observers and behaviours lists, and the keyboard shortcuts
-- the map display (marker shapes and colours, track styles, text sizes)
+- the species, event types, observers and behaviors lists, and the keyboard shortcuts
+- the map display (marker shapes and colors, track styles, text sizes)
 - the saved reports (Tools → Reports)
 - the shared settings: clock, units, tracking, keep awake, raw NMEA log, and the network GPS / NMEA inputs
 - the map feeds and which online overlays are switched on
@@ -47,7 +47,7 @@ The lists and shortcuts stay as CSV files so they can be edited in a spreadsheet
 | `history` | The record of changes (see below). |
 | `settings` | The shared settings. |
 | `nmea_inputs` | The network GPS / NMEA inputs (UDP, TCP, gpsd). |
-| `map_feeds` | Each map feed's name, address, colour and refresh time. The feed's data isn't stored: each computer downloads it. |
+| `map_feeds` | Each map feed's name, address, color and refresh time. The feed's data isn't stored: each computer downloads it. |
 | `online_overlays` | Which online overlays to switch on, and the radar opacity and hide-stopped setting. |
 | `map_display` | The map display. |
 | `reports` | The saved reports, by file name. |
@@ -93,7 +93,7 @@ Use an address that downloads the template **without signing in**, because Spyho
 - **Google Drive:** upload the **zip** (Drive can't download a folder from a link), share it with "Anyone with the link", and paste that link.
 - **A website:** any `https://…/something.zip`.
 
-SharePoint and OneDrive links within an organisation usually require signing in, so they don't work here. Partners outside your organisation also can't open them.
+SharePoint and OneDrive links within an organization usually require signing in, so they don't work here. Partners outside your organization also can't open them.
 
 You can also type the **path of a zip or folder on this computer**, such as a template on a USB stick. Simpler still, copy the file into the templates folder: it then appears in the list.
 

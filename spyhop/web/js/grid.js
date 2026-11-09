@@ -30,7 +30,7 @@ export class Grid {
     const S = this.app.S;
     if (S.schema.fixed_lists[name]) return S.schema.fixed_lists[name].map((n) => ({ name: n, color: name === 'colors' ? n : undefined }));
     return (S.config.lists[name] || []).map((r) => ({
-      name: r.name, code: r.species_code || r.behavior_code || r.event_code || '', extra: r.full_name || '', color: r.color }));
+      name: r.name, code: r.species_code || r.behavior_code || r.event_code || '', extra: r.full_name || '', color: r.color, definition: r.definition || '' }));
   }
 
   display(col, v) {
@@ -260,6 +260,12 @@ export class Grid {
       const li = e.target.closest('.dd-item');
       if (li) this.commit(li.dataset.name);
     });
+    // one highlight only: the mouse moves it (a pointer that was already over the list when it opened
+    // by keyboard does nothing until it moves)
+    box.addEventListener('mousemove', (e) => {
+      const li = e.target.closest('.dd-item');
+      if (li && this.dropdown && +li.dataset.i !== this.dropdown.hi) this.highlight(+li.dataset.i, false);
+    });
     document.body.append(box);
     this.dropdown = { box, all: items, items: [], hi: -1 };
     this.filterDropdown(showAll ? '' : text, showAll ? text : null);
@@ -310,13 +316,13 @@ export class Grid {
     this.highlight(items.length ? hi : -1);
   }
 
-  highlight(i) {
+  highlight(i, scroll = true) {
     const dd = this.dropdown;
     if (!dd) return;
     if (dd.items.length) i = Math.max(0, Math.min(dd.items.length - 1, i)); else i = -1;
     dd.hi = i;
     dd.box.querySelectorAll('.dd-item').forEach((n) => n.classList.toggle('hi', +n.dataset.i === i));
-    dd.box.querySelector('.hi')?.scrollIntoView({ block: 'nearest' });
+    if (scroll) dd.box.querySelector('.hi')?.scrollIntoView({ block: 'nearest' });
   }
 
   closeDropdown() {
@@ -375,30 +381,69 @@ export class Grid {
     const items = this.listInfo(col.list);
     const current = new Set((r[col.key] || '').split(';').map((s) => s.trim()).filter(Boolean));
     const extra = [...current].filter((v) => !items.some((it) => it.name === v));
-    const filter = el('input', { type: 'text', placeholder: 'Filter…', class: 'ms-filter' });
-    const boxes = [...items, ...extra.map((n) => ({ name: n, code: 'not in list' }))].map((it) => el('label', { class: 'ms-item' },
-      el('input', { type: 'checkbox', value: it.name, checked: current.has(it.name) }),
-      ` ${it.name}`, it.code ? el('span', { class: 'dd-code' }, it.code) : null));
-    const list = el('div', { class: 'ms-list' }, boxes);
-    filter.addEventListener('input', () => {
-      const q = filter.value.toLowerCase();
-      boxes.forEach((b) => { b.style.display = b.textContent.toLowerCase().includes(q) ? '' : 'none'; });
-    });
-    filter.addEventListener('keydown', (e) => {
-      if (e.key === ' ' ) {
-        const vis = boxes.filter((b) => b.style.display !== 'none');
-        if (vis.length === 1) { e.preventDefault(); const cb = vis[0].querySelector('input'); cb.checked = !cb.checked; filter.value = ''; filter.dispatchEvent(new Event('input')); }
+    const all = [...items, ...extra.map((n) => ({ name: n, code: 'not in list', definition: 'Not in the list (Settings → Dropdowns).' }))];
+    // a single-column list: ↑/↓ move, Space ticks, Enter saves; typing jumps to the next entry starting with that text
+    const rows = all.map((it, i) => el('div', { class: 'ms-item', 'data-i': i, role: 'option' },
+      el('input', { type: 'checkbox', value: it.name, checked: current.has(it.name), tabindex: '-1' }),
+      el('span', {}, it.name), it.code ? el('span', { class: 'dd-code' }, it.code) : null));
+    const list = el('div', { class: 'ms-list', tabindex: '0', role: 'listbox', 'aria-multiselectable': 'true' }, rows);
+    const def = el('div', { class: 'ms-def' });
+    let hi = -1;
+    const show = (i, scroll = true) => {
+      if (!rows.length) return;
+      hi = Math.max(0, Math.min(rows.length - 1, i));
+      rows.forEach((n, j) => n.classList.toggle('hi', j === hi));
+      if (scroll) rows[hi].scrollIntoView({ block: 'nearest' });
+      const it = all[hi];
+      def.replaceChildren(el('b', {}, it.name), it.definition ? ` — ${it.definition}` : el('span', { class: 'hint' }, ' — no definition (add one in Settings → Dropdowns)'));
+    };
+    const toggle = (i) => { const cb = rows[i].querySelector('input'); cb.checked = !cb.checked; };
+    let typed = '', typedAt = 0;
+    const jump = (ch) => {
+      const now = Date.now();
+      typed = (now - typedAt < 800 ? typed : '') + ch.toLowerCase();
+      typedAt = now;
+      // the same letter again (b, b…) cycles through the entries starting with it; letters typed quickly spell a name
+      const same = [...typed].every((c) => c === typed[0]);
+      const q = same ? typed[0] : typed;
+      const starts = (it) => it.name.toLowerCase().startsWith(q) || (it.code || '').toLowerCase().startsWith(q);
+      const from = same ? hi + 1 : Math.max(hi, 0);
+      for (let k = 0; k < all.length; k++) {
+        const j = (from + k) % all.length;
+        if (starts(all[j])) { show(j); return; }
       }
+    };
+    list.addEventListener('keydown', (e) => {
+      const page = Math.max(1, Math.floor(list.clientHeight / (rows[0]?.offsetHeight || 20)) - 1);
+      const moves = { ArrowDown: 1, ArrowUp: -1, PageDown: page, PageUp: -page };
+      if (moves[e.key] !== undefined) { e.preventDefault(); show(hi < 0 ? 0 : hi + moves[e.key]); }
+      else if (e.key === 'Home') { e.preventDefault(); show(0); }
+      else if (e.key === 'End') { e.preventDefault(); show(rows.length - 1); }
+      else if (e.key === ' ') { e.preventDefault(); if (hi < 0) show(0); else toggle(hi); }
+      else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); jump(e.key); }
     });
+    list.addEventListener('mousemove', (e) => { const n = e.target.closest('.ms-item'); if (n && +n.dataset.i !== hi) show(+n.dataset.i, false); });
+    list.addEventListener('mousedown', (e) => {
+      const n = e.target.closest('.ms-item');
+      if (!n) return;
+      e.preventDefault();               // keep the focus on the list
+      list.focus();
+      show(+n.dataset.i, false);
+      toggle(+n.dataset.i);
+    });
+    list.addEventListener('click', (e) => { if (e.target.matches('input')) e.preventDefault(); });   // mousedown already toggled it
     const res = await modal({
       title: `${col.label} — row ${this.rows.indexOf(r) + 1}`,
-      body: el('div', {}, filter, list,
-        el('p', { class: 'hint' }, 'Tick all that apply. Type to filter; Space ticks the only match; Enter saves.')),
+      width: 'min(34em, 94vw)',
+      body: el('div', {}, list, def,
+        el('p', { class: 'hint' }, 'Tick all that apply: ↑/↓ move, Space ticks, a letter jumps to it, Enter saves.')),
       buttons: [{ label: 'Clear', value: '' }, { label: 'Cancel', value: undefined },
-        { label: 'Save', primary: true, value: () => boxes.map((b) => b.querySelector('input')).filter((c) => c.checked).map((c) => c.value).join('; ') }],
+        { label: 'Save', primary: true, value: () => rows.map((b) => b.querySelector('input')).filter((c) => c.checked).map((c) => c.value).join('; ') }],
       onOpen: () => {
-        filter.focus();
-        if (initial) { filter.value = initial; filter.dispatchEvent(new Event('input')); }
+        list.focus();
+        const first = rows.findIndex((n) => n.querySelector('input').checked);
+        show(first >= 0 ? first : 0);
+        if (initial && initial.trim()) { hi = -1; jump(initial); }   // the key that opened it jumps to its entry
         return true;
       },
     });

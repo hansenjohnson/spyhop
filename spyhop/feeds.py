@@ -55,7 +55,7 @@ def clean(feed: dict, existing: list[dict] | None = None) -> dict:
     url = clean_url(feed.get("url", ""))
     color = str(feed.get("color") or "#1565c0").strip()
     if not _COLOR.match(color):
-        raise FeedError("The colour must be like #1565c0.")
+        raise FeedError("The color must be like #1565c0.")
     try:
         refresh = int(feed.get("refresh_min") or 60)
     except (TypeError, ValueError):

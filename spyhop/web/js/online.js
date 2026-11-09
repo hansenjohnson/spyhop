@@ -18,7 +18,7 @@ const PREFS = 'wsr.onlineOverlays';
 const AIS_EVERY_MS = 30000;
 const IEM = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
 
-// AIS ship and cargo type → [category, colour]
+// AIS ship and cargo type → [category, color]
 export function aisCategory(type, kind) {
   if (kind === 'aton') return ['Aid to navigation', '#c2185b'];
   if (kind === 'base') return ['Base station', '#455a64'];
@@ -36,8 +36,8 @@ export function aisCategory(type, kind) {
   return ['Other / unknown', '#757575'];
 }
 
-const NAV_STATUS = ['Under way using engine', 'At anchor', 'Not under command', 'Restricted manoeuvrability',
-  'Constrained by draught', 'Moored', 'Aground', 'Engaged in fishing', 'Under way sailing'];
+const NAV_STATUS = ['Under way using engine', 'At anchor', 'Not under command', 'Restricted maneuverability',
+  'Constrained by draft', 'Moored', 'Aground', 'Engaged in fishing', 'Under way sailing'];
 
 function seenDate(v) {
   if (v === undefined || v === null || v === '') return null;
@@ -421,7 +421,7 @@ export class OnlineOverlays {
       return el('tr', { 'data-feed': f.id },
         el('td', {}, el('input', { type: 'checkbox', checked: !!shown, title: 'Show on the map',
           onchange: (e) => { if (e.target.checked) fl.layer.addTo(map); else map.removeLayer(fl.layer); this.app.map.saveOverlayState(); } })),
-        el('td', {}, el('input', { type: 'color', value: f.color, title: 'Colour', onchange: (e) => this.updateFeed({ id: f.id, color: e.target.value }) })),
+        el('td', {}, el('input', { type: 'color', value: f.color, title: 'Color', onchange: (e) => this.updateFeed({ id: f.id, color: e.target.value }) })),
         el('td', { class: 'feed-name' }, el('b', {}, f.name),
           el('div', { class: 'hint' }, err ? el('span', { class: 'warn-text' }, `${err}${fetched ? ` · showing the copy from ${fmtT(fetched)}` : ''}`)
             : fetched ? `${count} feature${count === 1 ? '' : 's'} · updated ${fmtT(fetched)}` : 'Not loaded yet'),
@@ -480,7 +480,7 @@ export class OnlineOverlays {
         el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: !!this.prefs.hideStopped,
           onchange: (e) => { this.prefs.hideStopped = e.target.checked; this.savePrefs(); this.loadAis(); } }), el('span', {}, 'Hide AIS vessels that aren’t moving'))),
       status.length ? el('p', { class: 'hint', id: 'online-status' }, status.join(' ')) : null,
-      el('p', { class: 'hint' }, 'AIS colours: cargo green, tanker red, passenger blue, fishing orange, sailing and pleasure purple, tugs and special craft teal, other grey; a triangle points the way a moving vessel is heading, a dot is a vessel that isn’t moving, a diamond an aid to navigation. AIS from the internet can be minutes old and misses vessels without AIS or out of receiver range: not for navigation or collision avoidance.'),
+      el('p', { class: 'hint' }, 'AIS colors: cargo green, tanker red, passenger blue, fishing orange, sailing and pleasure purple, tugs and special craft teal, other gray; a triangle points the way a moving vessel is heading, a dot is a vessel that isn’t moving, a diamond an aid to navigation. AIS from the internet can be minutes old and misses vessels without AIS or out of receiver range: not for navigation or collision avoidance.'),
       this.feedsBlock());
   }
 }

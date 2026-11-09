@@ -200,7 +200,7 @@ def visibility_nm(v) -> float | None:
             unit = u
             break
     try:
-        return geo.to_metres(max(nums), unit) / M_PER_NM
+        return geo.to_meters(max(nums), unit) / M_PER_NM
     except (KeyError, ValueError):
         return None
 
@@ -552,7 +552,7 @@ def run_qc(rec) -> dict:
             far_nm = None
             if d is not None and r.get("DistUnit"):
                 try:
-                    far_nm = geo.to_metres(d, r["DistUnit"]) / M_PER_NM
+                    far_nm = geo.to_meters(d, r["DistUnit"]) / M_PER_NM
                 except (KeyError, ValueError):
                     far_nm = None
             elif vp and sp:
@@ -605,7 +605,7 @@ CHECKS = [
     ("Survey details complete", "Every survey detail is filled in (platform, organization, chief scientist and email)."),
     ("Required fields filled", "Sightings: everything except Behaviors, Bearing, Ref, Dist, Unit, FieldID and Notes. "
      "Effort: everything except Notes (Start and End rows: time and position only). Events: everything except ID and Notes."),
-    ("Values from the lists", "Choices are in their lists (species, observers, behaviours, event types, sea state…)."),
+    ("Values from the lists", "Choices are in their lists (species, observers, behaviors, event types, sea state…)."),
     ("Valid numbers, positions and times", "Numbers are numbers, positions are on the globe, times can be read."),
     ("Effort starts with Start / Survey ended", "The first Effort row is Start; the survey has an End row."),
     ("Times within the survey", "Nothing is timed before Start, after End, or in the future; rows are in time order."),

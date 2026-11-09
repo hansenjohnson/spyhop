@@ -1,6 +1,6 @@
 """Geodesy helpers: distances, bearings, destination points, lat/lon parsing.
 
-All positions are decimal degrees (WGS 84). Distances in metres unless stated.
+All positions are decimal degrees (WGS 84). Distances in meters unless stated.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ UNIT_TO_M = {
 }
 
 
-def to_metres(value: float, unit: str) -> float:
+def to_meters(value: float, unit: str) -> float:
     return float(value) * UNIT_TO_M.get(unit, 1.0)
 
 

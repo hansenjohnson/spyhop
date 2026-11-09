@@ -444,7 +444,7 @@ class App {
   connect() {
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
     ws.onopen = () => { if (this.wsOk === null) this.reload(); this.wsOk = true; this.updateStatus(); };
-    ws.onclose = () => { this.wsOk = null; this.updateStatus(); setTimeout(() => this.connect(), 2000); };
+    ws.onclose = () => { this.wsOk = null; this.updateStatus(); if (!this.noReconnect) setTimeout(() => this.connect(), 2000); };
     ws.onmessage = (ev) => this.onMessage(JSON.parse(ev.data));
   }
 
@@ -517,6 +517,7 @@ class App {
         break;
       case 'overlays': api('/api/bootstrap').then((d) => { this.S.overlays = d.overlays; this.S.surveys = d.surveys; this.map.loadOverlays(d.overlays); this.renderOverlays(); }); break;
       case 'reload': this.reload(); break;
+      case 'closing': this.showClosing(m.message); break;
       case 'reports': this.reportsTool.onDefsChanged(); break;
       case 'routes': this.planner.loadSaved(); break;
       case 'feeds': this.online.loadFeeds(); break;
@@ -752,12 +753,12 @@ class App {
     const sv = this.S.survey;
     if (!sv) return;
     const name = sv.prefix;
-    if (!await confirmBox('Clear survey data?',
+    if (!await confirmBox('Delete survey data?',
       `This permanently deletes every sighting, effort, event and track record of the survey “${name}” from disk, and closes it. Export first if you need a copy.`, 'Continue…', true)) return;
-    const typed = await promptBox('Really clear?', `Type the survey name “${name}” to confirm.`, '', 'Delete everything');
+    const typed = await promptBox('Really delete?', `Type the survey name “${name}” to confirm.`, '', 'Delete everything');
     if (typed === null) return;
-    if (typed.trim() !== name) { toast('Name did not match — nothing was cleared.', 'warn'); return; }
-    try { await api('/api/survey/clear', { confirm: typed.trim() }); toast('Survey data cleared'); } catch {}
+    if (typed.trim() !== name) { toast('Name did not match — nothing was deleted.', 'warn'); return; }
+    try { await api('/api/survey/clear', { confirm: typed.trim() }); toast('Survey data deleted'); } catch {}
   }
 
   async chooseDataFolder(path) {
@@ -825,7 +826,7 @@ class App {
           el('button', { onclick: () => this.closeSurvey() }, 'Close Survey…'),
           el('button', { onclick: () => this.newSurvey() }, 'Start New Survey…'),
           el('button', { onclick: () => this.exportData() }, 'Export Data…'),
-          el('button', { class: 'danger-outline', onclick: () => this.clearSurvey() }, 'Clear Survey Data…')),
+          el('button', { class: 'danger-outline', onclick: () => this.clearSurvey() }, 'Delete Survey Data…')),
         sv.ended ? el('p', { class: 'hint' }, 'This survey has ended, so no new rows can be added. You can still correct its data. To continue it, delete its End row in the Effort tab.') : null);
     }
     const rows = S.surveys || [];
@@ -1064,13 +1065,89 @@ class App {
         kv('Spyhop’s folder', el('span', { class: 'mono' }, a.spyhop_folder || '')),
         kv('Diagnostic logs', el('span', {}, el('span', { class: 'mono' }, a.log_folder || ''), ' ',
           el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('logs'); } }, 'Open folder'))))),
-      el('p', { class: 'hint' }, 'Spyhop keeps diagnostic logs of what it did, how fast it was and any errors, never survey data. If something goes wrong, Save diagnostics… makes a zip of the logs, settings and system details (no survey data or team names) to send with a bug report.'),
+      el('p', { class: 'hint' }, 'Spyhop keeps diagnostic logs of what it did, how fast it was and any errors, never survey data. If something goes wrong, Save diagnostics… makes a zip of the logs, settings, a listing of Spyhop’s folders and system details (no survey data, team or observer names) to send with a bug report.'),
       el('div', { class: 'btnrow' }, el('button', { onclick: () => this.saveDiagnostics() }, 'Save diagnostics…')),
       det,
-      this.updatesSection());
+      this.updatesSection(),
+      this.uninstallSection());
   }
 
   // ---------------------------------------------------------------- updates (updater.py)
+  // ---------------------------------------------------------------- Settings → About → Uninstall or reinstall
+  uninstallSection() {
+    return el('section', { class: 'settings-sec', id: 'uninstall-section' }, el('h3', {}, 'Uninstall or reinstall'),
+      el('p', {}, 'Reinstall replaces the program with a clean copy of the latest version from GitHub (it needs an internet connection) and sets up its Python packages again; your surveys are kept, and so are your settings unless you choose to reset them. Uninstall removes the program and its shortcuts from this computer; your settings and surveys are deleted only if you tick them.'),
+      el('div', { class: 'btnrow' },
+        el('button', { id: 'btn-reinstall', onclick: () => this.uninstallDialog('reinstall') }, 'Reinstall a clean copy…'),
+        el('button', { id: 'btn-uninstall', class: 'danger-outline', onclick: () => this.uninstallDialog('uninstall') }, 'Uninstall Spyhop…')));
+  }
+
+  async uninstallDialog(mode) {
+    const re = mode === 'reinstall';
+    const opts = { mode, delete_settings: false, delete_data: false };
+    const size = (n) => (n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n > 1e6 ? `${(n / 1e6).toFixed(0)} MB` : n > 1e3 ? `${(n / 1e3).toFixed(0)} KB` : '');
+    const planBox = el('div', { class: 'uninstall-plan' });
+    const typed = el('input', { type: 'text', id: 'uninstall-confirm', placeholder: 'DELETE', size: 10, disabled: true, autocomplete: 'off',
+      oninput: () => check() });
+    const setBox = el('input', { type: 'checkbox', id: 'uninstall-settings', onchange: (e) => { opts.delete_settings = e.target.checked; refresh(); } });
+    const dataBox = el('input', { type: 'checkbox', id: 'uninstall-data', onchange: (e) => { opts.delete_data = e.target.checked; typed.disabled = !e.target.checked; if (!e.target.checked) typed.value = ''; refresh(); } });
+    let plan = null, go = null;
+    const check = () => {
+      if (!go) return;
+      const needType = opts.delete_data && plan?.default_data;
+      go.disabled = !plan || plan.problems.length > 0 || plan.survey_active || (needType && typed.value.trim() !== plan.confirm_data);
+    };
+    const refresh = async () => {
+      try { plan = (await api('/api/uninstall/plan', opts)).plan; } catch { return; }
+      const row = (x) => el('li', {}, el('b', {}, x.what), size(x.size) ? ` (${size(x.size)})` : '', el('div', { class: 'mono hint' }, x.path));
+      planBox.replaceChildren(
+        plan.problems.length ? el('div', { class: 'cell-err' }, ...plan.problems.map((t) => el('p', {}, '⚠ ', t))) : null,
+        plan.survey_active ? el('p', { class: 'cell-err' }, '⚠ A survey is under way: end it in the Survey tab first.') : null,
+        el('p', {}, el('b', {}, re ? 'Deleted and replaced:' : 'Deleted:')), el('ul', {}, plan.delete.map(row)),
+        plan.keep.length ? el('p', {}, el('b', {}, 'Kept:')) : null, plan.keep.length ? el('ul', {}, plan.keep.map(row)) : null);
+      check();
+    };
+    const body = el('div', {},
+      el('p', {}, re
+        ? 'Spyhop closes, downloads a clean copy of the latest version, replaces its program folder with it (Python packages are set up again when it starts) and opens again in a new window. A copy of the current program files is kept in Spyhop’s folder (updates/).'
+        : 'Spyhop closes and removes itself from this computer. This can’t be undone.'),
+      el('label', { class: 'check' }, setBox, el('span', {}, re
+        ? 'Also reset the settings, lists, offline maps, overlays, routes, feeds and reports (Spyhop’s folder) to a fresh start'
+        : 'Also delete the settings, lists, offline maps, overlays, routes, feeds and reports (Spyhop’s folder)')),
+      re ? null : el('label', { class: 'check' }, dataBox, el('span', {}, 'Also delete the survey data, waypoints, templates, NMEA logs and exports')),
+      re ? null : el('div', { class: 'indent hint' }, 'To delete the survey data, type ', el('b', { class: 'mono' }, 'DELETE'), ': ', typed),
+      planBox,
+      re ? null : el('p', { class: 'hint' }, 'Export any surveys you need first (Survey tab). A data folder you chose yourself is never deleted, because it may hold other files.'));
+    refresh();
+    const res = await modal({
+      title: re ? 'Reinstall Spyhop' : 'Uninstall Spyhop', body, width: 'min(46em, 94vw)',
+      buttons: [{ label: 'Cancel', value: undefined }, { label: re ? 'Reinstall' : 'Uninstall', primary: true, value: () => ({ ...opts, confirm: typed.value }) }],
+      onOpen: (box) => {
+        go = box.querySelector('.modal-buttons button.primary');
+        go.classList.add('danger'); go.classList.remove('primary');
+        go.disabled = true;
+        go.id = 'uninstall-go';
+        return false;
+      },
+    });
+    if (!res) return;
+    try {
+      const r = await api('/api/uninstall/start', res);
+      this.showClosing(r.result.message, r.result.helper_log);
+    } catch {}
+  }
+
+  // Spyhop is closing for good (uninstall) or to be replaced (reinstall): say so instead of reconnecting
+  showClosing(message, logPath = '') {
+    if (this.closingShown) return;
+    this.closingShown = true;
+    this.noReconnect = true;
+    document.body.append(el('div', { class: 'modal-back closing' }, el('div', { class: 'modal', id: 'closing-box' },
+      el('h3', {}, 'Spyhop is closing'), el('p', {}, message || ''),
+      logPath ? el('p', { class: 'hint' }, 'A record of what was done goes to ', el('span', { class: 'mono' }, logPath), '.') : null,
+      el('p', { class: 'hint' }, 'You can close this browser window.'))));
+  }
+
   updatesSection() {
     const a = this.S.about || {}, st = this.S.config.settings;
     const box = el('div', { id: 'update-box' });
@@ -1410,7 +1487,7 @@ class App {
 
     // ---- this computer's setup and the templates in the folder
     const kids = [
-      el('p', {}, 'A template is your team’s Spyhop setup in one small file, so every computer records the same way: the species, event types, observers and behaviours lists, keyboard shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log, network GPS / NMEA inputs), the map feeds and which online overlays are on, and, if you choose, waypoints, routes and overlays. Update the template and use it again whenever the team changes something. Templates are kept in the templates folder of the survey data folder; share one by uploading it (or copying it to a USB stick). Offline charts, survey data, serial GPS ports and the data folder are never in a template.'),
+      el('p', {}, 'A template is your team’s Spyhop setup in one small file, so every computer records the same way: the species, event types, observers and behaviors lists, keyboard shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log, network GPS / NMEA inputs), the map feeds and which online overlays are on, and, if you choose, waypoints, routes and overlays. Update the template and use it again whenever the team changes something. Templates are kept in the templates folder of the survey data folder; share one by uploading it (or copying it to a USB stick). Offline charts, survey data, serial GPS ports and the data folder are never in a template.'),
     ];
     if (!L) kids.push(el('p', { class: 'hint' }, tp.loading ? 'Reading the templates folder…' : ''));
     else {
@@ -1723,7 +1800,7 @@ class App {
       sec('Bearings, distances and time',
         el('div', { class: 'grid2' },
           el('label', { class: 'row' }, 'Default bearing reference', sel('bearing_reference', [['M', 'Magnetic (compass)'], ['T', 'True'], ['R', 'Relative to bow']])),
-          el('label', { class: 'row' }, 'Default distance unit', sel('distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometres'], ['m', 'Metres'], ['mi', 'Statute miles'], ['yd', 'Yards']])),
+          el('label', { class: 'row' }, 'Default distance unit', sel('distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards']])),
           el('label', { class: 'row' }, 'Magnetic variation (° E+/W−, or auto)', variation,
             el('span', { class: 'hint' }, ` now ${this.variation() === null ? '—' : this.variation().toFixed(1) + '°'}`)),
           el('label', { class: 'row' }, 'Lat/lon format', sel('latlon_format', [['DDM', 'Deg + decimal min'], ['DD', 'Decimal degrees'], ['DMS', 'Deg min sec']])),
@@ -1745,13 +1822,13 @@ class App {
             el('span', { class: 'inline' },
               el('select', { title: 'Marker shape', onchange: (e) => this.saveDisplay({ [`${t}_marker_shape`]: e.target.value }) },
                 SHAPES.map((s) => el('option', { value: s, selected: d[`${t}_marker_shape`] === s }, s))),
-              el('input', { type: 'color', title: `Used when ${t === 'sightings' ? 'a species' : 'an event type'} has no colour in ${t === 'sightings' ? 'species' : 'event_types'}.csv (or colour-by-${t === 'sightings' ? 'species' : 'event'} is off)`,
+              el('input', { type: 'color', title: `Used when ${t === 'sightings' ? 'a species' : 'an event type'} has no color in ${t === 'sightings' ? 'species' : 'event_types'}.csv (or color-by-${t === 'sightings' ? 'species' : 'event'} is off)`,
                 value: toHex(d[`${t}_marker_color`] || 'orange'), onchange: (e) => this.saveDisplay({ [`${t}_marker_color`]: e.target.value }) })))),
           dnum('marker_radius', 'Marker size', 3, 24), dnum('label_size', 'Marker label size', 8, 24)),
-        el('div', { class: 'grid2 checks' }, dchk('use_species_colors', 'Colour markers by species/event')),
+        el('div', { class: 'grid2 checks' }, dchk('use_species_colors', 'Color markers by species/event')),
         el('h4', {}, 'Trackline'),
         el('table', { class: 'track-style' },
-          el('thead', {}, el('tr', {}, ['', 'Show', 'Colour', 'Width (px)', 'Line'].map((h) => el('th', {}, h)))),
+          el('thead', {}, el('tr', {}, ['', 'Show', 'Color', 'Width (px)', 'Line'].map((h) => el('th', {}, h)))),
           el('tbody', {}, [['on', 'On effort', 'show_track_on', 'track_on_effort_color', 'track_width', 'track_on_style', 3],
             ['off', 'Off effort', 'show_track_off', 'track_off_effort_color', 'track_off_width', 'track_off_style', 1.5]].map(([, label, show, color, width, style, dw]) =>
             el('tr', {},
@@ -1800,7 +1877,7 @@ class App {
       ['undo', 'Undo in the current table'], ['redo', 'Redo in the current table'],
       ['next-tab', 'Next tab'], ['prev-tab', 'Previous tab'],
       ...this.allTabs().map((k) => [`tab:${k}`, `Show ${tabName[k] || k}`]),
-      ['center-vessel', 'Centre the map on the vessel'], ['measure', 'Start or stop measuring on the map'],
+      ['center-vessel', 'Center the map on the vessel'], ['measure', 'Start or stop measuring on the map'],
       ['toggle-log', 'Minimize / restore the data tables'], ['max-log', 'Maximize / restore the data tables'],
     ];
   }
@@ -1857,6 +1934,7 @@ class App {
       };
       return b;
     };
+    const preWidth = Math.min(90, Math.max(32, ...rows.map((r) => (r.prefill || '').length + 3)));
     const body = rows.map((r, i) => {
       const verb = r.action.split(':')[0];
       const canPrefill = verb === 'add' || r.action === 'add-current';
@@ -1865,8 +1943,10 @@ class App {
       const sel = el('select', { onchange: (e) => { edit()[i].action = e.target.value; if (!/^add/.test(e.target.value)) edit()[i].prefill = ''; this.renderShortcuts(); } },
         (label[r.action] ? [] : [el('option', { value: r.action, selected: true }, r.action ? `${r.action} (unknown)` : 'Choose…')]),
         actions.map(([v, l]) => el('option', { value: v, selected: v === r.action }, l)));
+      // wide enough for the longest pre-fill in the table (and it grows as you type)
       const pre = el('input', { type: 'text', value: r.prefill, disabled: !canPrefill, placeholder: canPrefill ? 'e.g. Species=Fin whale;Obs=OBS1' : '',
-        oninput: (e) => { edit()[i].prefill = e.target.value; markDirty(); } });
+        style: { minWidth: `${preWidth}ch` },
+        oninput: (e) => { edit()[i].prefill = e.target.value; e.target.style.minWidth = `${Math.max(preWidth, e.target.value.length + 3)}ch`; markDirty(); } });
       return el('tr', { class: dup ? 'bad' : null },
         el('td', {}, keyCell(r, i), dup ? el('div', { class: 'cell-err' }, 'Used twice') : null,
           warn ? el('div', { class: 'cell-warn', title: 'The browser or the computer may use these keys itself' }, '⚠ may be taken by the browser') : null),
@@ -1956,14 +2036,14 @@ class App {
         const sw = el('span', { class: 'swatch', style: { background: okColor(r.color) ? r.color || 'transparent' : 'transparent' } });
         const txt = el('input', { type: 'text', value: r.color, disabled: locked, class: okColor(r.color) ? null : 'invalid', size: 12,
           oninput: (e) => { edit()[i].color = e.target.value.trim(); const ok = okColor(e.target.value.trim()); e.target.classList.toggle('invalid', !ok); sw.style.background = ok ? e.target.value : 'transparent'; markDirty(); } });
-        const pick = el('input', { type: 'color', value: toHex(r.color), disabled: locked, title: 'Pick a colour',
+        const pick = el('input', { type: 'color', value: toHex(r.color), disabled: locked, title: 'Pick a color',
           oninput: (e) => { edit()[i].color = e.target.value; txt.value = e.target.value; txt.classList.remove('invalid'); sw.style.background = e.target.value; markDirty(); } });
         return el('td', { class: 'color-cell' }, sw, txt, pick);
       }
       const v = r[c] ?? '';
       const dup = uniq.includes(c) && v.trim() && counts[c][v.trim().toLowerCase()] > 1;
       return el('td', {}, el('input', { type: 'text', value: v, disabled: locked, class: dup || (c === 'name' && !v.trim() && Object.values(r).some((x) => x)) ? 'invalid' : null,
-        size: c === 'name' || c === 'full_name' ? 26 : 10, 'data-col': c,
+        size: c === 'definition' ? 60 : c === 'name' || c === 'full_name' ? 26 : 10, 'data-col': c,
         title: dup ? 'Used more than once' : '',
         oninput: (e) => { edit()[i][c] = e.target.value; markDirty(); } }));
     };
@@ -1976,7 +2056,7 @@ class App {
       class: `report-tab${k === cur ? ' active' : ''}${this.ddDrafts[k] ? ' has-draft' : ''}`, 'data-list': k,
       onclick: () => { this.ddTab = k; try { localStorage.setItem('wsr.ddtab', k); } catch {} this.renderDropdowns(); } },
     l, el('span', { class: 'count' }, String((this.ddDrafts[k] || S.config.lists[k] || []).length)))));
-    const what = { species: 'The Species drop-down in Sightings. The code labels sightings on the map and is used by reports; the colour is the marker colour when “colour by species” is on.',
+    const what = { species: 'The Species drop-down in Sightings. The code labels sightings on the map and is used by reports; the color is the marker color when “color by species” is on.',
       event_types: 'The Event drop-down in Events. The code labels events on the map and is used by reports.',
       behaviors: 'The Behaviors drop-down in Sightings (several can be chosen).',
       observers: 'The observer drop-downs (Obs in Sightings; Port, Recorder and Stbd in Effort). The initials are what’s recorded; NA means nobody in that position.' }[cur];
@@ -2073,14 +2153,19 @@ class App {
         el('input', { type: 'checkbox', checked: s.enabled !== false, title: 'Enabled', onchange: (e) => { s.enabled = e.target.checked; markDirty(); } }),
         el('select', { onchange: (e) => { sources[i] = { type: e.target.value, enabled: true, ...defaults[e.target.value], ...(s.session ? { session: true } : {}) }; markDirty(); draw(); } },
           Object.keys(fields).map((t) => el('option', { value: t, selected: t === s.type }, t === 'sim' ? 'SIMULATOR' : t.toUpperCase()))),
-        ...(fields[s.type] || []).map(([k, label, type]) => el('label', { class: 'inline' }, label,
+        ...(fields[s.type] || []).flatMap(([k, label, type]) => [el('label', { class: 'inline' }, label,
           el('input', { type, value: s[k] ?? '', size: k === 'path' ? 30 : (k === 'heading' || k === 'speed_kn' ? 5 : 10),
             style: type === 'number' ? { width: k === 'heading' || k === 'speed_kn' ? '5em' : '7em' } : null,
             min: k === 'heading' ? 0 : null, max: k === 'heading' ? 359 : null,
             list: k === 'port' && s.type === 'serial' ? 'serial-ports' : null,
             oninput: () => markDirty(),
             onchange: (e) => { s[k] = type === 'number' ? +e.target.value : e.target.value; markDirty(); },
-            onkeydown: (e) => { if (e.key === 'Enter') { s[k] = type === 'number' ? +e.target.value : e.target.value; apply(); } } }))),
+            onkeydown: (e) => { if (e.key === 'Enter') { s[k] = type === 'number' ? +e.target.value : e.target.value; apply(); } } })),
+          k === 'path' ? el('button', { title: 'Find the NMEA log on this computer', onclick: async () => {
+            let r;
+            try { r = await api('/api/pick-file', { current: s.path || '' }); } catch { return; }
+            if (r.path) { s.path = r.path; markDirty(); draw(); }
+          } }, 'Choose…') : null]),
         s.session ? el('span', { class: 'hint', title: 'Started from the command line (e.g. --sim). Changes apply until Spyhop is closed.' }, 'this session only') : null,
         el('button', { class: 'icon', title: 'Remove', onclick: () => { sources.splice(i, 1); markDirty(); draw(); } }, '✕'))));
     };
@@ -2116,7 +2201,7 @@ class App {
     const st = this.S.config.settings;
     const sec = (title, ...kids) => el('section', { class: 'settings-sec' }, el('h3', {}, title), ...kids);
     const inst = sec('Instruments',
-      el('p', { class: 'hint' }, 'Latest readings from every NMEA input: speed, depth, wind, weather, engines and other transducers. A reading turns grey when it hasn’t been updated for 15 seconds. Click a reading to plot it since the start of the survey (readings are saved every 5 seconds while a survey is active).'),
+      el('p', { class: 'hint' }, 'Latest readings from every NMEA input: speed, depth, wind, weather, engines and other transducers. A reading turns gray when it hasn’t been updated for 15 seconds. Click a reading to plot it since the start of the survey (readings are saved every 5 seconds while a survey is active).'),
       el('p', { id: 'inst-inputs-link' }, 'The GPS / NMEA inputs (serial, UDP, TCP, gpsd, file replay, simulator) are set up in ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('inputs'); } }, 'Settings → Inputs'), '.'),
       el('div', { id: 'inst-grid' }));
@@ -2193,8 +2278,18 @@ class App {
     const box = $('#nmea-status');
     if (!box || !this.S.nmea) return;
     const n = this.S.nmea;
-    box.replaceChildren(...(n.sources || []).map((s) => el('div', { class: `src-st ${s.state}` },
-      el('b', {}, s.name), ` — ${s.state}`, s.lines ? ` · ${s.lines} lines` : '', s.error ? el('span', { class: 'err' }, ` · ${s.error}`) : '')),
+    const pos = n.position_source || '';
+    box.replaceChildren(...(n.sources || []).map((s) => {
+      const live = s.state === 'receiving' || s.state === 'replaying';
+      // an input with a position but outranked by one above it in the list (lower in the list = used only as a backup)
+      const outranked = live && pos && pos !== s.name && (n.counts?.RMC || n.counts?.GGA || n.counts?.GLL);
+      const prog = s.total ? ` · line ${s.at || 0} of ${s.total}${s.loops ? ` (replay ${s.loops + 1})` : ''}` : (s.lines ? ` · ${s.lines} lines` : '');
+      return el('div', { class: `src-st ${s.state}` },
+        el('b', {}, s.name), ` — ${s.state}`, prog,
+        pos === s.name ? el('span', { class: 'ok' }, ' · position from here') : null,
+        outranked ? el('span', { class: 'hint', title: 'Inputs higher in the list are preferred; one lower down supplies the position only when those above go quiet for 5 s.' }, ` · position from “${pos}” (higher in the list)`) : null,
+        s.error ? el('span', { class: 'err' }, ` · ${s.error}`) : '');
+    }),
     el('div', { class: 'hint' }, `Sentences: ${Object.entries(n.counts || {}).map(([k, v]) => `${k} ${v}`).join(', ') || 'none yet'}${n.errors ? ` · ${n.errors} unreadable` : ''}`));
     if (withRaw && n.raw) $('#nmea-raw').textContent = n.raw.join('\n');
   }
@@ -2208,7 +2303,7 @@ class App {
     const allOn = m.map.hasLayer(m.layers.imported);
     const remove = async (n) => { if (await confirmBox('Remove overlay?', `Remove ${n} from Spyhop’s overlays folder? It can be imported again.`, 'Remove', true)) api(`/api/overlays/${encodeURIComponent(n)}`, undefined, 'DELETE').catch(() => {}); };
     pane.replaceChildren(el('div', { id: 'overlay-panel' }, el('section', { class: 'settings-sec' }, el('h3', {}, 'Map overlays'),
-      el('p', { class: 'hint' }, 'GeoJSON, GPX or KML files: planned transects, management areas, other surveys. They are kept in Spyhop’s overlays folder. Click an overlay’s colour to change it (↺ goes back to its own colours); the colours are kept with the map display, so they travel in templates too.'),
+      el('p', { class: 'hint' }, 'GeoJSON, GPX or KML files: planned transects, management areas, other surveys. They are kept in Spyhop’s overlays folder. Click an overlay’s color to change it (↺ goes back to its own colors); the colors are kept with the map display, so they travel in templates too.'),
       el('div', { class: 'btnrow' }, el('button', { class: 'primary', onclick: () => this.importOverlay() }, 'Import…'),
         list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, true)); this.renderOverlays(); } }, 'Show all') : null,
         list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, false)); this.renderOverlays(); } }, 'Hide all') : null,
@@ -2220,9 +2315,9 @@ class App {
         el('tbody', {}, list.map((n) => el('tr', { 'data-overlay': n },
           el('td', {}, el('input', { type: 'checkbox', class: 'ov-show', checked: m.overlayVisible(n), 'aria-label': `Show ${n}`,
             onchange: (e) => { m.setOverlayVisible(n, e.target.checked); } })),
-          el('td', { class: 'ov-name' }, el('input', { type: 'color', class: 'ov-color', value: m.overlayColor(n), title: 'Colour on the map',
-            'aria-label': `Colour of ${n}`, onchange: async (e) => { await m.setOverlayColor(n, e.target.value); this.renderOverlays(); } }),
-          m.customOverlayColor(n) ? el('button', { class: 'icon ov-color-reset', title: 'Back to its own colours',
+          el('td', { class: 'ov-name' }, el('input', { type: 'color', class: 'ov-color', value: m.overlayColor(n), title: 'Color on the map',
+            'aria-label': `Color of ${n}`, onchange: async (e) => { await m.setOverlayColor(n, e.target.value); this.renderOverlays(); } }),
+          m.customOverlayColor(n) ? el('button', { class: 'icon ov-color-reset', title: 'Back to its own colors',
             onclick: async () => { await m.setOverlayColor(n, null); this.renderOverlays(); } }, '↺') : null, ' ', n),
           el('td', { class: 'nowrap' },
             el('button', { title: 'Zoom the map to this overlay', onclick: () => { m.setOverlayVisible(n, true); m.zoomToOverlay(n); this.renderOverlays(); } }, 'Zoom to'),
@@ -2290,13 +2385,15 @@ class App {
       return { source: +prefetchSrc.value, bounds: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()], zmin: +zmin.value, zmax: +zmax.value,
         name: nameBox.value.trim() || defName() };
     };
-    let timer;
+    // one estimate at a time across redraws (the pane redraws as chart files come and go), and only the latest is shown
     const estimate = () => {
-      clearTimeout(timer);
-      timer = setTimeout(async () => {
+      clearTimeout(this._estTimer);
+      this._estTimer = setTimeout(async () => {
+        const seq = (this._estSeq = (this._estSeq || 0) + 1);
         est.textContent = 'Counting tiles…';
         try {
           const r = await fetch('/api/tiles/prefetch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body(), dry_run: true }) }).then((x) => x.json());
+          if (seq !== this._estSeq) return;
           if (r.ok === false || r.error) { est.textContent = r.error || 'Can’t count the tiles.'; return; }
           est.textContent = `About ${r.total.toLocaleString()} tiles${r.note ? ` · ${r.note}` : ''}${r.skipped?.length ? ` · not downloaded: ${r.skipped.join(', ')}` : ''}`;
         } catch { est.textContent = ''; }
@@ -2323,7 +2420,7 @@ class App {
         } }, 'Download'),
         el('button', { onclick: () => api('/api/tiles/prefetch', { cancel: true }).catch(() => {}) }, 'Stop'), est),
       el('div', { id: 'prefetch-status' }),
-      el('p', { class: 'hint' }, 'Each zoom level has four times the tiles of the one before, so keep the highest zoom modest for a big area (12–13 suits a day’s survey area; 14–15 a harbour). ',
+      el('p', { class: 'hint' }, 'Each zoom level has four times the tiles of the one before, so keep the highest zoom modest for a big area (12–13 suits a day’s survey area; 14–15 a harbor). ',
         'Zooming in past what was downloaded shows the nearest saved tiles enlarged. OpenStreetMap doesn’t allow bulk downloads (for Seascape, its land background isn’t saved).'),
       el('h4', {}, 'In the charts folder'),
       el('div', { id: 'chart-list' }),

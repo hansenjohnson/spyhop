@@ -15,6 +15,7 @@ import logging
 import math
 import re
 import threading
+import os
 import time
 from datetime import datetime, timezone
 
@@ -37,6 +38,34 @@ def describe(src: dict) -> str:
     if t == "sim":
         return "Simulator"
     return str(t)
+
+
+def clean_path(p: str) -> str:
+    """A pasted file path as the computer means it: no surrounding quotes or spaces
+    (Windows' "Copy as path" adds quotes), with ~ expanded."""
+    p = (p or "").strip()
+    if len(p) >= 2 and p[0] == p[-1] and p[0] in "\"'":
+        p = p[1:-1].strip()
+    return os.path.expanduser(p) if p else ""
+
+
+def _sentence_time(ln: str, last_t: float | None) -> float | None:
+    """Seconds of the day from an RMC, GGA, ZDA or GLL sentence (None for others)."""
+    kind = ln[3:6]
+    if kind not in ("RMC", "GGA", "ZDA", "GLL"):
+        return None
+    f = ln.split("*")[0].split(",")
+    v = f[5] if kind == "GLL" and len(f) > 5 else (f[1] if len(f) > 1 else "")
+    if not re.fullmatch(r"\d{6}(?:\.\d+)?", v):
+        return None
+    t = int(v[0:2]) * 3600 + int(v[2:4]) * 60 + float(v[4:])
+    if last_t is not None and t < (last_t % 86400) - 43200:     # past midnight
+        t += 86400
+    return t + (last_t // 86400) * 86400 if last_t is not None and last_t >= 86400 else t
+
+
+# a Spyhop raw-log line: <UTC ISO time><TAB><input><TAB><sentence>
+_LOG_STAMP = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z?\t")
 
 
 def list_serial_ports() -> list[dict]:
@@ -173,27 +202,51 @@ class SourceManager:
 
     # -- file replay ---------------------------------------------------------
     async def _run_file(self, i, src):
+        """Replay an NMEA log at its own pace (× speed). Reads Spyhop's raw logs (time stamp, input
+        name and sentence on each line; paced by those time stamps) and plain NMEA files (paced by the
+        RMC/GGA/GLL/ZDA times). Gaps longer than a minute are skipped."""
         speed = float(src.get("speed", 1) or 1)
+        if speed <= 0:
+            speed = 1
         loop = bool(src.get("loop", True))
+        path = clean_path(str(src.get("path") or ""))
+        if not path:
+            raise FileNotFoundError("no file chosen")
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"no file at {path}")
         while True:
-            with open(src["path"], "r", errors="ignore") as fh:
+            with open(path, "r", encoding="utf-8", errors="ignore") as fh:
                 lines = fh.readlines()
-            self.status[i].update(state="replaying", error="")
+            n = len(lines)
+            self.status[i].update(state="replaying", error="", total=n)
             last_t = None
-            for ln in lines:
-                # Spyhop's raw logs may start each line with a time stamp and the input name
-                k = min((x for x in (ln.find("$"), ln.find("!")) if x >= 0), default=-1)
-                if k > 0:
-                    ln = ln[k:]
-                m = re.match(r"^\$..(RMC|GGA),(\d{6}(?:\.\d+)?)", ln.strip())
+            for k, ln in enumerate(lines):
+                t = None
+                m = _LOG_STAMP.match(ln)
                 if m:
-                    t = float(m.group(2)[0:2]) * 3600 + float(m.group(2)[2:4]) * 60 + float(m.group(2)[4:])
+                    try:
+                        t = datetime.fromisoformat(m.group(1)).replace(tzinfo=timezone.utc).timestamp()
+                    except ValueError:
+                        t = None
+                # the sentence starts at the first $ or ! (after any time stamp and input name)
+                j = min((x for x in (ln.find("$"), ln.find("!")) if x >= 0), default=-1)
+                if j < 0:
+                    continue
+                ln = ln[j:].strip()
+                if t is None:
+                    t = _sentence_time(ln, last_t)
+                if t is not None:
                     if last_t is not None and 0 < t - last_t < 60:
                         await asyncio.sleep((t - last_t) / speed)
-                    last_t = t
+                    if last_t is None or t >= last_t or last_t - t > 60:
+                        last_t = t
                 self._line(i, ln)
+                self.status[i]["at"] = k + 1
+                if k % 500 == 499:
+                    await asyncio.sleep(0)       # a log with no times at all mustn't hold up the server
             if not loop:
                 return
+            self.status[i]["loops"] = self.status[i].get("loops", 0) + 1
             await asyncio.sleep(1)
 
     # -- simulator -----------------------------------------------------------

@@ -97,10 +97,10 @@ Download and unzip the [latest release](https://github.com/hansenjohnson/spyhop/
 1. **Connect the GPS.** In **Tools → Instruments**, under *GPS / NMEA inputs*, press **+ Add input** and choose its type:
    - **SERIAL** for a USB GPS (pick its port)
    - **UDP** or **TCP** for a ship's network
-   - **SIMULATOR** to practise
+   - **SIMULATOR** to practice
    
    Press **Apply**. The status bar shows the position once there's a fix.
-2. **Check your lists** (once): edit species, event types, behaviours and observers in **Settings → Dropdowns**, and the keyboard shortcuts in **Settings → Shortcuts**. If your team shares a template, use it from **Settings → Templates** instead.
+2. **Check your lists** (once): edit species, event types, behaviors and observers in **Settings → Dropdowns**, and the keyboard shortcuts in **Settings → Shortcuts**. If your team shares a template, use it from **Settings → Templates** instead.
 3. **Plan the route** (optional): **Tools → Routes**, then **Save route** and **Activate route**.
 4. **Start:** in **Survey**, press **Start New Survey…**. Enter a name (in your team's own naming convention) and the survey details. Spyhop adds the *Start* row to Effort and starts the trackline.
 5. **Go on effort:** Ctrl+Shift+F (⌘⇧F on a Mac) adds an Effort row that switches effort ON or OFF. Fill in the conditions and the observers.
