@@ -226,7 +226,7 @@ def run(rec, spec: dict) -> dict:
             lt = t.astimezone(tz).replace(tzinfo=None)
             if (t_from and lt < t_from) or (t_to and lt > t_to):
                 continue
-        if intervals is not None and (t is None or effort_at(t) != "ON"):
+        if intervals is not None and (t is None or not schema.is_on(effort_at(t))):
             continue
         if not all(_rule_ok(r, x) for x in spec["rules"]):
             continue

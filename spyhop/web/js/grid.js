@@ -1,5 +1,5 @@
 // Spreadsheet-style editable grid for one data tab.
-import { el, fmtCoord, timeParts, api, modal, confirmBox, isModalOpen } from './util.js';
+import { el, fmtCoord, timeParts, api, modal, confirmBox, isModalOpen, isOn } from './util.js';
 import { shapeSvg } from './map.js';
 import { Resights } from './resights.js';
 
@@ -23,13 +23,124 @@ export class Grid {
     this.wrap.addEventListener('dblclick', (e) => this.onDbl(e));
   }
 
-  // columns shown: not hidden, and optional ones (e.g. Altitude) only when Settings → General says so
-  visibleCols() { return this.spec.columns.filter((c) => !c.hidden && this.app.columnShown(c)); }
+  // columns shown: not hidden, and optional ones (e.g. Altitude) only when Settings → General says so;
+  // in this computer's order (dragged headers or Columns…), a column not in that order after the
+  // column it follows in the schema
+  visibleCols() {
+    const cols = this.spec.columns.filter((c) => !c.hidden && this.app.columnShown(c));
+    const order = this.layout().order || [];
+    if (!order.length) return cols;
+    const out = order.map((k) => cols.find((c) => c.key === k)).filter(Boolean);
+    cols.forEach((c, i) => {
+      if (out.includes(c)) return;
+      const before = cols.slice(0, i).reverse().find((x) => out.includes(x));
+      out.splice(before ? out.indexOf(before) + 1 : 0, 0, c);
+    });
+    return out;
+  }
+  layout() { return (this.app.S.config.settings.column_layout || {})[this.tab] || {}; }
+  widthOf(c) { return +(this.layout().widths || {})[c.key] || 0; }
+  layoutSig() { return JSON.stringify([this.visibleCols().map((c) => c.key), this.layout().widths || {}]); }
   refreshColumns() {
-    const cols = this.visibleCols();
-    if (cols.map((c) => c.key).join() === this.cols.map((c) => c.key).join()) return;
-    this.cols = cols;
+    if (this.layoutSig() === this._sig) return;
+    this.cols = this.visibleCols();
     this.render();
+  }
+
+  // save this table's column order and widths (spyhop-local.json: this computer only)
+  async saveLayout(lay) {
+    const all = { ...(this.app.S.config.settings.column_layout || {}) };
+    if (lay) all[this.tab] = lay; else delete all[this.tab];
+    this.app.S.config.settings.column_layout = all;
+    this.cols = this.visibleCols();
+    this.render();
+    await this.app.saveColumnLayout(all);
+  }
+
+  moveColumn(key, toIndex) {
+    const keys = this.cols.map((c) => c.key);
+    const from = keys.indexOf(key);
+    if (from < 0) return;
+    keys.splice(from, 1);
+    keys.splice(Math.max(0, Math.min(keys.length, toIndex)), 0, key);
+    return this.saveLayout({ ...this.layout(), order: keys });
+  }
+
+  setWidth(key, w) {
+    const widths = { ...(this.layout().widths || {}) };
+    if (w) widths[key] = Math.round(Math.max(30, Math.min(800, w))); else delete widths[key];
+    return this.saveLayout({ ...this.layout(), widths });
+  }
+
+  // drag a header's right edge to resize it, or the header itself to move the column
+  wireHeader(th, c) {
+    const grip = el('span', { class: 'col-grip', title: 'Drag to resize · double-click for the default width' });
+    th.append(grip);
+    grip.addEventListener('mousedown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const x0 = e.clientX, w0 = th.getBoundingClientRect().width;
+      const set = (w) => { const v = `${Math.round(Math.max(30, Math.min(800, w)))}px`; Object.assign(th.style, { width: v, minWidth: v, maxWidth: v }); };
+      const mv = (ev) => set(w0 + ev.clientX - x0);
+      const up = (ev) => {
+        document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up);
+        document.body.classList.remove('col-resizing');
+        if (Math.abs(ev.clientX - x0) > 2) this.setWidth(c.key, w0 + ev.clientX - x0);
+      };
+      document.body.classList.add('col-resizing');
+      document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
+    });
+    grip.addEventListener('dblclick', (e) => { e.stopPropagation(); this.setWidth(c.key, 0); });
+    th.draggable = true;
+    th.addEventListener('dragstart', (e) => {
+      if (document.body.classList.contains('col-resizing')) { e.preventDefault(); return; }
+      e.dataTransfer.setData('text/x-spyhop-col', c.key); e.dataTransfer.effectAllowed = 'move';
+      th.classList.add('dragging');
+    });
+    th.addEventListener('dragend', () => { th.classList.remove('dragging'); this.wrap.querySelectorAll('.drop-before,.drop-after').forEach((n) => n.classList.remove('drop-before', 'drop-after')); });
+    th.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer.types.includes('text/x-spyhop-col')) return;
+      e.preventDefault();
+      const r = th.getBoundingClientRect(), after = e.clientX > r.left + r.width / 2;
+      this.wrap.querySelectorAll('.drop-before,.drop-after').forEach((n) => n.classList.remove('drop-before', 'drop-after'));
+      th.classList.add(after ? 'drop-after' : 'drop-before');
+    });
+    th.addEventListener('drop', (e) => {
+      const key = e.dataTransfer.getData('text/x-spyhop-col');
+      if (!key || key === c.key) return;
+      e.preventDefault();
+      const r = th.getBoundingClientRect(), after = e.clientX > r.left + r.width / 2;
+      const keys = this.cols.map((x) => x.key).filter((k) => k !== key);
+      this.moveColumn(key, keys.indexOf(c.key) + (after ? 1 : 0));
+    });
+  }
+
+  // Columns…: the order and widths in a list, for those who'd rather not drag
+  async columnsDialog() {
+    const draw = (list) => list.replaceChildren(...this.cols.map((c, i) => el('li', { 'data-key': c.key },
+      el('span', { class: 'col-name' }, c.label, c.label !== c.key ? el('span', { class: 'hint' }, ` (${c.key})`) : null),
+      el('span', { class: 'hint' }, this.widthOf(c) ? `${this.widthOf(c)} px` : ''),
+      el('button', { class: 'col-up', disabled: i === 0, 'aria-label': `Move ${c.label} left`, onclick: async () => { await this.moveColumn(c.key, i - 1); draw(list); } }, '↑'),
+      el('button', { class: 'col-down', disabled: i === this.cols.length - 1, 'aria-label': `Move ${c.label} right`, onclick: async () => { await this.moveColumn(c.key, i + 1); draw(list); } }, '↓'))));
+    const list = el('ol', { class: 'col-list', id: `cols-${this.tab}` });
+    draw(list);
+    await modal({ title: `Columns: ${this.spec.title}`, body: el('div', {},
+      el('p', { class: 'hint' }, 'First in the list = leftmost. You can also drag a column’s header to move it, and drag the edge of a header to change its width. These are kept on this computer only.'),
+      list,
+      el('p', {}, el('button', { id: `cols-reset-${this.tab}`, onclick: async () => { await this.saveLayout(null); draw(list); } }, 'Reset order and widths'))),
+    buttons: [{ label: 'Done', value: true, primary: true }] });
+  }
+
+  // Sightings row colors (Settings → General → Tables): none | alternate | resights | groups
+  rowTint(r, i, rs) {
+    if (this.tab !== 'sightings') return '';
+    const mode = this.app.S.config.display.sightings_row_colors || 'resights';
+    if (mode === 'alternate') return i % 2 ? 'tint-alt' : '';
+    if (mode === 'resights') return rs?.isResight(r) ? 'resight-tint' : '';
+    if (mode === 'groups') {
+      const g = this._groupTint?.get(rs.original(r).RowID);
+      return g === undefined ? '' : `tint-g${g}`;
+    }
+    return '';
   }
 
   get rows() { return this.app.S.tables[this.tab].rows; }
@@ -77,21 +188,32 @@ export class Grid {
     const evColors = {};
     for (const s of this.app.S.config.lists.event_types || []) evColors[s.name] = s.color;
 
+    this._sig = this.layoutSig();
     const thead = el('thead', {}, el('tr', {}, el('th', { class: 'rownum' }, '#'),
-      this.cols.map((c) => el('th', {
-        'data-key': c.key, title: c.key + (c.auto ? ' (filled in automatically)' : ''),
-        style: c.width ? { minWidth: `${c.width}px` } : null }, c.label))));
+      this.cols.map((c) => {
+        const w = this.widthOf(c);
+        const th = el('th', {
+          'data-key': c.key, title: `${c.key}${c.auto || c.readonly ? ' (filled in automatically)' : ''} · drag to move, drag the edge to resize`,
+          style: w ? { width: `${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` } : c.width ? { minWidth: `${c.width}px` } : null }, c.label);
+        this.wireHeader(th, c);
+        return th;
+      })));
     const tbody = el('tbody');
     const { rows, rs } = this.shownRows();
     const nested = rows !== this.rows;
+    if (rs) {          // a tint for each sighting that has resights, in turn (group resights)
+      this._groupTint = new Map();
+      let n = 0;
+      for (const g of rs.groups()) if (g.length > 1) this._groupTint.set(g[0].RowID, n++ % 6);
+    }
     rows.forEach((r, i) => {
       const re = rs?.isResight(r);
-      const cls = [this.sel?.id === r.RowID ? 'selrow' : '', re ? 'resight' : '', re && nested ? 'nested' : ''].filter(Boolean).join(' ');
+      const cls = [this.sel?.id === r.RowID ? 'selrow' : '', re ? 'resight' : '', re && nested ? 'nested' : '', this.rowTint(r, i, rs)].filter(Boolean).join(' ');
       const tr = el('tr', { 'data-id': r.RowID, class: cls || null });
       tr.append(el('td', { class: 'rownum', title: 'Select row' }, i + 1));
       for (const c of this.cols) {
         const v = r[c.key] ?? '';
-        const td = el('td', { 'data-key': c.key, class: `t-${c.type}${c.auto ? ' auto' : ''}` });
+        const td = el('td', { 'data-key': c.key, class: `t-${c.type}${c.auto || c.readonly ? ' auto' : ''}` });
         if (c.key === 'DateTime' && v) { const p = timeParts(v, this.app.clock()); td.title = p ? `${p.date} ${p.time} ${p.abbr}` : v; }
         if (c.list === 'species' && v) {
           td.append(el('span', { class: 'swatch', style: { background: colors[v] || 'transparent' } }), this.display(c, v));
@@ -105,7 +227,7 @@ export class Grid {
           td.textContent = `↳ ${v}`;
           if (!re) { td.classList.add('dangling'); td.title = `There is no sighting ${v}: this row is counted as a sighting of its own`; }
         } else if (c.key === 'Effort' && v) {
-          td.append(el('span', { class: `pill ${v === 'ON' ? 'on' : v === 'ERROR' ? 'err' : 'off'}` }, v));
+          td.append(el('span', { class: `pill ${isOn(v) ? 'on' : v === 'ERROR' ? 'err' : 'off'}` }, v));
         } else {
           td.textContent = this.display(c, v);
         }
@@ -202,7 +324,7 @@ export class Grid {
     if (k === ' ' && col.type === 'bool') { e.preventDefault(); this.toggleBool(this.sel.id, col); return; }
     if (k === 'Delete' || k === 'Backspace') {
       e.preventDefault();
-      if (col.type === 'seq') return;
+      if (col.type === 'seq' || col.readonly) return;
       this.save(this.sel.id, col, '');
       return;
     }
@@ -223,6 +345,7 @@ export class Grid {
     const r = this.row(this.sel.id);
     const col = this.cols.find((c) => c.key === this.sel.key);
     if (!r || !col) return;
+    if (col.readonly) { this.app.toastReadonly?.(col); return; }
     if (col.type === 'multi') { this.editMulti(r, col, initial); return; }
     const td = this.td(r.RowID, col.key);
     const original = this.editText(col, r[col.key]);

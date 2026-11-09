@@ -181,6 +181,26 @@ async def no_cache(request, handler):
     return resp
 
 
+
+def clean_column_layout(v) -> dict:
+    """{tab: {order: [column keys], widths: {key: px}}}: only known tabs and columns, widths 30–800 px."""
+    out = {}
+    for tab, lay in (v or {}).items() if isinstance(v, dict) else []:
+        if tab not in schema.TABS or not isinstance(lay, dict):
+            continue
+        keys = {c["key"] for c in schema.TABS[tab]["columns"]}
+        order = [k for k in lay.get("order") or [] if k in keys]
+        widths = {}
+        for k, w in (lay.get("widths") or {}).items():
+            try:
+                if k in keys:
+                    widths[k] = max(30, min(800, int(float(w))))
+            except (TypeError, ValueError):
+                pass
+        if order or widths:
+            out[tab] = {"order": list(dict.fromkeys(order)), "widths": widths}
+    return out
+
 class App:
     def __init__(self, data_dir: Path, extra_sources: list[dict] | None = None):
         self.rec = Recorder(data_dir)
@@ -396,6 +416,14 @@ class App:
         body = await request.json() if request.can_read_body else {}
         return json_ok(self.rec.new_row(tab, body.get("prefill"), body.get("lat"), body.get("lon")))
 
+    async def tab_insert(self, request):
+        tab = request.match_info["tab"]
+        if tab not in schema.TABS:
+            raise ValueErrorMsg("Unknown table.")
+        body = await request.json()
+        return json_ok(self.rec.insert_row(tab, str(body.get("id") or ""), str(body.get("method") or ""),
+                                           "before" if body.get("where") == "before" else "after"))
+
     async def add_resight(self, request):
         body = await request.json()
         return json_ok(self.rec.add_resight(str(body.get("id") or "")))
@@ -529,6 +557,10 @@ class App:
                 raise ValueError("Unknown binocular magnification.")
             if updates.get("altitude_column") not in (None, "auto", "show", "hide"):
                 raise ValueError("The Altitude column is auto, show or hide.")
+            if updates.get("segment_column") not in (None, "show", "hide"):
+                raise ValueError("The effort segment column is show or hide.")
+            if "column_layout" in updates:
+                updates["column_layout"] = clean_column_layout(updates["column_layout"])
         except (TypeError, ValueError) as e:
             raise ValueErrorMsg(str(e) if str(e) and not str(e).startswith("could not convert") else "That isn't a number.")
         self.rec.cfg.save_settings(updates)
@@ -1391,6 +1423,7 @@ class App:
         r.add_get("/api/bootstrap", self.bootstrap)
         r.add_post("/api/tab/{tab}/add", self.tab_add)
         r.add_post("/api/sightings/resight", self.add_resight)
+        r.add_post("/api/tab/{tab}/insert", self.tab_insert)
         r.add_post("/api/tab/{tab}/edit", self.tab_edit)
         r.add_post("/api/tab/{tab}/delete", self.tab_delete)
         r.add_post("/api/tab/{tab}/undo", self.tab_undo)

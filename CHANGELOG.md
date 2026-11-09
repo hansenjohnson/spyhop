@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.31.0 — 2026-11-09
+
+- **Columns:** drag a header to move a column, drag its edge to resize it (double-click for the default width), or use the table's new **Columns…** button (↑/↓, Reset). Kept on this computer only (`spyhop-local.json`); Settings → General → Tables resets every table.
+- **Sightings row colors** (Settings → General → Tables): None, Alternating, Highlight resights (default), Group resights.
+- **Kinds of on effort:** **LINE** (line transect), **FOLLOW** (focal follow), **PHOTO** (photo-ID approach) besides **ON**. All count as on effort (track, Summary, Quality Control, Reports); the Summary adds the time in each; Toggle effort goes back on as the last kind used.
+- **Effort segments:** a read-only **Seg** column in Effort, a new number each time the effort status changes from the row before; in the merged CSV too. Show or hide it in Settings → General → Tables.
+- **Survey notes:** a multi-line notes box in Survey under the details, saved in the metadata, shown in the Summary and its HTML/PDF. Not carried over to the next survey.
+- **Insert row…** on every data tab: before or after the selected row, time and position averaged from the rows either side or copied from the row before or after, with a note saying so. Works in ended surveys (not before Start or after End).
+
 ## 0.30.0 — 2026-11-09
 
 - **Resights:** for another look at animals already recorded (closing in for photos, a focal follow). Select a sighting and press **Add resight** (Ctrl/Cmd+Shift+L; greyed out with no sighting selected): the new row's **Resight of** column, right after Calves, holds the first sighting's SightNo, and the species, Num, Calves, NumConf, IDrel and FieldID are copied. A resight of a resight links to the first sighting. Resight of can also be typed (it must name an existing sighting).

@@ -6,7 +6,7 @@
 // the survey, on Esri Ocean when its tiles load (else the offline coastline), with no point
 // labels or map buttons, and a legend of the point symbols under the map.
 /* global topojson */
-import { esc, timeParts, isTrackBreak, trackStates, dashFor } from './util.js';
+import { esc, timeParts, isTrackBreak, trackStates, dashFor, isOn } from './util.js';
 import { shapeSvg } from './map.js';
 import { Resights } from './resights.js';
 
@@ -96,7 +96,7 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
         if (isNaN(+p.Lat)) return;
         if (st[i] === 'ERROR') { prev = p; prevSt = 'ERROR'; return; }
         const brk = !prev || prevSt === 'ERROR' || isTrackBreak(prev, p, S.config.settings);
-        out.push([+p.Lat, +p.Lon, st[i] === 'ON' ? 1 : 0, brk ? 1 : 0]);
+        out.push([+p.Lat, +p.Lon, isOn(st[i]) ? 1 : 0, brk ? 1 : 0]);
         prev = p; prevSt = st[i];
       });
       return out;

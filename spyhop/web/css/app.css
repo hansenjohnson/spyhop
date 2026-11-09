@@ -128,7 +128,28 @@ table.grid td.auto { color: var(--muted); }
 table.grid td.rownum, table.grid th.rownum { position: sticky; left: 0; z-index: 1; background: var(--panel2); color: var(--muted); text-align: right; width: 2.6em; cursor: pointer; }
 table.grid th.rownum { z-index: 3; }
 /* resights: a light tint; nested under their sighting, the SightNo cell is indented */
-table.grid tr.resight td { background: #f7f9fb; }
+/* Sightings row colors (Settings → General → Tables) */
+table.grid tr.resight-tint td { background: #eef3f8; }
+table.grid tr.tint-alt td { background: #f3f5f7; }
+table.grid tr.tint-g0 td { background: #fdf0d5; }
+table.grid tr.tint-g1 td { background: #dcecf9; }
+table.grid tr.tint-g2 td { background: #e3f3e0; }
+table.grid tr.tint-g3 td { background: #f6e1ec; }
+table.grid tr.tint-g4 td { background: #ece4f6; }
+table.grid tr.tint-g5 td { background: #def2f0; }
+/* column headers: drag the edge to resize, the header to move */
+table.grid th .col-grip { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 4; }
+table.grid th .col-grip:hover, body.col-resizing table.grid th .col-grip { background: rgba(11, 95, 134, 0.35); }
+body.col-resizing { cursor: col-resize; user-select: none; }
+table.grid th.dragging { opacity: 0.5; }
+table.grid th.drop-before { box-shadow: inset 3px 0 0 #0b5f86; }
+table.grid th.drop-after { box-shadow: inset -3px 0 0 #0b5f86; }
+ol.col-list { margin: 0.5em 0; padding-left: 2em; max-height: 50vh; overflow: auto; }
+ol.col-list li { display: flex; align-items: center; gap: 0.6em; padding: 2px 0; }
+ol.col-list li .col-name { flex: 1; }
+ol.col-list li button { min-width: 2.2em; padding: 2px 6px; }
+.survey-notes { white-space: pre-line; }
+textarea.meta-notes { width: 100%; min-height: 5em; font: inherit; box-sizing: border-box; resize: vertical; }
 table.grid tr.nested td[data-key="SightNo"] { padding-left: 1.6em; }
 table.grid td[data-key="ResightOf"] { white-space: nowrap; color: #6b4700; }
 table.grid td[data-key="ResightOf"].dangling { color: var(--alert); text-decoration: line-through; }
@@ -503,3 +524,4 @@ table.overlay-table td { vertical-align: middle; }
 .uninstall-plan li { margin-bottom: 0.25em; }
 .uninstall-plan .mono { font-size: 0.85em; word-break: break-all; }
 .modal-back.closing { z-index: 6000; }
+.toolbar .tb-right { margin-left: auto; }

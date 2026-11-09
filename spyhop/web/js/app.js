@@ -1,7 +1,10 @@
 // Main controller: layout, status bar, tabs, shortcuts, settings, summary, live updates.
-import { $, $$, el, esc, api, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, isTrackBreak, trackStates, isPlaceholderObs, LINE_STYLES } from './util.js';
+import { $, $$, el, esc, api, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, isTrackBreak, trackStates, isPlaceholderObs, LINE_STYLES, isOn, ON_EFFORT } from './util.js';
 import { Grid } from './grid.js';
 import { Resights, groupCounts } from './resights.js';
+
+// what each Effort value means (the Effort column's help, the Summary)
+const EFFORT_LABEL = { ON: 'ON (on effort)', LINE: 'LINE (line transect)', FOLLOW: 'FOLLOW (focal follow)', PHOTO: 'PHOTO (photo-ID approach)' };
 import { MapView, SHAPES } from './map.js';
 import { buildSummaryHtml } from './summary_html.js';
 import { openInstrumentPlot } from './plot.js';
@@ -140,6 +143,7 @@ class App {
   // an optional column (schema optional=…) is shown or not: Settings → General → Altitude column
   columnShown(c) {
     if (!c.optional) return true;
+    if (c.optional === 'segment') return (this.S.config.settings.segment_column || 'show') !== 'hide';
     if (c.optional === 'altitude') {
       const m = this.S.config.settings.altitude_column || 'auto';
       return m === 'show' || (m === 'auto' && this.platformType() === 'Aerial');
@@ -260,9 +264,11 @@ class App {
     const bar = el('div', { class: 'toolbar' },
       el('button', { class: 'primary', onclick: () => this.addRow(tab), title: `Add a row${sc(`add:${tab}`)}` },
         'Add row'),
+      el('button', { id: `insert-${tab}`, onclick: () => this.insertRow(tab), title: 'Insert a row before or after the selected row, with its time and position averaged from the rows either side or copied from one of them' }, 'Insert row…'),
       el('button', { onclick: () => this.deleteRow(tab), title: 'Delete the selected row' }, 'Delete row'),
       el('button', { id: `undo-${tab}`, onclick: () => this.undo(tab), title: `Undo${sc('undo')}` }, '↶ Undo'),
-      el('button', { id: `redo-${tab}`, onclick: () => this.redo(tab), title: `Redo${sc('redo')}` }, '↷ Redo'));
+      el('button', { id: `redo-${tab}`, onclick: () => this.redo(tab), title: `Redo${sc('redo')}` }, '↷ Redo'),
+      el('button', { id: `columns-${tab}`, class: 'tb-right', onclick: () => this.grids[tab]?.columnsDialog(), title: 'Change the order and widths of the columns (or drag the headers)' }, 'Columns…'));
     if (tab === 'sightings') {
       bar.insertBefore(el('button', { id: 'btn-add-resight', disabled: true, onclick: () => this.addResight(),
         title: `Add another look at the animals of the selected sighting: a new row linked to their first sighting, with the species, numbers and FieldID filled in${sc('add-resight')}` },
@@ -429,6 +435,49 @@ class App {
     b.textContent = r ? `Add resight of ${new Resights(this.S.tables.sightings.rows).original(r).SightNo}` : 'Add resight';
   }
 
+  toastReadonly(col) { toast(`${col.label} is filled in by Spyhop and can’t be typed.`, 'info', 3000); }
+
+  // Insert row…: before or after the selected row; time and position averaged or copied, with a note
+  async insertRow(tab) {
+    const g = this.grids[tab], id = g?.sel?.id;
+    const rows = this.S.tables[tab].rows;
+    if (!id || !rows.some((r) => r.RowID === id)) { toast('Select the row to insert next to first.', 'warn'); return; }
+    const i = rows.findIndex((r) => r.RowID === id);
+    const radio = (name, value, label, checked) => el('label', { class: 'check' },
+      el('input', { type: 'radio', name, value, checked: !!checked }), el('span', {}, label));
+    const label = (r) => r ? `${r.SightNo ? `sighting ${r.SightNo}` : r.EventNo ? `event ${r.EventNo}` : r.Effort ? r.Effort : r.Name || 'row'} at ${(timeParts(r.DateTime, this.clock()) || {}).time || '?'}` : 'none';
+    const body = el('div', { id: 'insert-dialog' },
+      el('p', {}, `Selected: ${label(rows[i])}.`),
+      el('h4', {}, 'Where'),
+      radio('ins-where', 'after', 'After the selected row', true), radio('ins-where', 'before', 'Before the selected row'),
+      el('h4', {}, 'Time and position'),
+      radio('ins-method', 'average', 'Average of the rows before and after', true),
+      radio('ins-method', 'previous', 'Copied from the row before'),
+      radio('ins-method', 'next', 'Copied from the row after'),
+      el('p', { class: 'hint', id: 'ins-between' }),
+      el('p', { class: 'hint' }, 'A note in Notes says how the time and position were filled in. Correct them afterwards if you know better.'));
+    const between = () => {
+      const where = body.querySelector('input[name=ins-where]:checked').value;
+      const at = where === 'after' ? i + 1 : i;
+      body.querySelector('#ins-between').textContent = `Between ${label(rows[at - 1])} and ${label(rows[at])}.`;
+    };
+    body.addEventListener('change', between);
+    between();
+    const got = await modal({ title: `Insert a row: ${this.S.schema.tabs[tab].title}`, body,
+      buttons: [{ label: 'Cancel', value: null }, { label: 'Insert', primary: true,
+        value: () => ({ where: body.querySelector('input[name=ins-where]:checked').value, method: body.querySelector('input[name=ins-method]:checked').value }) }] });
+    if (!got) return;
+    let res;
+    try { res = await api(`/api/tab/${tab}/insert`, { id, ...got }); } catch { return; }
+    (res.warnings || []).forEach((w) => toast(w, 'warn'));
+    const t = this.S.tables[tab];
+    if (!t.rows.some((x) => x.RowID === res.row.RowID)) {
+      const at = got.where === 'after' ? i + 1 : i;
+      t.rows.splice(at, 0, res.row); t.can_undo = true; this.renderTab(tab); this.map.drawMarkers?.(tab);
+    }
+    this.grids[tab].select(res.row.RowID, 'DateTime');
+  }
+
   async addResight() {
     const r = this.selectedSighting();
     if (!r) { toast('Select a sighting first: the resight is linked to it.', 'warn'); this.showTab('sightings'); return; }
@@ -522,6 +571,7 @@ class App {
         break;
       case 'settings': {
         const prev = this.S.config.settings;
+        if (this._layoutPending) m.settings.column_layout = prev.column_layout;   // a newer layout is being saved
         this.S.config.settings = m.settings;
         if (this.S.survey) this.S.survey.tracking = !!m.settings.tracking_enabled;
         this.refreshFormats();
@@ -617,7 +667,7 @@ class App {
     tr.title = still ? 'A stationary platform doesn’t move, so Spyhop records only its Start and End positions, not a trackline.' : '';
     tr.classList.toggle('on', !!st.tracking_enabled);
     const eff = last?.Effort || '—';
-    $('#sf-effort').replaceChildren('Effort ', el('span', { class: `pill ${eff === 'ON' ? 'on' : 'off'}` }, eff));
+    $('#sf-effort').replaceChildren('Effort ', el('span', { class: `pill ${isOn(eff) ? 'on' : 'off'}` }, eff));
     const c = $('#sf-conn');
     c.textContent = this.wsOk ? '● Live' : '○ Reconnecting…';
     c.classList.toggle('alert', !this.wsOk);
@@ -643,6 +693,17 @@ class App {
     this.refreshFormats();
     this.updateStatus();
     try { await api('/api/settings', { updates }); } catch { if (!quiet) this.reload(); }
+  }
+
+  // column order and widths: saved one after another, and while a save is on its way a settings
+  // broadcast from an earlier one doesn't put the old layout back
+  saveColumnLayout(all) {
+    this.S.config.settings.column_layout = all;
+    this._layoutPending = (this._layoutPending || 0) + 1;
+    this._layoutChain = (this._layoutChain || Promise.resolve())
+      .then(() => api('/api/settings', { updates: { column_layout: all } })).catch(() => {})
+      .finally(() => { this._layoutPending--; });
+    return this._layoutChain;
   }
 
   async saveDisplay(updates) {
@@ -725,7 +786,7 @@ class App {
     const last = this.S.config.settings.last_meta || {};
     const nameBox = el('input', { type: 'text', style: { width: '100%' } });
     const fields = {};
-    const form = el('div', { class: 'meta-form' }, this.S.schema.survey_meta.map(([k, label, hint]) => {
+    const form = el('div', { class: 'meta-form' }, this.S.schema.survey_meta.filter(([k]) => k !== 'survey_notes').map(([k, label, hint]) => {
       const inp = k === 'platform_type'
         ? el('select', {}, ['', ...this.S.schema.fixed_lists.platform_type].map((o) => el('option', { value: o, selected: (last[k] || '') === o }, o || '—')))
         : el('input', { type: k.endsWith('email') ? 'email' : 'text', value: last[k] || '', placeholder: hint });
@@ -832,8 +893,10 @@ class App {
     const meta = sv.meta || {};
     const save = (k, v) => api('/api/survey/meta', { updates: { [k]: v } })
       .then(() => { delete this.metaDraft[k]; }).catch(() => {});
+    const notesVal = this.metaDraft.survey_notes ?? meta.survey_notes ?? '';
+    const notesHint = (this.S.schema.survey_meta.find((m) => m[0] === 'survey_notes') || [])[2] || '';
     return el('div', {}, el('h4', {}, 'Survey details'),
-      el('div', { class: 'meta-form' }, this.S.schema.survey_meta.map(([k, label, hint]) => {
+      el('div', { class: 'meta-form' }, this.S.schema.survey_meta.filter(([k]) => k !== 'survey_notes').map(([k, label, hint]) => {
         const val = this.metaDraft[k] ?? meta[k] ?? '';
         const inp = k === 'platform_type'
           ? el('select', { onchange: (e) => save(k, e.target.value) },
@@ -843,7 +906,13 @@ class App {
             onchange: (e) => save(k, e.target.value),
             onkeydown: (e) => { if (e.key === 'Enter') e.target.blur(); } });
         return el('label', {}, label, inp);
-      })));
+      })),
+      // general notes or a summary of the survey: in the Summary and its HTML and PDF files
+      el('label', { class: 'stack', for: 'survey-notes' }, 'Survey notes'),
+      el('textarea', { id: 'survey-notes', class: 'meta-notes', placeholder: notesHint, value: notesVal,
+        oninput: (e) => { this.metaDraft.survey_notes = e.target.value; },
+        onchange: (e) => save('survey_notes', e.target.value) }),
+      el('p', { class: 'hint' }, 'Saved when you click away. Shown in the Summary and its HTML and PDF files.'));
   }
 
   // ---------------------------------------------------------------- survey tab
@@ -1367,13 +1436,16 @@ class App {
     // effort time from the Effort table (the current ON stretch counts up to now)
     const eff = [...S.tables.effort.rows].filter((r) => r.DateTime).sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime));
     let onSec = 0;
+    const byKind = {};                 // time in each kind of on effort (ON, LINE, FOLLOW, PHOTO)
     eff.forEach((r, i) => {
-      if (r.Effort !== 'ON') return;
+      if (!isOn(r.Effort)) return;
       const t0 = new Date(r.DateTime).getTime();
       const t1 = i + 1 < eff.length ? new Date(eff[i + 1].DateTime).getTime() : Date.now();
-      onSec += Math.max(0, (t1 - t0) / 1000);
+      const dt = Math.max(0, (t1 - t0) / 1000);
+      onSec += dt;
+      byKind[r.Effort] = (byKind[r.Effort] || 0) + dt;
     });
-    const effortNow = eff.at(-1)?.Effort === 'ON';
+    const effortNow = isOn(eff.at(-1)?.Effort);
     // distances from the internal track, plus the live stretch since the last track point
     // trackline breaks (GPS jumps or losses, Settings → General → Tracking) and ERROR stretches don't count
     let total = 0, onDist = 0;
@@ -1383,12 +1455,12 @@ class App {
       const d = distM([+tr[i - 1].Lat, +tr[i - 1].Lon], [+tr[i].Lat, +tr[i].Lon]);
       if (d > 20000) continue; // skip gaps (e.g. tracking paused)
       total += d;
-      if (tst[i] === 'ON' && tst[i - 1] === 'ON') onDist += d;
+      if (isOn(tst[i]) && isOn(tst[i - 1])) onDist += d;
     }
     const v = S.vessel, last = tr.at(-1);
     if (st.tracking_enabled && last && v?.has_fix && tst.at(-1) !== 'ERROR') {
       const d = distM([+last.Lat, +last.Lon], [v.lat, v.lon]);
-      if (d < 20000) { total += d; if (effortNow && tst.at(-1) === 'ON') onDist += d; }
+      if (d < 20000) { total += d; if (effortNow && isOn(tst.at(-1))) onDist += d; }
     }
     const unit = this.unit(), div = { nm: 1852, km: 1000, m: 1, mi: 1609.344, yd: 0.9144 }[unit];
     const firstIso = [sight[0]?.DateTime, eff[0]?.DateTime, tr[0]?.DateTime].filter(Boolean).sort((a, b) => new Date(a) - new Date(b))[0];
@@ -1408,7 +1480,7 @@ class App {
       const order = fixed[list] || [];
       seen.sort((a, b) => order.indexOf(a) - order.indexOf(b));
       const range = ordered ? (seen.length === 1 ? seen[0] : `${seen[0]} – ${seen.at(-1)}`) : seen.join(', ');
-      const onlyOn = [...new Set(eff.filter((r) => r.Effort === 'ON').map((r) => r[key]).filter(Boolean))]
+      const onlyOn = [...new Set(eff.filter((r) => isOn(r.Effort)).map((r) => r[key]).filter(Boolean))]
         .sort((a, b) => order.indexOf(a) - order.indexOf(b));
       const rangeOn = !onlyOn.length ? '—' : ordered ? (onlyOn.length === 1 ? onlyOn[0] : `${onlyOn[0]} – ${onlyOn.at(-1)}`) : onlyOn.join(', ');
       condRows.push([labels[key], range, rangeOn]);
@@ -1419,7 +1491,7 @@ class App {
     const posKeys = [['Port', 'Port'], ['Recorder', 'Recorder'], ['Starboard', 'Stbd']];
     const watch = {};
     eff.forEach((r, i) => {
-      if (r.Effort !== 'ON') return;
+      if (!isOn(r.Effort)) return;
       const t0 = new Date(r.DateTime).getTime();
       const t1 = i + 1 < eff.length ? new Date(eff[i + 1].DateTime).getTime() : Date.now();
       const dt = Math.max(0, (t1 - t0) / 1000);
@@ -1483,6 +1555,10 @@ class App {
         ['Duration', t0 ? fmtDuration((t1 - t0) / 1000) : '—'],
         ['Platform', platform || '—'], ['Platform altitude', meta.platform_altitude_ft ? `${meta.platform_altitude_ft} ft` : '—'], ['Organization', meta.organization || '—'], ['Chief scientist', meta.chief_scientist || '—'],
         ['Chief scientist email', meta.chief_scientist_email ? el('a', { href: `mailto:${meta.chief_scientist_email}` }, meta.chief_scientist_email) : '—']])),
+      meta.survey_notes ? el('h3', {}, 'Survey notes') : null,
+      meta.survey_notes ? el('p', { class: 'survey-notes' }, meta.survey_notes) : null,
+      Object.keys(byKind).some((k) => k !== 'ON') ? el('h3', {}, 'Time on effort by type') : null,
+      Object.keys(byKind).some((k) => k !== 'ON') ? tbl(['Effort', 'Time'], ON_EFFORT.filter((k) => byKind[k]).map((k) => [EFFORT_LABEL[k] || k, fmtDuration(byKind[k])])) : null,
       el('h3', {}, 'Sightings by species'),
       spRows.length ? tbl(['Species', 'Sightings', 'Number', 'Calves', 'Resights'], spRows) : el('p', { class: 'hint' }, 'No sightings yet.'),
       spRows.length && nResights ? el('p', { class: 'hint' }, 'Resights aren’t counted as sightings; Number and Calves are the largest seen on any look at the same animals.') : null,
@@ -1491,7 +1567,7 @@ class App {
       riwhTable ? el('p', { class: 'hint' }, riwhTotals) : null,
       el('h3', {}, 'Observers on watch'),
       obsRows.length ? tbl(['Observer', 'Port', 'Recorder', 'Stbd', 'Total'], obsRows) : el('p', { class: 'hint' }, 'No observers logged on effort yet (Port / Recorder / Stbd in the Effort tab).'),
-      obsRows.length ? el('p', { class: 'hint' }, 'Time in each position while effort was ON, from the Effort tab.') : null,
+      obsRows.length ? el('p', { class: 'hint' }, 'Time in each position while on effort (ON, LINE, FOLLOW or PHOTO), from the Effort tab.') : null,
       el('h3', {}, 'Environmental conditions'),
       condRows.length ? tbl(['Condition', 'Whole survey', 'On effort'], condRows) : el('p', { class: 'hint' }, 'No conditions logged yet.'),
       el('h3', {}, 'Events by type'),
@@ -1870,6 +1946,21 @@ class App {
     return sec('Altitude and reticles', ...kids);
   }
 
+  // Settings → General → Tables: Sightings row colors, the effort segment column, column layout
+  tablesSection(sec, sel) {
+    const d = this.S.config.display;
+    const lay = this.S.config.settings.column_layout || {};
+    return sec('Tables',
+      el('div', { class: 'grid2' },
+        el('label', { class: 'row' }, 'Sightings row colors', el('select', { id: 'row-colors', onchange: (e) => this.saveDisplay({ sightings_row_colors: e.target.value }) },
+          [['none', 'None'], ['alternate', 'Alternating'], ['resights', 'Highlight resights'], ['groups', 'Group resights']]
+            .map(([v, l]) => el('option', { value: v, selected: (d.sightings_row_colors || 'resights') === v }, l)))),
+        el('label', { class: 'row' }, 'Effort segment column', sel('segment_column', [['show', 'Shown'], ['hide', 'Hidden']]))),
+      el('p', { class: 'hint' }, 'Group resights gives each sighting that has resights, and its resights, a color of their own. The effort segment (Seg) is numbered by Spyhop: a new number each time the effort status changes. ',
+        'Drag a column header to move it, or the edge of a header to change its width; each table’s Columns… button lists them too. The order and widths are kept on this computer only. ',
+        Object.keys(lay).length ? el('button', { id: 'cols-reset-all', onclick: async () => { await this.saveColumnLayout({}); for (const g of Object.values(this.grids)) g.refreshColumns?.(); this.renderSettings(); } }, 'Reset all column orders and widths') : null));
+  }
+
   // Settings → General → Resights: the Sightings table's order, and resights on the map
   resightSection(sec, dnum, dchk) {
     const d = this.S.config.display;
@@ -1983,6 +2074,7 @@ class App {
         el('h4', {}, 'Fading'),
         el('div', { class: 'grid2' }, dnum('fade_hours', 'Fade after (hours)', 0.25, 72, 0.25)),
         el('div', { class: 'grid2 checks' }, dchk('fade_enabled', 'Fade the trackline, sightings and events older than this (waypoints never fade)'))),
+      this.tablesSection(sec, sel),
       this.resightSection(sec, dnum, dchk),
       sec('Basemap and offline charts', el('p', {}, 'The map’s layers, downloads for offline use and the charts folder are in ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('basemap'); } }, 'Settings → Basemap'), '.')),

@@ -41,7 +41,7 @@ OPTIONAL = {
     "events": {"ID", "Notes"},
 }
 # survey details that may be blank (platform altitude matters only for reticle distances: checked there)
-META_OPTIONAL = {"platform_altitude_ft"}
+META_OPTIONAL = {"platform_altitude_ft", "survey_notes"}
 # Start and End rows need only their time and position
 EFFORT_START_END_REQUIRED = {"DateTime", "Lat", "Lon", "Effort"}
 NOT_DATA = {"RowID", "Map", "VesHdg"}          # internal / display columns
@@ -349,7 +349,7 @@ def run_qc(rec) -> dict:
         for o in dups:
             add("error", "Observers in one position at a time", f"{o} is in more than one position (Port / Recorder / Stbd).",
                 "effort", r, "Port", name)
-        if st == "ON":
+        if schema.is_on(st):
             gap = (t1 - t0).total_seconds() / 60
             if gap > remind_min * L["conditions_gap_factor"]:
                 add("warning", "Conditions recorded regularly",
@@ -441,7 +441,7 @@ def run_qc(rec) -> dict:
         if i in skip:
             continue
         st = (state_at(t0) or {}).get("Effort")
-        can_fix = st in ("ON", "OFF", "Start", "")
+        can_fix = schema.is_on(st) or st in ("OFF", "Start", "")
         if i in paired:
             j = paired[i]
             tb = tp[j + 1][0]
@@ -460,12 +460,12 @@ def run_qc(rec) -> dict:
                 f"at {t1.astimezone(tz).strftime('%H:%M:%S')} — a GPS glitch? Fix adds an ERROR row to the Effort table for the jump.",
                 "track", label="Trackline", fix=fix if can_fix else None)
         elif dt > gap_limit:
-            if st in ("ON", "OFF", "Start"):
-                add("warning" if st == "ON" else "info", "Trackline plausible",
+            if schema.is_on(st) or st in ("OFF", "Start"):
+                add("warning" if schema.is_on(st) else "info", "Trackline plausible",
                     f"No track points for {_fmt_dur(dt)} from {t0.astimezone(tz).strftime('%H:%M:%S')} "
-                    f"({'on' if st == 'ON' else 'off'} effort) — was tracking paused or the GPS lost?"
-                    + (" Fix adds an ERROR row to the Effort table for the gap." if st == "ON" else ""),
-                    "track", label="Trackline", fix=fix if st == "ON" else None)
+                    f"({'on' if schema.is_on(st) else 'off'} effort) — was tracking paused or the GPS lost?"
+                    + (" Fix adds an ERROR row to the Effort table for the gap." if schema.is_on(st) else ""),
+                    "track", label="Trackline", fix=fix if schema.is_on(st) else None)
 
     def check_vessel_pos(tab, r, name, la, lo):
         p = _pos(r, la, lo)
@@ -557,7 +557,7 @@ def run_qc(rec) -> dict:
         if t:
             stt = state_at(t)
             effort = (stt or {}).get("Effort")
-            if effort != "ON" and not resight:                 # resights off effort (an approach) are normal
+            if not schema.is_on(effort) and not resight:                 # resights off effort (an approach) are normal
                 add("info", "Sightings on effort", f"Recorded {'off effort' if effort else 'before any Effort row'} — fine if intended.",
                     "sightings", r, "DateTime", name)
             elif r.get("Observer") and r.get("Observer") not in ("UNK",) and not resight:

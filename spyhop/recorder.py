@@ -102,6 +102,8 @@ class Recorder:
 
     def emit_tab(self, tab: str):
         t = self.tables[tab]
+        if tab == "effort":
+            self._number_segments()
         self.emit({"type": "tab", "tab": tab, "rows": t.rows,
                    "can_undo": bool(t.undo_stack), "can_redo": bool(t.redo_stack)})
 
@@ -234,6 +236,8 @@ class Recorder:
                 self.notices.append(t.notice)
             self.tables[tab] = t
         self.track = Track(self.cfg.data_dir / f"{self.survey['prefix']}_track.csv" if self.survey else None)
+        if self.survey:
+            self._number_segments()
         self._raw_log_follow()
         self._load_instruments()
 
@@ -321,7 +325,11 @@ class Recorder:
         for k, v in (updates or {}).items():
             if k not in meta:
                 continue
-            v = ("" if v is None else str(v)).strip().replace("\n", " ")
+            v = ("" if v is None else str(v)).strip()
+            if k not in schema.META_MULTILINE:
+                v = v.replace("\n", " ")
+            else:
+                v = v.replace("\r\n", "\n")
             if k == "platform_type" and v:
                 match = next((o for o in schema.FIXED_LISTS["platform_type"] if o.lower() == v.lower()), None)
                 if match is None:
@@ -345,7 +353,7 @@ class Recorder:
             raise ValueErrorMsg(self.NO_SURVEY)
         meta = self._clean_meta(updates, self.read_meta())
         self._write_meta(meta)
-        self.cfg.save_settings({"last_meta": meta})
+        self.cfg.save_settings({"last_meta": {k: v for k, v in meta.items() if k != "survey_notes"}})
         self.emit({"type": "reload"})
         return meta
 
@@ -401,7 +409,7 @@ class Recorder:
         self.new_row("effort", {"Effort": "Start"}, _allow_start=True)
         self.tables["effort"].undo_stack.clear()        # the Start row can't be undone
         self._write_meta(meta, system={"spyhop_version_created": __version__, **self._template_meta()})
-        self.cfg.save_settings({"last_meta": meta})
+        self.cfg.save_settings({"last_meta": {k: v for k, v in meta.items() if k != "survey_notes"}})
         self._set_tracking(True)
         self._record_point("Start")                   # the track's first point is marked Start
         self.emit({"type": "reload"})
@@ -897,9 +905,12 @@ class Recorder:
             raise ValueErrorMsg("Only the last Effort row can be End. "
                                 "To end the survey, use End survey in the Survey tab.")
 
-    def new_row(self, tab: str, prefill: dict | None = None, lat=None, lon=None, _allow_start=False) -> dict:
+    def new_row(self, tab: str, prefill: dict | None = None, lat=None, lon=None, _allow_start=False,
+                _index: int | None = None) -> dict:
+        """A new row with the time and position now (prefill may give others). _index: insert it there,
+        copying forward from the row before it and not using the live GPS (insert_row)."""
         self._require_survey(tab)
-        if tab != "marks" and self.survey_ended():
+        if tab != "marks" and self.survey_ended() and _index is None:     # inserting to fix a gap is allowed
             raise ValueErrorMsg("This survey has ended, so no rows can be added. To continue it, "
                                 "delete its End row in the Effort tab (or Undo).")
         t = self.table(tab)
@@ -908,13 +919,14 @@ class Recorder:
         v = self.vessel()
         has_fix = v["has_fix"]
         warnings = []
-        if tab == "effort" and t.rows:
-            prev = t.rows[-1]
+        at = len(t.rows) if _index is None else _index
+        if tab == "effort" and t.rows and at > 0:
+            prev = t.rows[at - 1]
             for c in spec["columns"]:
                 if c["copy"] and c["type"] != "id":
                     row[c["key"]] = prev.get(c["key"], "")
-            if row.get("Effort") not in ("ON", "OFF"):
-                row["Effort"] = ""          # after Start, choose ON or OFF
+            if not (schema.is_on(row.get("Effort")) or row.get("Effort") == "OFF"):
+                row["Effort"] = ""          # after Start, choose ON (or a kind of on effort) or OFF
         if tab == "effort" and not t.rows:
             row["Effort"] = "Start"
         row["DateTime"] = self.now().isoformat(timespec="seconds")
@@ -923,11 +935,13 @@ class Recorder:
                     "marks": ("Lat", "Lon")}[tab]
         if lat is not None and lon is not None:
             row[pos_keys[0]], row[pos_keys[1]] = f"{float(lat):.6f}", f"{float(lon):.6f}"
+        elif _index is not None:
+            pass                            # an inserted row: its position comes from prefill
         elif has_fix:
             row[pos_keys[0]], row[pos_keys[1]] = f"{v['lat']:.6f}", f"{v['lon']:.6f}"
         else:
             warnings.append("No GPS fix — position left blank.")
-        if "VesHdg" in row and has_fix and v.get("best_heading") is not None:
+        if "VesHdg" in row and has_fix and v.get("best_heading") is not None and _index is None:
             row["VesHdg"] = f"{v['best_heading']:.0f}"
         if "BrgRef" in row:
             row["BrgRef"] = self.cfg.settings.get("bearing_reference", "M")
@@ -941,7 +955,7 @@ class Recorder:
             row["Name"] = f"WP{len(t.rows) + 1}"
         changed = set()
         for k, raw in (prefill or {}).items():
-            if schema.column(tab, k) is None:
+            if schema.column(tab, k) is None or schema.column(tab, k).get("readonly"):
                 continue
             val, w = self.parse_value(tab, k, raw, row)
             row[k] = val
@@ -954,20 +968,89 @@ class Recorder:
         if tab == "effort":
             if row.get("Effort") == "Start" and t.rows and not _allow_start:
                 raise ValueErrorMsg("Only the first Effort row can be Start.")
-            self._check_effort_value(t, len(t.rows), row.get("Effort", ""), adding=True)
-        added = self._write(lambda: t.add(row))
+            self._check_effort_value(t, at, row.get("Effort", ""), adding=True)
+        added = self._write(lambda: t.add(row, at))
         if tab == "effort" and row.get("Effort") == "End":
             self._set_tracking(False)
-        if tab == "effort" and row.get("Effort") == "ON":
+        if tab == "effort" and schema.is_on(row.get("Effort")):
             self._auto_tracking()
         self.emit_tab(tab)
         return {"row": added or row, "warnings": warnings}
+
+    def _number_segments(self):
+        """Effort segments: a new number on each Effort row whose status differs from the row before;
+        rows with the same status as the row before share its number. Kept up to date after every
+        change to the Effort table (not an undo step of its own)."""
+        t = self.tables.get("effort")
+        if t is None or t.path is None:
+            return
+        seg, prev, changed = 0, None, False
+        for i, r in enumerate(t.rows):
+            st = r.get("Effort", "")
+            if i == 0 or st != prev:
+                seg += 1
+            prev = st
+            if r.get("Segment") != str(seg):
+                r["Segment"] = str(seg)
+                changed = True
+        if changed:
+            self._write(t.save)
+
+    INSERT_METHODS = {"average": "averaged from the rows before and after",
+                      "previous": "copied from the row before", "next": "copied from the row after"}
+
+    def insert_row(self, tab: str, row_id: str, method: str, where: str = "after") -> dict:
+        """Insert a row before or after row_id, its time and position averaged from the rows either side
+        of the gap, or copied from the row before or after it; a note says how."""
+        self._require_survey(tab)
+        t = self.table(tab)
+        if method not in self.INSERT_METHODS:
+            raise ValueErrorMsg("Choose how to fill in the time and position: average, previous or next.")
+        try:
+            i = t.index_of(row_id)
+        except KeyError:
+            raise ValueErrorMsg("That row no longer exists.")
+        at = i + 1 if where == "after" else i
+        before = t.rows[at - 1] if at > 0 else None
+        after = t.rows[at] if at < len(t.rows) else None
+        if tab == "effort" and at == 0:
+            raise ValueErrorMsg("Nothing can go before the Start row: it marks when the survey began.")
+        if tab == "effort" and before is not None and before.get("Effort") == "End":
+            raise ValueErrorMsg("Nothing can go after the End row: it must be the last.")
+        src = {"previous": [before], "next": [after], "average": [before, after]}[method]
+        if any(r is None for r in src):
+            raise ValueErrorMsg({"previous": "There is no row before it to copy from.", "next": "There is no row after it to copy from.",
+                                 "average": "Averaging needs a row before and a row after."}[method])
+        times = [parse_time(r.get("DateTime", "")) for r in src]
+        if any(x is None for x in times):
+            raise ValueErrorMsg("A row to take the time from has no time.")
+        when = times[0] if len(times) == 1 else times[0] + (times[1] - times[0]) / 2
+        prefill = {"DateTime": when.replace(microsecond=0).isoformat()}
+        pts = [(r.get("Lat"), r.get("Lon")) for r in src if r.get("Lat") not in (None, "") and r.get("Lon") not in (None, "")]
+        warn = None
+        if len(pts) == len(src):
+            prefill["Lat"] = f"{sum(float(a) for a, _ in pts) / len(pts):.6f}"
+            prefill["Lon"] = f"{sum(float(b) for _, b in pts) / len(pts):.6f}"
+        else:
+            warn = "A row to take the position from has none, so the position is blank."
+        tz = self.tz()
+        hms = lambda x: x.astimezone(tz).strftime("%H:%M:%S")
+        note = f"Inserted: time and position {self.INSERT_METHODS[method]} ({' and '.join(hms(x) for x in times)})."
+        prefill["Notes"] = note
+        res = self.new_row(tab, prefill, _index=at)
+        if warn:
+            res["warnings"] = [warn, *res.get("warnings", [])]
+        return res
 
     def toggle_effort(self) -> dict:
         self._require_survey("effort")
         t = self.table("effort")
         last = t.rows[-1].get("Effort") if t.rows else ""
-        return self.new_row("effort", {"Effort": "OFF" if last == "ON" else "ON"})
+        if schema.is_on(last):
+            return self.new_row("effort", {"Effort": "OFF"})
+        # back on effort the way it was last on (ON, LINE, FOLLOW or PHOTO)
+        kind = next((r.get("Effort") for r in reversed(t.rows) if schema.is_on(r.get("Effort"))), "ON")
+        return self.new_row("effort", {"Effort": kind})
 
     def edit(self, tab: str, row_id: str, updates: dict) -> dict:
         self._require_survey(tab)
@@ -981,6 +1064,9 @@ class Recorder:
         for k, raw in updates.items():
             if k == "RowID":
                 continue
+            c = schema.column(tab, k)
+            if c and c.get("readonly"):
+                raise ValueErrorMsg(f"{c['label']} is filled in by Spyhop and can't be typed.")
             val, w = self.parse_value(tab, k, raw, row)
             if w:
                 warnings.append(w)
@@ -996,7 +1082,7 @@ class Recorder:
             self._set_tracking(False)
         if tab == "effort" and was_ended != self.survey_ended():
             self.emit({"type": "reload"})
-        if tab == "effort" and "Effort" in changed and row.get("Effort") == "ON":
+        if tab == "effort" and "Effort" in changed and schema.is_on(row.get("Effort")):
             self._auto_tracking()
         self.emit_tab(tab)
         return {"row": new or row, "warnings": warnings}
@@ -1087,9 +1173,9 @@ class Recorder:
         self._record_point()
 
     def _track_state(self, when: datetime) -> str:
-        """Effort state in force at a time: Start, ON, OFF, End or ERROR (OFF if unknown)."""
+        """Effort state in force at a time: Start, ON (or LINE/FOLLOW/PHOTO), OFF, End or ERROR (OFF if unknown)."""
         st = self.effort_at(when)
-        return st if st in ("Start", "ON", "OFF", "End", "ERROR") else "OFF"
+        return st if st in schema.FIXED_LISTS["effort"] else "OFF"
 
     # -- trackline breaks (QC → Fix) ----------------------------------------------------
     def insert_track_break(self, t0_iso: str, t1_iso: str) -> dict:
@@ -1166,7 +1252,7 @@ class Recorder:
             added.append(r)
         follows = any(x[0] is not None and t0 < x[0] <= t1 for x in timed)
         if not follows:
-            back = make(t1, st if st in ("ON", "OFF") else "", f"Back after the trackline break from {hhmm(t0)}.")
+            back = make(t1, st if schema.is_on(st) or st == "OFF" else "", f"Back after the trackline break from {hhmm(t0)}.")
             r = self._write(lambda: t.add(back, index_for(t1)))
             if r:
                 added.append(r)
@@ -1211,7 +1297,7 @@ class Recorder:
             try:
                 when = datetime.fromisoformat(p["DateTime"])
                 # a point in the same second as an effort row keeps the state recorded at the time
-                if not (when in row_times and q.get("Effort") in ("Start", "ON", "OFF", "End")):
+                if not (when in row_times and q.get("Effort") in ("Start", "OFF", "End", *schema.ON_EFFORT)):
                     q["Effort"] = self._track_state(when)
             except ValueError:
                 pass
@@ -1310,7 +1396,7 @@ class Recorder:
         return dest
 
     # columns of the merged CSV, in order
-    MERGED_EFFORT = ["Effort", "Visibility", "SeaState", "Weather", "Glare", "Port", "Recorder", "Starboard"]
+    MERGED_EFFORT = ["Effort", "Segment", "Visibility", "SeaState", "Weather", "Glare", "Port", "Recorder", "Starboard"]
     MERGED_SIGHTING = ["SightNo", "ResightOf", "Species", "Count", "Calves", "NumConf", "IDrel", "Behaviors", "Observer",
                        "Bearing", "BrgRef", "Distance", "DistUnit", "Altitude", "SigLat", "SigLon", "VesHdg", "Images", "FieldID"]
     MERGED_EVENT = ["EventNo", "EventType", "EventID"]
@@ -1444,7 +1530,7 @@ class Recorder:
             st = q[2] if q else None
             if seg and (q is None or st != state):
                 if len(seg) > 1:
-                    on = state == "ON"
+                    on = schema.is_on(state)
                     feats.append({"type": "Feature", "geometry": {"type": "LineString", "coordinates": seg},
                                   "properties": {"name": f"{prefix} track ({'on' if on else 'off'} effort)",
                                                  "survey": prefix, "Effort": state,

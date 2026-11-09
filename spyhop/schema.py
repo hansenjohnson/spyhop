@@ -15,13 +15,14 @@ from __future__ import annotations
 
 
 def col(key, type="text", label=None, list=None, auto=False, width=None, hidden=False,
-        default="", copy=True, skip=False, help="", optional=None):
+        default="", copy=True, skip=False, help="", optional=None, readonly=False):
     """skip=True: a new row's cursor jumps over this column (filled in later, e.g. IDs).
     help: one-line description shown under the table when the column is selected.
-    optional: the name of a Settings → General choice that shows or hides the column (it's always in the CSV)."""
+    optional: the name of a Settings → General choice that shows or hides the column (it's always in the CSV).
+    readonly: worked out by Spyhop, not typed (e.g. the effort segment)."""
     return {"key": key, "type": type, "label": label or key, "list": list, "auto": auto,
             "width": width, "hidden": hidden, "default": default, "copy": copy, "skip": skip,
-            "help": help, "optional": optional}
+            "help": help, "optional": optional, "readonly": readonly}
 
 
 FIXED_LISTS = {
@@ -32,7 +33,9 @@ FIXED_LISTS = {
                 "Drizzle", "Rain", "Showers", "Snow"],
     "visibility": ["<0.5 nm", "0.5-1 nm", "1-2 nm", "2-5 nm", "5-10 nm", ">10 nm"],
     "glare": ["None", "Slight", "Moderate", "Severe"],
-    "effort": ["Start", "ON", "OFF", "End", "ERROR"],   # ERROR: a trackline break (GPS jump or loss)
+    # on effort: ON (plain on/off effort) or a kind of on effort (LINE transect, FOLLOW a focal whale or
+    # group, PHOTO a directed photo-ID approach); ERROR: a trackline break (GPS jump or loss)
+    "effort": ["Start", "ON", "LINE", "FOLLOW", "PHOTO", "OFF", "End", "ERROR"],
     "images": ["None", "Photo", "Video", "Photo + Video", "Drone"],
     "brgref": ["M", "T", "R"],
     "distunit": ["m", "km", "nm", "mi", "yd", "reticle"],
@@ -51,7 +54,9 @@ SURVEY_META = [
     ("organization", "Organization", "Organization running the survey"),
     ("chief_scientist", "Chief scientist", "Chief scientist for this survey"),
     ("chief_scientist_email", "Chief scientist email", "name@example.org"),
+    ("survey_notes", "Survey notes", "General notes or a summary of the survey: conditions, what went well, problems, follow-up"),
 ]
+META_MULTILINE = {"survey_notes"}       # a text box of several lines in the Survey tab
 
 COMMON_HEAD = [
     col("RowID", "id", hidden=True),
@@ -115,7 +120,9 @@ TABS = {
             col("Lat", "lat", "Lat", auto=True, copy=False, help="Platform latitude from GPS when the row was added."),
             col("Lon", "lon", "Lon", auto=True, copy=False, help="Platform longitude from GPS when the row was added."),
             col("Effort", "choice", "Effort", list="effort", width=60,
-                help="Start = survey began (first row only) · ON = actively searching · OFF = not searching · End = survey ended (last row only; use End survey in the Survey tab)."),
+                help="Start = survey began (first row only) · ON = on effort, searching · LINE = on effort, line transect · FOLLOW = on effort, focal follow of one whale or group · PHOTO = on effort, directed photo-ID approach · OFF = not searching · End = survey ended (last row only; use End survey in the Survey tab)."),
+            col("Segment", "int", "Seg", width=45, copy=False, skip=True, readonly=True, optional="segment",
+                help="Effort segment: numbered by Spyhop, a new number each time the effort status changes from the row before (e.g. ON → OFF). Rows with the same status in a row share it."),
             col("Visibility", "choice", "Vis", list="visibility", help="Estimated visibility."),
             col("SeaState", "choice", "SeaSt", list="seastate", width=55, help="Sea state, 0–9."),
             col("Weather", "choice", "Weather", list="weather", help="Weather."),
@@ -168,6 +175,13 @@ MARKER_POS = {
     "events": [("Lat", "Lon")],
     "marks": [("Lat", "Lon")],
 }
+
+ON_EFFORT = ("ON", "LINE", "FOLLOW", "PHOTO")     # every Effort value that counts as on effort
+
+
+def is_on(effort) -> bool:
+    return effort in ON_EFFORT
+
 
 TRACK_COLUMNS = ["DateTime", "Lat", "Lon", "SOG", "COG", "Effort"]
 

@@ -2345,3 +2345,65 @@ def test_resights(tmp_path):
     assert "ResightOf" in head and any(m.get("ResightOf") == a["SightNo"] for m in merged)
     with pytest.raises(ValueErrorMsg, match="no longer exists"):
         rec.add_resight(a["RowID"])
+
+
+def test_effort_kinds_segments_and_insert(rec):
+    """0.31: LINE/FOLLOW/PHOTO count as on effort; Toggle effort returns to the last kind; effort segments
+    number status changes; Insert row averages or copies the time and position, with a note."""
+    from spyhop import qc
+    from spyhop.recorder import parse_time
+    from datetime import datetime, timedelta, timezone
+    e = rec.tables["effort"]
+    a = rec.new_row("effort", {"Effort": "LINE"})["row"]
+    rec.edit("effort", a["RowID"], {"DateTime": "2026-11-04T12:10:00+00:00"})
+    rec.new_row("effort", {"Effort": "LINE", "SeaState": "3"})
+    rec.toggle_effort()                                           # LINE → OFF
+    assert e.rows[-1]["Effort"] == "OFF"
+    rec.toggle_effort()                                           # OFF → LINE (the last kind), not ON
+    assert e.rows[-1]["Effort"] == "LINE"
+    rec.new_row("effort", {"Effort": "FOLLOW"})
+    assert [r["Segment"] for r in e.rows] == ["1", "2", "2", "3", "4", "5"]
+    assert rec._track_state(datetime.now(timezone.utc) + timedelta(seconds=5)) == "FOLLOW"
+    with pytest.raises(ValueErrorMsg, match="filled in by Spyhop"):
+        rec.edit("effort", e.rows[1]["RowID"], {"Segment": "9"})
+    rec.delete("effort", e.rows[3]["RowID"])                      # OFF gone: LINE, LINE, LINE merge
+    assert [r["Segment"] for r in e.rows] == ["1", "2", "2", "2", "3"]
+    rec.undo("effort")
+    assert [r["Segment"] for r in e.rows] == ["1", "2", "2", "3", "4", "5"]
+    # Insert row: average of the rows either side, with a note; copies; refusals
+    s1 = rec.new_row("sightings", {"Species": "Fin whale", "Count": "1"})["row"]
+    s2 = rec.new_row("sightings", {"Species": "Fin whale", "Count": "1"})["row"]
+    rec.edit("sightings", s1["RowID"], {"DateTime": "2026-11-04T12:00:00+00:00", "Lat": "41.9", "Lon": "-70.3"})
+    rec.edit("sightings", s2["RowID"], {"DateTime": "2026-11-04T12:10:00+00:00", "Lat": "42.1", "Lon": "-70.5"})
+    mid = rec.insert_row("sightings", s1["RowID"], "average")["row"]
+    S = rec.tables["sightings"].rows
+    assert [r["RowID"] for r in S].index(mid["RowID"]) == 1
+    assert parse_time(mid["DateTime"]) == parse_time("2026-11-04T12:05:00+00:00")
+    assert abs(float(mid["Lat"]) - 42.0) < 1e-6 and abs(float(mid["Lon"]) + 70.4) < 1e-6
+    assert mid["Notes"].startswith("Inserted: time and position averaged from the rows before and after")
+    nxt = rec.insert_row("sightings", s2["RowID"], "previous", where="before")["row"]
+    assert parse_time(nxt["DateTime"]) == parse_time(mid["DateTime"]) and "copied from the row before" in nxt["Notes"]
+    with pytest.raises(ValueErrorMsg, match="no row after"):
+        rec.insert_row("sightings", s2["RowID"], "next")
+    with pytest.raises(ValueErrorMsg, match="before the Start row"):
+        rec.insert_row("effort", e.rows[0]["RowID"], "next", where="before")
+    rec.end_survey()
+    with pytest.raises(ValueErrorMsg, match="after the End row"):
+        rec.insert_row("effort", e.rows[-1]["RowID"], "previous")
+    ins = rec.insert_row("effort", e.rows[-2]["RowID"], "previous")["row"]       # fixing an ended survey is allowed
+    assert e.rows[-2]["RowID"] == ins["RowID"] and e.rows[-1]["Effort"] == "End"
+    head, merged = rec.merged_rows()
+    assert "Segment" in head
+
+
+def test_survey_notes_and_column_layout(rec):
+    rec.set_meta({"survey_notes": "Calm morning.\nFog after 14:00", "organization": "NEAq"})
+    assert rec.read_meta()["survey_notes"] == "Calm morning.\nFog after 14:00"
+    assert "survey_notes" not in rec.cfg.settings["last_meta"] and rec.cfg.settings["last_meta"]["organization"] == "NEAq"
+    from spyhop.server import clean_column_layout
+    got = clean_column_layout({"sightings": {"order": ["Species", "Nope", "Species", "DateTime"], "widths": {"Notes": "2000", "Count": 10, "X": 50}},
+                               "bogus": {"order": ["a"]}})
+    assert got == {"sightings": {"order": ["Species", "DateTime"], "widths": {"Notes": 800, "Count": 30}}}
+    rec.cfg.save_settings({"column_layout": got})
+    import json
+    assert "column_layout" in rec.cfg.local_path.read_text() and "column_layout" not in rec.cfg.config_path.read_text()

@@ -210,6 +210,7 @@ DEFAULT_DISPLAY = {
     "heading_vector_min": "6",      # its length: minutes ahead at the current speed
     "sighting_lines": "1",          # vectors from the vessel to each sighting
     "fieldid_lines": "0",           # dotted line joining sightings with the same FieldID
+    "sightings_row_colors": "resights",  # Sightings rows: none | alternate | resights (tint resights) | groups (a tint per sighting and its resights)
     "resight_order": "time",        # Sightings table: time (as recorded) | nested (resights under their first sighting)
     "resight_lines": "1",           # dotted line from a sighting through its resights, in time order
     "resight_marker_shape": "same", # resights' marker: same (as the sighting) | a shape | hidden
@@ -239,6 +240,8 @@ DEFAULT_SETTINGS = {
     "nmea_log_enabled": False,      # write every received NMEA sentence to <data folder>/nmea_logs
     "nmea_log_timestamps": True,
     "altitude_column": "auto",      # Sightings' Alt column: auto (shown for aerial surveys) | show | hide
+    "segment_column": "show",       # Effort's Seg (effort segment) column: show | hide
+    "column_layout": {},            # this computer's column order and widths: {tab: {order: [keys], widths: {key: px}}}
     "reticle_method": "binoculars", # how Unit = reticle readings are taken: binoculars | marks | inclinometer (reticle.py)
     "reticle_magnification": "7",   # binoculars: a key of reticle.PRESETS, which suggests the angle below
     "reticle_deg_per_division": 0.573,   # binoculars: degrees per reticle division
@@ -287,6 +290,7 @@ SHARED_SETTINGS = {
     "nmea_log_enabled": "Raw NMEA log",
     "nmea_log_timestamps": "Raw NMEA log time stamps",
     "altitude_column": "Altitude column",
+    "segment_column": "Effort segment column",
     "reticle_method": "Reticle readings",
     "reticle_magnification": "Binocular magnification",
     "reticle_deg_per_division": "Degrees per reticle division",

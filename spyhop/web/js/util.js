@@ -259,6 +259,11 @@ export function isTrackBreak(a, b, st = {}) {
   return dt <= 0 || d / 1852 / (dt / 3600) > kn;
 }
 
+// Effort values that count as on effort: plain ON, or a kind of on effort (line transect,
+// focal follow, photo-ID approach). The same list is schema.ON_EFFORT.
+export const ON_EFFORT = ['ON', 'LINE', 'FOLLOW', 'PHOTO'];
+export const isOn = (e) => ON_EFFORT.includes(e);
+
 // Effort state of each track point from the Effort table as it is now (so an ERROR row added
 // later by Quality Control → Fix applies). A point in the same second as an Effort row keeps the
 // state it was recorded with, as in the export.

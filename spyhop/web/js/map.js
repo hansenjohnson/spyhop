@@ -1,7 +1,7 @@
 // Interactive chart: base layers, vessel, track, data markers, popups, measure tool.
 /* global L, topojson */
 import { Resights } from './resights.js';
-import { el, esc, fmtCoord, fmtPos, distM, bearing, destination, fmtDist, fmtBrg, timeParts, toast, api, isTrackBreak, trackStates, dashFor } from './util.js';
+import { el, esc, fmtCoord, fmtPos, distM, bearing, destination, fmtDist, fmtBrg, timeParts, toast, api, isTrackBreak, trackStates, dashFor, isOn } from './util.js';
 import { DepthProbe } from './depth.js';
 
 const SHAPES = ['Diamond', 'Square', 'Triangle', 'Circle', 'Star'];
@@ -614,7 +614,7 @@ export class MapView {
     if (state === 'ERROR') { this.trackSeg = null; return; }
     const brk = prev && (prev.state === 'ERROR' || isTrackBreak(prev.p, p, this.app.S.config.settings));
     if (brk) this.trackSeg = null;
-    const on = state === 'ON', old = this.isOld(p.DateTime), key = `${on}|${old}`;
+    const on = isOn(state), old = this.isOld(p.DateTime), key = `${on}|${old}`;
     if (!this.trackSeg || this.trackSeg.key !== key) {
       const start = this.trackSeg ? [this.trackSeg.last] : [];
       let line = null;
