@@ -336,7 +336,7 @@ class App:
                  "nmea_inputs": ", ".join(f"{s.get('name')}: {s.get('state')}" for s in self.sources.status.values()) or "none"}
         self.log_perf()
         z = await asyncio.get_running_loop().run_in_executor(
-            None, diag.make_bundle, cfg.root, cfg.data_dir, cfg.settings_path, extra, diag.log_dir(cfg.root))
+            None, diag.make_bundle, cfg, extra, diag.log_dir(cfg.root))
         log.info("diagnostics bundle saved: %s", z)
         return json_ok(name=z.name, path=str(z), url=f"/api/diagnostics/{quote(z.name)}")
 
@@ -549,6 +549,9 @@ class App:
         return json_ok()
 
     async def reload_config(self, request):
+        """Read templates/current (lists, shortcuts, spyhop-config.json) and spyhop-local.json again,
+        e.g. after editing them by hand."""
+        self.rec.cfg.load()
         self.rec.cfg.reload()
         self._broadcast_soon({"type": "reload"})
         return json_ok()
@@ -560,21 +563,17 @@ class App:
         targets = {"data": cfg.root, "app": cfg.root, "exports": cfg.export_dir, "charts": cfg.charts_dir,
                    "overlays": cfg.overlays_dir, "survey": cfg.data_dir, "datafolder": cfg.data_dir,
                    "nmealogs": cfg.data_dir / "nmea_logs", "logs": diag.log_dir(cfg.root),
-                   "reports": reports.user_dir(cfg), "routes": cfg.routes_dir,
-                   "backups": templates.backups_dir(cfg), "templates": templates.templates_dir(cfg)}
+                   "routes": cfg.routes_dir, "backups": cfg.backups_dir, "templates": cfg.saved_dir,
+                   "current": cfg.current_dir}
         if what in targets:
             p = targets[what]
-            if what in ("backups", "templates"):
-                p.mkdir(parents=True, exist_ok=True)
-            if what == "reports":
-                reports.ensure_dir(cfg)
-            if what in ("nmealogs", "logs"):
+            if what in ("backups", "templates", "current", "nmealogs", "logs"):
                 p.mkdir(parents=True, exist_ok=True)
         elif what.startswith("config:"):
             name = what.split(":", 1)[1]
-            if name not in ("species", "event_types", "observers", "behaviors", "shortcuts", "display"):
+            if name not in ("species", "event_types", "observers", "behaviors", "shortcuts"):
                 raise ValueErrorMsg("Unknown config file")
-            p = cfg.root / f"{name}.csv"
+            p = cfg.current_dir / f"{name}.csv"
         elif what == "reportsout":                       # the folder Run Reports last saved to
             if not self.last_reports_dir:
                 raise ValueErrorMsg("No reports have been saved yet.")
@@ -988,7 +987,7 @@ class App:
     async def reports_list(self, request):
         cfg = self.rec.cfg
         saved, errors = reports.load(cfg)
-        return json_ok(reports=saved, errors=errors, folder=str(reports.user_dir(cfg)),
+        return json_ok(reports=saved, errors=errors,
                        exports=str(cfg.export_dir), last_folder=str(self.last_reports_dir or ""),
                        columns={t: reports.columns(t) for t in reports.TABLES}, ops=reports.OPS,
                        pdf=find_chrome() is not None)
@@ -1144,12 +1143,11 @@ class App:
         url, t = got
         cfg = self.rec.cfg
         backup = bool(b.get("backup"))
-        bdir = str(b.get("backup_dir", "") or "").strip()
-        cfg.save_settings({"template_backup": backup, "template_backup_dir": bdir})
+        cfg.save_settings({"template_backup": backup})
         kind = t.get("_kind", "web")
 
         def work():
-            saved = templates.save_backup(cfg, bdir) if backup else None
+            saved = templates.save_backup(cfg) if backup else None
             changed, done = templates.apply_all(cfg, t)
             copy = None
             if kind in ("web", "file"):          # keep a copy in the templates folder, for use offline
@@ -1194,10 +1192,8 @@ class App:
                        removed_waypoints=len(done["remove_waypoints"]))
 
     async def templates_backup(self, request):
-        b = await request.json() if request.can_read_body else {}
         try:
-            p = await asyncio.get_running_loop().run_in_executor(
-                None, templates.save_backup, self.rec.cfg, str(b.get("dir", "") or "").strip())
+            p = await asyncio.get_running_loop().run_in_executor(None, templates.save_backup, self.rec.cfg)
         except templates.TemplateError as e:
             raise ValueErrorMsg(str(e))
         return json_ok(path=str(p), folder=str(p.parent))
@@ -1210,8 +1206,14 @@ class App:
         except OSError as e:
             raise ValueErrorMsg(f"Couldn't read the templates folder: {e}")
         return json_ok(folder=str(templates.templates_dir(cfg)), templates=items, backups=backups,
-                       backups_folder=str(templates.backups_dir(cfg)),
-                       current=cfg.settings.get("template_current") or None)
+                       backups_folder=str(templates.backups_dir(cfg)), current_folder=str(cfg.current_dir),
+                       current=cfg.settings.get("template_current") or None,
+                       status=templates.current_status(cfg))
+
+    async def templates_status(self, request):
+        """Is the setup in use saved as a template? (templates.current_status; asked before a survey starts)"""
+        st = await asyncio.get_running_loop().run_in_executor(None, templates.current_status, self.rec.cfg)
+        return json_ok(status=st)
 
     async def templates_changes(self, request):
         """What the record of changes' "What changed" should say: for a new template, the parts changed since
@@ -1412,6 +1414,7 @@ class App:
         r.add_post("/api/config/list", self.save_list)
         r.add_post("/api/config/shortcuts", self.save_shortcuts)
         r.add_get("/api/templates", self.templates_list)
+        r.add_get("/api/templates/status", self.templates_status)
         r.add_post("/api/templates/check", self.templates_check)
         r.add_post("/api/templates/use", self.templates_use)
         r.add_post("/api/templates/backup", self.templates_backup)

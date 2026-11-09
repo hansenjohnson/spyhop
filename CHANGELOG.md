@@ -6,6 +6,33 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.28.0 — 2026-11-09
+
+- **New folder layout.** Everything a team shares now lives in a `templates` folder in Spyhop's folder:
+  - `templates/current/` is **the setup in use**: the species, event, observer and behavior lists, `shortcuts.csv` and `spyhop-config.json`. That file holds the shared settings, network GPS inputs, map feeds, online overlays, map display, saved reports and the record of changes. It is a template, unzipped, and everything set in Settings and Tools → Reports is saved there.
+  - `templates/saved/` holds your templates. They used to be in the survey data folder.
+  - `templates/backups/` holds the backups made before using a template. The option to choose another backup folder is gone.
+  - **`spyhop-local.json`** holds this computer's own settings: the data folder, serial ports, window layout, last survey details and the open survey.
+  - The old `settings/` and `reports/` folders and the list, shortcut and `display.csv` files at the top of Spyhop's folder are gone. Spyhop moves them into the new layout the first time it starts.
+- **Starting a survey:** if the setup in use isn't saved as a template, or has changed since, Start New Survey offers to **save it as a template**, update the template it came from, or start without saving.
+- **Survey details** now quietly record the template the setup came from, and whether the setup still matched it when the survey started. They already recorded the Spyhop version.
+- **The map zooms to the open survey** when Spyhop starts with one open, active or ended.
+- **Coastline (offline)** is now only a base map. It's no longer also an overlay, so the coastline is drawn only when it is the chosen map.
+- **Reports:** saved reports are part of the setup in use, so the reports folder and its Refresh link are gone.
+- **Clean-up before 1.0:** Spyhop no longer converts files from older versions. This drops:
+  - VesLat/VesLon columns, `marks.csv`
+  - Start rows added to old surveys
+  - list entries and shortcut changes added once
+  - extra map layers in `tile_sources.csv`
+  - old report templates
+  - config packs and templates older than 0.24
+  - the `WhaleSurveyRecorder` folder name
+  - old route styles and 0.23 sawtooth designs
+  - old tab names
+  - the `--auto-quit` option
+  
+  Templates now need Spyhop 0.28.0 or newer. Templates saved by 0.24–0.27 still work.
+
 ## 0.27.0 — 2026-11-09
 
 - **Behaviors:** the checklist is now a single list you can work from the keyboard: ↑/↓ move, Space ticks, a letter jumps to the first behavior starting with it (press it again for the next), Enter saves. The filter box is gone. The highlighted behavior's **definition** is shown at the bottom. Definitions come from a new **Definition** column in `behaviors.csv` (Settings → Dropdowns → Behaviors): the built-in behaviors have one, and the column is added to existing lists.

@@ -15,14 +15,32 @@ Offline charts are not in templates (they are far too big); copy them between co
 
 Templates are updated by hand: Spyhop never looks for a newer template, or changes anything, until someone presses **Check** or **Use this template…**.
 
-Templates are managed in **Settings → Templates**. They are kept in the **`templates` folder in the survey data folder**, and Spyhop lists every template there. For each one it shows the latest change, whether it matches this computer's setup, and which template is in use. From the list you can:
+## Where templates are kept
+
+Templates live in the **`templates` folder in Spyhop's own folder** (Settings → General → Folders shows where that is):
+
+| Folder | What it holds |
+|---|---|
+| `templates/current/` | **The setup in use**: `species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv`, `shortcuts.csv` and `spyhop-config.json`. It is a template, unzipped: everything you change in Settings → Dropdowns, Shortcuts, General and Inputs, and in Tools → Reports, is saved here. |
+| `templates/saved/` | Your templates, `<name>.spyhop-template.zip`, and copies of the ones you got from the web. |
+| `templates/backups/` | The setup as it was before each template was used. |
+
+This computer's own settings, which never go in a template (the data folder, serial ports, the window layout, the last survey details, which survey is open), are in `spyhop-local.json` next to the `templates` folder.
+
+You can edit the files in `templates/current` by hand (keep a copy first), then press **Reload config files** (Settings → Dropdowns) or restart Spyhop.
+
+## Managing templates
+
+Templates are managed in **Settings → Templates**. Spyhop lists every template in `templates/saved`. For each one it shows the latest change, whether it matches this computer's setup, and which template is in use. From the list you can:
 
 - **Use this template…:** see what would change, then use it (a backup is saved first).
 - **Update…:** replace the template with this computer's setup, adding your name and what changed to its record of changes.
 - **Download:** get the file, to upload it for the team.
 - **Save as a new template…** (under the list): give it a name, your name and what changed.
 
-Spyhop names the templates it saves **`<name>.spyhop-template.zip`**. They are ordinary zip files, so they open in any zip tool. Spyhop also reads templates named `.spyhop.zip`, `.spyhop` or `.zip`, including those made by older versions (which called them *config packs*).
+Spyhop names the templates it saves **`<name>.spyhop-template.zip`**. They are ordinary zip files of the same files as `templates/current`, so they open in any zip tool. Spyhop also reads a template saved under another name ending in `.zip`.
+
+**Starting a survey:** if the setup in use isn't saved as a template (or has changed since it was saved), Start New Survey offers to save it first (**Save as a new template…**, or **Update…** the template it came from), or to start without saving. Each survey's details record, behind the scenes, the Spyhop version and the template the setup came from, and whether it still matched that template when the survey started.
 
 A team usually keeps its template on the web too, so each computer can get the latest when it has internet (**Get a template from the web**). Nothing is downloaded until someone presses **Check**. A template is small (usually well under 100 KB), so checking at sea costs very little. Spyhop keeps a copy of each template it gets from the web in the templates folder, so it can be used again offline.
 
@@ -62,7 +80,7 @@ The lists and shortcuts stay as CSV files so they can be edited in a spreadsheet
 
 **Online overlays** are switched on or off once, when the template is used; after that each computer can switch them as it likes.
 
-**Minimum Spyhop version:** a template names the oldest Spyhop that can use it (0.24.0 at the lowest). A computer with an older Spyhop shows the template with a problem and won't use it until Spyhop is updated (Settings → About → Updates, again by hand). Spyhop 0.23 and older don't know about `spyhop-config.json`: they use only a template's lists and shortcuts.
+**Minimum Spyhop version:** a template names the oldest Spyhop that can use it (0.28.0 at the lowest). A computer with an older Spyhop shows the template with a problem and won't use it until Spyhop is updated (Settings → About → Updates, again by hand).
 
 Other files in the template, such as a README, are listed and left alone.
 
@@ -76,7 +94,7 @@ Each template keeps a record of its changes, one entry per change: the date, who
 2. In **Settings → Templates**, press **Save as a new template…**, or **Update…** on the template you are changing.
 3. Spyhop asks for **your name** and **what you changed** (and, for a new template, its name). It fills in **Parts changed** itself: for a new template, the parts changed since this computer last used or saved a template ("all" if it doesn't know); for an update, the parts that differ from that template.
    - **Also include:** tick **Waypoints**, **Routes** and **Overlays** to put them in the template (all of this computer's, with how many). Updating a template starts with that template's choice; a new template with the last choice made here. Keep **Which online overlays are switched on** ticked to hand out the overlays showing now.
-   - **Needs Spyhop version … or newer:** the minimum version (0.24.0 at the lowest, this computer's version at the highest). Raise it when the team should all have updated before using this template.
+   - **Needs Spyhop version … or newer:** the minimum version (0.28.0 at the lowest, this computer's version at the highest). Raise it when the team should all have updated before using this template.
 4. To share it, press **Download** (or **Open the templates folder**) and publish the file as described below. Upload a new version in place of the old one at the same address. In Google Drive, right-click the file → **File information → Manage versions → Upload new version**, so the link stays the same.
 
 Updating a template continues that template's own record of changes. A new template starts from this computer's record (the record of the template it last used).
@@ -95,14 +113,14 @@ Use an address that downloads the template **without signing in**, because Spyho
 
 SharePoint and OneDrive links within an organization usually require signing in, so they don't work here. Partners outside your organization also can't open them.
 
-You can also type the **path of a zip or folder on this computer**, such as a template on a USB stick. Simpler still, copy the file into the templates folder: it then appears in the list.
+You can also type the **path of a zip or folder on this computer**, such as a template on a USB stick. Simpler still, copy the file into `templates/saved`: it then appears in the list (press **Refresh**).
 
 ## Using a template
 
 1. Press **Use this template…** on a template in the list. For the team's template on the web, paste its address once under **Get a template from the web** (Spyhop remembers it) and press **Check**.
 2. Spyhop lists what would happen to each part of the template: new, changed, same, removed, or *already here — this computer's is kept*, with row counts and the settings that would change (e.g. *Clock: local → UTC*). It also shows the minimum Spyhop version, which online overlays it switches on, the template's recent changes and any problems.
-3. Leave **Save a backup of this computer's setup first** ticked. By default backups go in `templates/backups` in the survey data folder; you can choose another folder.
-4. Press **Use it** (or **Pull it** for a template from the web). The new lists, shortcuts, settings and inputs are used straight away, with no need to restart. A template from the web is also saved in the templates folder, replacing an older copy with the same name.
+3. Leave **Save a backup of this computer's setup first** ticked. Backups go in `templates/backups`.
+4. Press **Use it** (or **Pull it** for a template from the web). The template's files replace the ones in `templates/current`, and the new lists, shortcuts, settings and inputs are used straight away, with no need to restart. A template from the web is also saved in `templates/saved`, replacing an older copy with the same name.
 
 **A template with any problem isn't used at all.** Problems are parts Spyhop can't read: a list missing its `name` column, a `spyhop-config.json` that isn't valid, or a saved report with a mistake. Spyhop names them, and nothing on the computer changes.
 
@@ -114,6 +132,6 @@ Each backup is itself a template. The latest backups are listed under **Backups*
 
 Backups always hold the computer's waypoints, routes, overlays, settings and saved reports (even when there are none, so restoring removes reports a template added). Restoring the backup made just before a template was used also **removes the map feeds, waypoints, routes and overlays that template added** (the list shows them as *Will be removed*), and puts the settings back.
 
-## From config packs (Spyhop 0.14–0.23)
+## Before Spyhop 0.28
 
-Templates used to be called *config packs*. Spyhop 0.24 renames the `config_packs` folder to `templates` the first time it runs, and reads every older pack: their `spyhop-config.csv` record of changes, `display.csv`, `reports/*.json`, and the `spyhop-pack.json` and `spyhop-settings.json` of 0.22–0.23. The saved copy of each map feed in 0.22–0.23 packs (`feeds/*.geojson`) is no longer needed and is skipped. A template saved again is written in the new form.
+Until 0.27 the lists, shortcuts and settings were at the top of Spyhop's folder (with `settings/` and `reports/` folders), and templates were in the survey data folder. Spyhop 0.28 moves them into the `templates` folder the first time it runs. Templates saved by Spyhop 0.24–0.27 still work; *config packs* from 0.23 and before can't be read any more. Until Spyhop 1.0, templates and settings may change between versions without being converted.

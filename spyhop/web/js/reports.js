@@ -1,6 +1,6 @@
-// Tools → Reports (Tools → Filter in 0.18): pick rows of Sightings, Events or Effort and some of
-// their columns, see the result as you go, and save it (CSV, HTML, PDF). Reports are saved by
-// name (files in the reports folder in Spyhop's folder; the server's reports.py runs them).
+// Tools → Reports: pick rows of Sightings, Events or Effort and some of their columns, see the
+// result as you go, and save it (CSV, HTML, PDF). Reports are saved by name in the setup in use
+// (templates/current/spyhop-config.json; the server's reports.py runs them).
 // Run Reports saves several saved reports at once.
 import { $, el, api, toast, confirmBox, promptBox, modal } from './util.js';
 
@@ -221,9 +221,7 @@ export class ReportsTool {
     }
     this.$result.replaceChildren(head, body, saveRow,
       el('p', { class: 'hint' }, survey && r?.rows?.length ? 'Click a row to show it in its table. Number columns get a total. Exports are saved in the exports folder. ' : '',
-        'Saved reports are files in the reports folder in Spyhop’s folder, and travel in templates (Settings → Templates). ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.app.open('reports'); } }, 'Open the reports folder'), ' · ',
-        el('a', { href: '#', id: 'reports-refresh', onclick: async (e) => { e.preventDefault(); await this.loadDefs(true); this.render(); } }, 'Refresh')));
+        'Saved reports are part of the setup in use, so they travel in templates (Settings → Templates).'));
   }
 
   // ---------------------------------------------------------------- server
@@ -283,7 +281,7 @@ export class ReportsTool {
 
   async remove() {
     const s = this.savedOne();
-    if (!s || !(await confirmBox('Delete the saved report?', `Delete “${s.name}”? This removes ${s.file} from the reports folder.`, 'Delete', true))) return;
+    if (!s || !(await confirmBox('Delete the saved report?', `Delete the saved report “${s.name}”?`, 'Delete', true))) return;
     try { await api('/api/reports/delete', { file: s.file }); } catch { return; }
     this.file = null;
     this.spec = { ...this.spec, name: '' };

@@ -128,8 +128,8 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
     - ⌖ follow the vessel
     - 📏 measure: click to add points, double-click or Esc to finish, click again to clear. Each leg shows true and magnetic bearing plus distance, and the total.
     - ◎ range rings
-    - ⤢ zoom to the whole survey (overlays are imported in Tools → Overlays)
-  - **layers menu** (top right): base maps in two sections, **Online map tiles** and **Offline map tiles** (the files in the charts folder, and the built-in coastline), and overlays you can switch on and off, also in two sections, **Offline overlays** (survey data, waypoints, routes, imported files, range rings…) and **Online overlays** (AIS, weather radar, map feeds), including a **graticule** (lat/lon grid; spacing adapts to the zoom, longitude labels run vertically so they don't collide)
+    - ⤢ zoom to the whole survey (overlays are imported in Tools → Overlays). When Spyhop starts with a survey open (active or ended), the map starts zoomed to the whole survey, with vessel-following off (⌖ turns it back on).
+  - **layers menu** (top right): base maps in two sections, **Online map tiles** and **Offline map tiles** (the files in the charts folder, and the built-in **Coastline (offline)**), and overlays you can switch on and off, also in two sections, **Offline overlays** (survey data, waypoints, routes, imported files, range rings…) and **Online overlays** (AIS, weather radar, map feeds), including a **graticule** (lat/lon grid; spacing adapts to the zoom, longitude labels run vertically so they don't collide)
   - **labels:** sightings show the species code plus the FieldID if there is one, e.g. `RIWH Eg-3720` (or SightNo if there's no species yet); events show their event code and ID, e.g. `CTD C-07` (or E1, E2… if both are blank)
   - **right-click menu:** add a sighting, event or waypoint at that point; measure from here; copy the position
   - **readout (bottom-left):** cursor position, bearing and distance from the vessel, and a nautical-mile scale
@@ -244,11 +244,10 @@ A report is a chosen part of one table: some rows, some columns. It updates as y
 - **Export CSV…** (for R, Excel or a database), **HTML…** and **PDF…** save the report on screen in the `exports` folder and download a copy. The HTML and PDF pages have the survey name, its date (or first and last dates, if it ran over more than one day), the platform, organization, chief scientist and their email, then the table and its totals.
 - **Saved reports:** **Save report…** keeps the current report by name; it then appears under *Saved reports*, one click away. A saved report that you change is marked • until you **Save changes** (or **Undo changes**); **Save as new…**, **Rename…** and **Delete…** do what they say.
   - Spyhop starts you off with **Right whales**, **Blue whales**, **Dead birds** and **Gear**.
-  - Saved reports are files in the `reports` folder in Spyhop's folder (**Open the reports folder**), one `.json` file each. They travel in templates (Settings → Templates), so a team can hand out its standard reports.
+  - Saved reports are part of the setup in use (`templates/current/spyhop-config.json`), so they travel in templates (Settings → Templates) and a team can hand out its standard reports.
 - **Run Reports…** (top of the tab) saves several saved reports at once: tick the reports, the formats (CSV, HTML, PDF; any or all) and where to save them (the exports folder, or a folder you choose). It remembers your choices, and lists the files it saved with a button to open the folder.
 - Each saved report is also offered in **Export Data…**, as a CSV.
 - **PDFs** are printed by Google Chrome or Microsoft Edge, which Spyhop finds by itself. Set `SPYHOP_CHROME` to the path of another Chromium-based browser if needed.
-- Until 0.18, Tools → Reports held report templates of a different kind (JSON files with `id` and `where`), and 0.18 called this tab Filter. Old templates are moved to `reports/old_report_templates` and no longer used; 0.18's saved filters become saved reports.
 
 ## Online overlays (Settings → Inputs)
 
@@ -267,7 +266,7 @@ Live data from the internet, drawn over the map. Each one is also in the map's l
 
 ## Maps offline
 
-- **Bundled coastline:** a world coastline from Natural Earth (1:10 m scale) always draws under the map, so you have a coastline even with no internet. Only the part in view is drawn, simplified to the zoom, so it stays quick. It is coarse, so don't navigate by it.
+- **Bundled coastline:** **Coastline (offline)** in the layers menu is a base map of the world coastline from Natural Earth (1:10 m scale), so you have a map even with no internet and nothing downloaded. Only the part in view is drawn, simplified to the zoom, so it stays quick. It is coarse, so don't navigate by it.
 - **Online layers** (the map's layers button):
   - **Seascape depths (feet)**, the default: Open Waters' Seascape bathymetry, with depth shading and labeled contours in feet (Spyhop leaves out its spot soundings). While it's shown, the readout at the bottom left gives the **depth at the cursor** (below chart datum), next to the scale bar; it works offline wherever the map has been viewed or downloaded. Spyhop leaves out Seascape's OpenStreetMap background, so it looks the same online and offline (switch on another layer under it, or use Esri Ocean, for land detail). It's drawn with MapLibre GL (bundled), which loads the first time the layer is shown. Seascape is not an official chart and **not for navigation**.
   - Esri Ocean, Esri Imagery, NOAA charts (NOAA's chart display service), and OpenStreetMap.
@@ -324,31 +323,38 @@ Spyhop's own folder holds your lists and settings:
 - Mac: `~/Library/Application Support/Spyhop`
 - Linux: `~/.local/share/Spyhop`
 
-If you used Spyhop under its earlier name (Whale Survey Recorder), the old `WhaleSurveyRecorder` folder is moved to `Spyhop` the first time Spyhop starts, so your surveys and config files carry over.
-
 Both folders are shown in **Settings → General → Folders**, each with an **Open folder** link.
 
-**Templates:** a template is one small file (`<name>.spyhop-template.zip`) holding a team's setup: the lists and shortcuts (as CSV files) and a `spyhop-config.json` with the map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log), the network GPS / NMEA inputs, the map feeds (their addresses, not their data) and which online overlays are on, the record of changes and the oldest Spyhop that can use it; and optionally waypoints, routes and overlays (ticked when saving). Settings are replaced; map feeds, waypoints, routes and overlays are only added, keeping any the computer already has. Serial GPS ports, the data folder, survey data and offline charts are never in a template. **Settings → Templates** lists the templates in the `templates` folder of the survey data folder, with each one's latest change, whether it matches this computer, and which one is in use. **Use this template…** shows what would change and then replaces this computer's lists, shortcuts, display, reports and settings with the template's, with no merging (a backup is saved first in `templates/backups`; **Restore…** undoes it). **Update…** replaces a template with this computer's setup, and **Save as a new template…** makes a new one; both ask for your name and what changed and add it to the template's record of changes. A team's template on the web is fetched with **Get a template from the web** → **Check**, and a copy is kept in the folder for offline use. Using a template during a survey is allowed after a warning. Templates used to be called config packs; older ones are still read. See [TEMPLATES.md](TEMPLATES.md) for sharing and hosting templates.
+**Templates:** a template is one small file (`<name>.spyhop-template.zip`) holding a team's setup: the lists and shortcuts (as CSV files) and a `spyhop-config.json` with the map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log), the network GPS / NMEA inputs, the map feeds (their addresses, not their data) and which online overlays are on, the record of changes and the oldest Spyhop that can use it; and optionally waypoints, routes and overlays (ticked when saving). Settings are replaced; map feeds, waypoints, routes and overlays are only added, keeping any the computer already has. Serial GPS ports, the data folder, survey data and offline charts are never in a template. The setup in use is itself a template, unzipped, in `templates/current`; **Settings → Templates** lists the templates in `templates/saved`, with each one's latest change, whether it matches this computer, and which one is in use. **Use this template…** shows what would change and then replaces this computer's lists, shortcuts, display, reports and settings with the template's, with no merging (a backup is saved first in `templates/backups`; **Restore…** undoes it). **Update…** replaces a template with this computer's setup, and **Save as a new template…** makes a new one; both ask for your name and what changed and add it to the template's record of changes. A team's template on the web is fetched with **Get a template from the web** → **Check**, and a copy is kept in the folder for offline use. Using a template during a survey is allowed after a warning. **Start New Survey** offers to save the setup as a template first if it isn't saved as one, and each survey's details record the template and Spyhop version it was started with. See [TEMPLATES.md](TEMPLATES.md) for sharing and hosting templates.
 
 The **survey data folder** holds the survey files, waypoints and exports. It's `data/` inside Spyhop's folder unless you choose another one under **Settings → General → Folders** (the Survey tab links there; **Choose folder…** opens your computer's folder chooser, or type/paste a path). It's remembered between sessions. If it isn't found at start-up (e.g. an unplugged drive), Spyhop uses the default for that session and tells you. Switching folders closes the open survey first.
 
 ```
 Spyhop/                                   (Spyhop's own folder)
-  species.csv  event_types.csv  observers.csv  behaviors.csv   <- your lists (name, code; color for species and events; definition for behaviors)
-  shortcuts.csv  display.csv
-  settings/  settings.json  current_survey.txt
+  templates/
+    current/   the setup in use (a template, unzipped):
+               species.csv  event_types.csv  observers.csv  behaviors.csv   <- the lists (name, code; color for
+                                                                               species and events; definition for behaviors)
+               shortcuts.csv
+               spyhop-config.json   <- shared settings, network GPS inputs, map feeds, online overlays,
+                                       map display, saved reports, record of changes
+    saved/     <name>.spyhop-template.zip   <- your templates
+    backups/   the setup as it was before each template was used
+  spyhop-local.json   this computer's own settings (data folder, serial ports, window, last survey details,
+                      the open survey) — never in a template
   charts/    *.mbtiles      overlays/  imported GeoJSON/GPX/KML
   routes/    saved routes (Tools → Routes), one GPX file each
   feeds/     the last copy of each map feed (Settings → Inputs)
-  reports/   saved reports (Tools → Reports), one *.json each
   logs/      diagnostic logs (spyhop.log, crash.log, diagnostics zips)
   data/                                   (default survey data folder — or the one you chose)
     <survey name>_sightings.csv   _effort.csv   _events.csv   _track.csv   _metadata.csv   _instruments.csv
-    waypoints.csv                 <- kept across surveys (an older marks.csv is renamed to this)
+    waypoints.csv                 <- kept across surveys
     exports/   <survey>_export_<time>.zip, or a single exported file; saved summaries and reports (.html, .pdf)
     nmea_logs/ <survey>_nmea_<time>.nmea  <- raw NMEA, when recording is on
-    templates/     <name>.spyhop-template.zip templates; backups/ holds the backups saved before using one
 ```
+
+- `<survey>_metadata.csv` holds the survey details, plus a few rows Spyhop writes itself: the Spyhop version the survey was started with (and last saved with), the template the setup came from, and whether the setup still matched it when the survey started.
+- Before 0.28 the lists, shortcuts, `display.csv`, `settings/` and `reports/` were at the top of Spyhop's folder and templates were in the data folder; Spyhop 0.28 moves them into `templates/` and `spyhop-local.json` the first time it runs.
 
 - The track CSV's **Effort** column is `Start` (from the Start row until the first ON or OFF), then `ON`/`OFF`, and `End` on the final point, written when you end the survey. A script can tell the start and end of the track apart from off-effort periods.
 - The working CSVs have a **RowID** column. Spyhop uses it to tell rows apart, for undo/redo and for keeping open windows in step, because SightNo can be edited and Effort/Event rows have no other unique key. Leave it alone when you edit a file by hand. Exports leave it out.

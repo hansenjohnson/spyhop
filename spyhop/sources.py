@@ -1,6 +1,6 @@
 """NMEA input sources: serial, UDP, TCP, gpsd, log-file replay and a simulator.
 
-Each source is described by a small dict (stored in settings.json), e.g.
+Each source is described by a small dict (stored in spyhop-local.json; network ones also in templates/current/spyhop-config.json), e.g.
     {"type": "serial", "port": "COM3", "baud": 4800}
     {"type": "udp", "port": 10110}
     {"type": "tcp", "host": "192.168.1.10", "port": 10110}

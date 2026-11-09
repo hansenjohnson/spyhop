@@ -1,6 +1,5 @@
 """Reports (Tools → Reports): pick rows of the Sightings, Events or Effort table and some of its
-columns, see the result, and save it as CSV, HTML or PDF. (Until 0.18 this was Tools → Filter;
-the older JSON report templates were removed in 0.19.)
+columns, see the result, and save it as CSV, HTML or PDF. 
 
 A report is a small JSON object:
 
@@ -17,13 +16,9 @@ A report is a small JSON object:
 - time_from / time_to: "YYYY-MM-DDTHH:MM" in the survey clock; blank = open.
 - rules: more conditions, all of which must hold (OPS).
 
-Saved reports are files in the `reports` folder in Spyhop's own folder, one per report. Spyhop
-puts the starting ones from `spyhop/report_defs/` (Gear, Dead birds, Right whales, Blue whales)
-there once. Templates carry the saved reports in their spyhop-config.json (older ones as `reports/*.json`).
-
-Older versions left other things in that folder, moved aside by `ensure_dir`: report templates
-of the old format (0.9–0.18) go to `old_report_templates/`, and saved filters from 0.18's
-`filters` folder are moved in.
+Saved reports are kept in the setup in use, under "reports" in templates/current/spyhop-config.json
+({file name: report}; the file name is only a key), so templates carry them. A new setup starts with
+the ones in `spyhop/report_defs/` (Gear, Dead birds, Right whales, Blue whales).
 """
 from __future__ import annotations
 
@@ -32,7 +27,6 @@ import html as _html
 import io
 import json
 import re
-import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -89,10 +83,6 @@ def clean(d) -> dict:
     cols = d.get("columns") or []
     if not isinstance(cols, list) or not all(isinstance(c, str) for c in cols):
         raise ReportError('"columns" must be a list of column names.')
-    ren = schema.RENAMED_COLUMNS.get(table, {})          # e.g. a report saved before VesLat became Lat
-    cols = list(dict.fromkeys(ren.get(c, c) for c in cols))
-    d = {**d, "rules": [{**r, "column": ren.get(r.get("column"), r.get("column"))} if isinstance(r, dict) else r
-                        for r in d.get("rules") or []]}
     bad = [c for c in cols if c not in offered]
     if bad:
         raise ReportError(f"The {table} table has no column {', '.join(map(repr, bad))}.")
@@ -392,82 +382,22 @@ def to_html(rec, res: dict) -> str:
 
 
 # ------------------------------------------------------------------ saved reports
-OLD_DIR = "old_report_templates"     # report templates of the old format (0.9–0.18), moved aside
-
-
-def user_dir(cfg) -> Path:
-    return cfg.root / "reports"
-
-
 def file_name(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
     return (s[:50] or "report") + ".json"
 
 
-def is_old_report_template(d) -> bool:
-    """A report template of the format used before 0.19 (it has "id"/"title" and column objects)."""
-    return isinstance(d, dict) and ("where" in d or "id" in d or
-                                    any(isinstance(c, dict) for c in d.get("columns") or []))
-
-
-def ensure_dir(cfg) -> Path:
-    """The reports folder: old templates moved aside, 0.18's saved filters moved in, and the
-    starting reports put in once."""
-    d = user_dir(cfg)
-    d.mkdir(parents=True, exist_ok=True)
-    old = d / OLD_DIR
-    for p in sorted(d.glob("*.json")):
-        try:
-            data = json.loads(p.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError):
-            continue
-        if is_old_report_template(data):
-            old.mkdir(exist_ok=True)
-            p.replace(old / p.name)
-    for extra in ("README.md", "examples"):
-        if (d / extra).exists():
-            old.mkdir(exist_ok=True)
-            if not (old / extra).exists():
-                (d / extra).replace(old / extra)
-    seeded = cfg.settings_dir / "reports_started.txt"
-    fdir = cfg.root / "filters"                        # 0.18 saved filters
-    if fdir.is_dir():
-        for p in sorted(fdir.glob("*.json")):
-            if not (d / p.name).exists():
-                p.replace(d / p.name)
-        try:
-            fdir.rmdir()
-        except OSError:
-            pass
-        _mark(seeded)
-    if not seeded.exists():
-        for p in sorted(BUILTIN_DIR.glob("*.json")):
-            if not (d / p.name).exists():
-                shutil.copyfile(p, d / p.name)
-        _mark(seeded)
-    return d
-
-
-def _mark(p: Path):
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("The starting reports were put in the reports folder (they are not put back if deleted).\n")
-    except OSError:
-        pass
-
-
 def load(cfg) -> tuple[list[dict], list[str]]:
-    """The saved reports, by name, and any files that couldn't be used."""
+    """The saved reports, by name, and any that couldn't be used."""
     out, errors = [], []
-    d = ensure_dir(cfg)
-    for p in sorted(d.glob("*.json")):
+    for fn, spec in sorted(cfg.reports.items()):
         try:
-            f = clean(json.loads(p.read_text(encoding="utf-8-sig")))
-        except (OSError, ValueError) as e:
-            errors.append(f"{p.name}: {e}")
+            f = clean(spec)
+        except ReportError as e:
+            errors.append(f"{fn}: {e}")
             continue
-        f["name"] = f["name"] or p.stem
-        f["file"] = p.name
+        f["name"] = f["name"] or Path(fn).stem
+        f["file"] = fn
         out.append(f)
     out.sort(key=lambda f: f["name"].lower())
     return out, errors
@@ -483,26 +413,24 @@ def validate(d) -> str | None:
 
 
 def save(cfg, spec: dict, replace: str | None = None) -> dict:
-    """Save a report under its name. replace: the file of the report it replaces (renaming it)."""
+    """Save a report under its name. replace: the key of the report it replaces (renaming it)."""
     f = clean(spec)
     if not f["name"]:
         raise ReportError("Give the report a name.")
-    d = ensure_dir(cfg)
     fn = file_name(f["name"])
     existing = {x["file"]: x for x in load(cfg)[0]}
     if fn in existing and fn != replace and existing[fn]["name"].lower() != f["name"].lower():
         fn = fn[:-5] + "_2.json"
     body = {k: f[k] for k in ("name", "table", "codes", "columns", "on_effort", "time_from", "time_to", "rules")}
-    tmp = d / (fn + ".tmp")
-    tmp.write_text(json.dumps(body, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    tmp.replace(d / fn)
+    reps = dict(cfg.reports)
     if replace and replace != fn:
-        delete(cfg, replace)
+        reps.pop(replace, None)
+    reps[fn] = body
+    cfg.save_reports(reps)
     return {**body, "file": fn}
 
 
 def delete(cfg, fn: str):
-    p = user_dir(cfg) / Path(str(fn)).name
-    if p.suffix != ".json" or not p.is_file():
+    if str(fn) not in cfg.reports:
         raise ReportError("There's no saved report by that name.")
-    p.unlink()
+    cfg.save_reports({k: v for k, v in cfg.reports.items() if k != str(fn)})

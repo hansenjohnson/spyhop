@@ -2,7 +2,8 @@
 
 Where Spyhop keeps things:
   program folder   the code, the start files and its Python set-up (.venv)   updater.PROGRAM_DIR
-  Spyhop's folder  settings, lists, maps, overlays, routes, feeds, reports, logs  cfg.root
+  Spyhop's folder  the setup and templates (templates/), this computer's settings (spyhop-local.json),
+                   maps, overlays, routes, feeds, logs                                cfg.root
   data folder      surveys, waypoints, templates, NMEA logs, exports     cfg.data_dir (default cfg.root/data)
   shortcuts        Spyhop.app and the Desktop link (macOS), Desktop and Start-menu shortcuts
                    (Windows), the applications-menu entry (Linux)                 shortcut.py
@@ -135,7 +136,7 @@ def plan(cfg, mode: str = "uninstall", delete_settings: bool = False, delete_dat
     if _inside(root, prog) or _inside(data, prog):
         problems.append("Spyhop's settings or data folder is inside the program folder, so deleting the program would "
                         "delete them too. Move the data folder (Settings → General) first.")
-    if delete_settings and (_risky(root) or not (root / "settings").is_dir()):
+    if delete_settings and (_risky(root) or not (root / "templates").is_dir()):
         problems.append(f"{root} doesn't look like Spyhop's own folder, so it won't be deleted.")
     if mode == "reinstall" and not os.access(prog.parent, os.W_OK):
         problems.append(f"Spyhop can't write next to its program folder ({prog.parent}), so it can't put a new copy there.")
@@ -150,11 +151,11 @@ def plan(cfg, mode: str = "uninstall", delete_settings: bool = False, delete_dat
         for p in shortcut_paths():
             delete.append({"what": "Shortcut", "path": str(p)})
     if delete_settings:
-        what = "Settings, lists, offline maps, overlays, routes, feeds, reports and logs"
+        what = "Settings, templates, offline maps, overlays, routes, feeds and logs"
         delete.append({"what": what + (" (survey data inside it is kept)" if default_data and not delete_data else ""),
                        "path": str(root)})
     else:
-        keep.append({"what": "Settings, lists, offline maps, overlays, routes, feeds, reports and logs", "path": str(root)})
+        keep.append({"what": "Settings, templates, offline maps, overlays, routes, feeds and logs", "path": str(root)})
     if delete_data and default_data:
         delete.append({"what": "Survey data, waypoints, templates, NMEA logs and exports", "path": str(data)})
     elif delete_data:

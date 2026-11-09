@@ -28,15 +28,16 @@ spyhop/
   recorder.py     every edit goes through here: validation, computed fields, surveys, tracker, export
   store.py        CSV tables with atomic writes and undo/redo; the track file
   schema.py       the columns of each table, and the fixed lists
-  config.py       Spyhop's folder, the default config CSVs, settings and their migrations
+  config.py       Spyhop's folder; the setup in use (templates/current) and this computer's settings (spyhop-local.json)
+  layout.py       the one-time move from the 0.27 folder layout (remove before 1.0)
   nmea.py         NMEA 0183 parser, vessel state, instrument readings, raw log
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
   qc.py           the quality control check (thresholds in LIMITS)
-  reports.py      Tools → Reports: report specs → rows and columns, CSV/HTML pages; saved reports in <Spyhop>/reports
-  report_defs/    the starting saved reports, copied into that folder once
+  reports.py      Tools → Reports: report specs → rows and columns, CSV/HTML pages; saved reports in the setup in use (Config.reports)
+  report_defs/    the starting saved reports of a new setup
   routes.py       the routes folder (Tools → Routes): list, read, save, delete GPX files
   feeds.py        map feeds (Settings → Inputs): ArcGIS / GeoJSON fetch, presets, the saved copy in <Spyhop>/feeds
-  templates.py    templates (Settings → Templates): spyhop-config.json + the list CSVs (+ waypoints, routes, overlays); read (older formats too), compare, use, save, fetch from the web, backups
+  templates.py    templates (Settings → Templates): spyhop-config.json + the list CSVs (+ waypoints, routes, overlays); read, compare, use, save (templates/saved), fetch from the web, backups (templates/backups), current_status
   browser.py      finds Chrome/Edge for the app window and for PDF printing (headless --print-to-pdf)
   tzguess.py      the clock's time zone from the platform's position (tzfpy)
   diag.py         diagnostic logs, crash capture, performance snapshots, the diagnostics bundle
@@ -67,7 +68,8 @@ CHANGELOG.md     changes in each version (shown in Settings → About)
 - **Data files** are plain CSV with ISO 8601 times carrying their UTC offset.
   - The working files have a hidden `RowID` column; exports leave it out.
   - Column changes migrate existing files automatically (by column name, keeping a `.bak-<time>` copy).
-  - New list entries and shortcut actions are added to users' files at start-up: see `NEW_LIST_ROWS`, `NEW_ACTIONS`, `REMOVED_ACTIONS` and `RENAMED_ACTIONS` in `config.py`.
+- **Backwards compatibility:** until 1.0.0, don't keep code that reads or converts the files of older versions (old columns, old list entries, old template formats). A change of layout gets at most a one-time move, like `layout.py`, removed before 1.0.
+- **Settings** are one dict in memory (`Config.settings`); `Config.save()` writes the shared ones (`SHARED_SETTINGS`, the network inputs, map feeds, online overlays) with the map display, saved reports and record of changes to `templates/current/spyhop-config.json`, and the rest to `spyhop-local.json`. A new setting belongs in `DEFAULT_SETTINGS`; add it to `SHARED_SETTINGS` if a team should share it.
 - **Validation** happens on the server (`recorder.py`), never only in the browser.
 - **State in the window:** settings panes redraw on every settings broadcast. Keep half-typed values in JS, not only in the DOM.
 - **Map markers:** never set CSS `position` on a marker's icon class; it breaks Leaflet's placement.

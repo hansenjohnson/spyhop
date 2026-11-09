@@ -128,11 +128,12 @@ export class MapView {
       layer._info = { tiles: m.tiles, created: m.created };
       if (m.overlay) overlays[this.chartLabel(m)] = layer; else bases[this.chartLabel(m)] = layer;
     }
-    bases['Coastline only (offline)'] = L.layerGroup();
-    bases['Coastline only (offline)']._group = 'builtin';
+    // the bundled Natural Earth coastline: a base map that needs no internet and no downloads
+    this.layers.land = L.layerGroup();
+    bases['Coastline (offline)'] = this.layers.land;
+    bases['Coastline (offline)']._group = 'builtin';
     this.bases = bases;
 
-    this.layers.land = L.layerGroup();
     this.layers.track = L.layerGroup();
     this.layers.rings = L.layerGroup();
     this.layers.lines = L.layerGroup();
@@ -142,7 +143,6 @@ export class MapView {
     this.layers.graticule = L.layerGroup();
     this.layers.vessel = L.layerGroup().addTo(this.map);
 
-    overlays['Coastline (offline)'] = this.layers.land;
     overlays['Sightings'] = this.markerLayers.sightings;
     overlays['Events'] = this.markerLayers.events;
     overlays['Waypoints'] = this.markerLayers.marks;
@@ -158,8 +158,7 @@ export class MapView {
     this.baseLayer = base;
     // track and sighting/FieldID lines are always on the map; Settings decides what they draw
     for (const k of ['track', 'lines', 'fidlines']) this.layers[k].addTo(this.map);
-    const defaultsOn = ['Coastline (offline)', 'Sightings', 'Events', 'Waypoints', 'Imported overlays'];
-    if (ov) ov = ov.map((n) => (n === 'Marks' ? 'Waypoints' : n));      // renamed in 0.5.0
+    const defaultsOn = ['Sightings', 'Events', 'Waypoints', 'Imported overlays'];
     for (const [name, layer] of Object.entries(overlays)) {
       const on = ov ? ov.includes(name) : defaultsOn.includes(name);
       if (on) layer.addTo(this.map);
@@ -206,7 +205,8 @@ export class MapView {
     if (m.overlay) layer.addTo(this.map); else this.setBase(layer, this.chartLabel(m));
     if (m.bounds) {
       const b = L.latLngBounds([[m.bounds[1], m.bounds[0]], [m.bounds[3], m.bounds[2]]]);
-      if (!b.contains(this.map.getCenter())) this.map.fitBounds(b, { padding: [20, 20], maxZoom: Math.max(m.minzoom, Math.min(m.maxzoom, 14)) });
+      const go = () => { if (!b.contains(this.map.getCenter())) this.map.fitBounds(b, { padding: [20, 20], maxZoom: Math.max(m.minzoom, Math.min(m.maxzoom, 14)) }); };
+      if (this.map._animatingZoom) this.map.once('zoomend', go); else go();     // a zoom under way would swallow it
     }
     return true;
   }
@@ -857,7 +857,7 @@ export class MapView {
   // Each overlay file can be shown or hidden (Tools → Overlays); hidden ones are remembered.
   hiddenOverlays() { try { return new Set(JSON.parse(localStorage.getItem('wsr.overlayHidden') || '[]')); } catch { return new Set(); } }
   overlayVisible(name) { return !this.hiddenOverlays().has(name); }
-  // colors chosen in Tools → Overlays (display.csv overlay_colors), else one made from the file name
+  // colors chosen in Tools → Overlays (map display: overlay_colors), else one made from the file name
   overlayColors() {
     try { const c = JSON.parse(this.app.S.config.display.overlay_colors || '{}'); return c && typeof c === 'object' ? c : {}; } catch { return {}; }
   }

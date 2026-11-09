@@ -15,7 +15,6 @@ const M_PER_NM = 1852;
 const STORE = 'wsr.plan';
 const SHOWN = 'wsr.routesShown';     // saved routes shown on the map
 export const STYLE_DEFAULTS = { color: '#6b6b6b', point: 18, width: 3, line: 'dotted' };
-const OLD_DEFAULT_STYLE = { color: '#d35400', point: 22, width: 3, line: 'dashed' };   // before 0.8.0
 const DEFAULTS = {
   mode: 'manual', speed: 10, start: 'first', name: 'Route 1',
   manual: { points: [] },
@@ -92,15 +91,6 @@ export function sawtoothPoints(start, dir, legs, legM, angle, side, ret) {
   return pts;
 }
 
-// a sawtooth design from 0.23 (bearing of leg 1 and the turn at each waypoint) in today's terms
-export function sawFromOld(w) {
-  if (!w || w.direction !== undefined || w.bearing === undefined) return w;
-  const turn = Math.max(1, Math.min(179, +w.turn || 90)), s = w.side === 'port' ? -1 : 1;
-  const { bearing, turn: _t, ...rest } = w;
-  return { ...rest, direction: ((((+bearing || 0) + s * turn / 2) % 360) + 360) % 360, angle: 180 - turn,
-    side: w.side === 'port' ? 'starboard' : 'port' };        // leg 1 was on the other side of the line it advanced along
-}
-
 export const MODE_LABELS = { manual: 'Manual', systematic: 'Systematic – parallel legs', sawtooth: 'Systematic – sawtooth' };
 
 export class Planner {
@@ -154,9 +144,7 @@ export class Planner {
     try {
       const s = JSON.parse(localStorage.getItem(STORE) || 'null');
       if (s) {
-        // a style never changed from the old orange default takes the new gray dotted one
-        const st = s.style && Object.keys(OLD_DEFAULT_STYLE).every((k) => s.style[k] === OLD_DEFAULT_STYLE[k]) ? null : s.style;
-        return { ...DEFAULTS, ...s, manual: { ...DEFAULTS.manual, ...s.manual }, sys: { ...DEFAULTS.sys, ...s.sys }, saw: { ...DEFAULTS.saw, ...sawFromOld(s.saw) }, style: { ...STYLE_DEFAULTS, ...st } };
+        return { ...DEFAULTS, ...s, manual: { ...DEFAULTS.manual, ...s.manual }, sys: { ...DEFAULTS.sys, ...s.sys }, saw: { ...DEFAULTS.saw, ...s.saw }, style: { ...STYLE_DEFAULTS, ...s.style } };
       }
     } catch {}
     return structuredClone(DEFAULTS);
@@ -459,7 +447,7 @@ export class Planner {
       start: d.start === 'vessel' ? 'vessel' : 'first', name: d.name || s.name,
       manual: { points: (d.manual?.points || []).filter((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)) },
       sys: { ...DEFAULTS.sys, ...(d.sys || {}) },
-      saw: { ...DEFAULTS.saw, ...sawFromOld(d.saw || {}) },
+      saw: { ...DEFAULTS.saw, ...(d.saw || {}) },
       style: d.style ? { ...STYLE_DEFAULTS, ...d.style } : s.style,
       active: false, locked: null, file,
     });

@@ -3,7 +3,7 @@ drawn as map overlays. A feed is an ArcGIS FeatureServer or MapServer (a layer, 
 service: all its layers) or a GeoJSON file. Spyhop fetches it, keeps the last copy in
 `<Spyhop folder>/feeds/<id>.geojson`, and shows that copy when there's no internet.
 
-Feeds are listed in settings.json ("online_feeds"): [{id, name, url, color, refresh_min}].
+Feeds are listed in the settings ("online_feeds"; saved as map_feeds in templates/current/spyhop-config.json): [{id, name, url, color, refresh_min}].
 """
 from __future__ import annotations
 

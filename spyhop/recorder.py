@@ -17,7 +17,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import geo, schema, tzguess
+from . import __version__, geo, schema, tzguess
 from .config import Config
 from .nmea import NmeaDecoder, RawLog, VesselState
 import uuid
@@ -165,16 +165,7 @@ class Recorder:
 
     def _path(self, tab: str) -> Path | None:
         if tab == "marks":
-            # "Marks" were renamed Waypoints in 0.5.0: move an old marks.csv over once
-            new, old = self.cfg.data_dir / "waypoints.csv", self.cfg.data_dir / "marks.csv"
-            if old.exists() and not new.exists():
-                try:
-                    old.rename(new)
-                    log.info("renamed %s to %s (Marks are now Waypoints)", old, new.name)
-                except OSError as e:
-                    log.warning("couldn't rename %s: %s", old, e)
-                    return old
-            return new
+            return self.cfg.data_dir / "waypoints.csv"
         if self.survey is None:
             return None
         return self.cfg.data_dir / f"{self.survey['prefix']}_{tab}.csv"
@@ -283,19 +274,43 @@ class Recorder:
                         meta[r["field"]] = r.get("value", "") or ""
         return meta
 
-    def _write_meta(self, meta: dict):
-        from . import __version__
+    # recorded with the survey details but not shown or edited: (field, label)
+    SYSTEM_META = [("spyhop_version_created", "Started with Spyhop version"),
+                   ("template_created", "Template in use when the survey started"),
+                   ("template_created_matches", "Setup matched that template when the survey started"),
+                   ("spyhop_version_saved", "Details last saved with Spyhop version")]
+
+    def _template_meta(self) -> dict:
+        """Which template the setup in use is (templates.current_status), for a new survey's details."""
+        from . import templates
+        try:
+            st = templates.current_status(self.cfg)
+        except Exception as e:  # noqa: BLE001 — never stops a survey starting
+            log.warning("couldn't tell which template is in use: %s", e)
+            return {"template_created": "", "template_created_matches": "unknown"}
+        if st["saved"]:
+            match = "yes"
+        elif st["name"]:
+            match = "no — changed since: " + ("; ".join(st["changed"]) or "unknown")
+        else:
+            match = "no — not saved as a template"
+        return {"template_created": st["name"], "template_created_matches": match}
+
+    def _write_meta(self, meta: dict, system: dict | None = None):
+        """Write <survey>_metadata.csv: the survey details, then SYSTEM_META. The values recorded when the
+        survey started are kept; `system` gives them for a new survey."""
         import csv as _csv
-        created = __version__
+        sysv = {"spyhop_version_created": __version__, "template_created": "", "template_created_matches": ""}
         p = self._meta_path()
-        if p and p.exists():
+        if system is None and p and p.exists():
             with open(p, newline="", encoding="utf-8-sig") as fh:
                 for r in _csv.DictReader(fh):
-                    if r.get("field") == "spyhop_version_created" and r.get("value"):
-                        created = r["value"]
+                    if r.get("field") in sysv:
+                        sysv[r["field"]] = r.get("value") or ""
+        sysv.update(system or {})
+        sysv["spyhop_version_saved"] = __version__
         rows = [{"field": k, "label": label, "value": meta.get(k, "")} for k, label, _ in schema.SURVEY_META]
-        rows += [{"field": "spyhop_version_created", "label": "Started with Spyhop version", "value": created},
-                 {"field": "spyhop_version_saved", "label": "Details last saved with Spyhop version", "value": __version__}]
+        rows += [{"field": k, "label": label, "value": sysv.get(k, "")} for k, label in self.SYSTEM_META]
         atomic_write_csv(p, ["field", "label", "value"], rows)
 
     def _clean_meta(self, updates: dict, base: dict) -> dict:
@@ -342,34 +357,6 @@ class Recorder:
                 self.survey[k] = meta[k]
         self.cfg.set_current_survey(self.survey)
         self._open_tables()
-        self._ensure_start_row()
-
-    def _ensure_start_row(self):
-        """Every survey's Effort table begins with a Start row. Surveys made before
-        Start/End existed get one, timed at their earliest record."""
-        t = self.tables["effort"]
-        if t.rows and t.rows[0].get("Effort") == "Start":
-            return
-        times = []
-        for tab in ("effort", "sightings", "events"):
-            times += [r["DateTime"] for r in self.tables[tab].rows if r.get("DateTime")]
-        times += [p["DateTime"] for p in self.track.points if p.get("DateTime")]
-        when = min(times, key=self._ts) if times else self.now().isoformat(timespec="seconds")
-        first = t.rows[0] if t.rows else {}
-        pt = self.track.points[0] if self.track.points else {}
-        row = {k: "" for k in t.header}
-        row.update(RowID=uuid.uuid4().hex[:12], DateTime=when, Effort="Start",
-                   Lat=first.get("Lat") or pt.get("Lat", ""),
-                   Lon=first.get("Lon") or pt.get("Lon", ""),
-                   Notes="Start row added automatically (survey made before Start/End existed)")
-        t.rows.insert(0, row)
-        try:
-            t.save()
-        except WriteError as e:
-            self.notices.append(str(e))
-            return
-        self.notices.append(f"Added a Start row at the top of the Effort table of “{self.survey['prefix']}” "
-                            "(timed at its earliest record) — every survey now begins with one.")
 
     @staticmethod
     def _ts(iso: str) -> float:
@@ -398,7 +385,7 @@ class Recorder:
         self._open_tables()
         self.new_row("effort", {"Effort": "Start"}, _allow_start=True)
         self.tables["effort"].undo_stack.clear()        # the Start row can't be undone
-        self._write_meta(meta)
+        self._write_meta(meta, system={"spyhop_version_created": __version__, **self._template_meta()})
         self.cfg.save_settings({"last_meta": meta})
         self._set_tracking(True)
         self._record_point("Start")                   # the track's first point is marked Start
@@ -1344,9 +1331,7 @@ class Recorder:
                 return []
             try:
                 with open(p, newline="", encoding="utf-8-sig") as fh:
-                    rd = csv.DictReader(fh)
-                    names = schema.renamed(kind, rd.fieldnames or [])     # an older survey's VesLat/VesLon
-                    return [dict(zip(names, r.values())) for r in rd]
+                    return list(csv.DictReader(fh))
             except (OSError, csv.Error) as e:
                 log.warning("couldn't read %s: %s", p, e)
                 return []

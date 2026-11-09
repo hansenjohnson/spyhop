@@ -70,7 +70,6 @@ def main(argv=None):
     ap.add_argument("--no-browser", action="store_true", help="don't open a browser")
     ap.add_argument("--browser", action="store_true", help="open a normal browser tab instead of an app window")
     ap.add_argument("--window", action="store_true", help="use a native window (pip install pywebview)")
-    ap.add_argument("--auto-quit", action="store_true", help=argparse.SUPPRESS)   # no longer used
     ap.add_argument("--install-shortcut", action="store_true",
                     help="make a double-clickable Spyhop icon (Desktop, Applications / Start menu)")
     ap.add_argument("--if-needed", action="store_true", help="with --install-shortcut: only if it isn't made yet")

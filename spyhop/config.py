@@ -9,7 +9,6 @@ import re
 from pathlib import Path
 
 APP_DIR_NAME = "Spyhop"
-LEGACY_DIR_NAMES = ["WhaleSurveyRecorder"]     # the app's earlier name
 
 
 def _base_dir() -> Path:
@@ -37,24 +36,9 @@ def clean_timezone(v) -> str:
 
 
 def default_data_dir() -> Path:
-    env = os.environ.get("SPYHOP_DATA_DIR") or os.environ.get("WSR_DATA_DIR")
-    if env:
-        return Path(env).expanduser()
-    base = _base_dir()
-    new = base / APP_DIR_NAME
-    if not new.exists():
-        # first start after the rename: move the old data folder across
-        for old_name in LEGACY_DIR_NAMES:
-            old = base / old_name
-            if old.is_dir():
-                try:
-                    old.rename(new)
-                    print(f"Moved your data folder from {old} to {new}")
-                except OSError as e:
-                    print(f"Couldn't rename {old} to {new} ({e}); using the old folder.")
-                    return old
-                break
-    return new
+    """Spyhop's own folder (SPYHOP_DATA_DIR, else the system's place for application data)."""
+    env = os.environ.get("SPYHOP_DATA_DIR")
+    return Path(env).expanduser() if env else _base_dir() / APP_DIR_NAME
 
 
 DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
@@ -201,15 +185,6 @@ def clean_combo(combo: str) -> str:
     return "+".join([m for m in ("Mod", "Shift", "Alt") if m in mods] + [key])
 
 
-# List entries added in later versions: put into existing list files once (if the
-# user later deletes one, it stays deleted). Recorded in settings/list_rows_added.txt.
-NEW_LIST_ROWS = {"event_types": ["Gear Reported", "Gear Recovered", "Other"], "species": ["Dead bird"]}
-NEW_ACTIONS = {"toggle-log", "add-current"}
-REMOVED_ACTIONS = {"cycle-latlon", "add:surfacings"}
-# tabs renamed in 0.7.0: existing shortcuts are pointed at the new tab. (Summary was merged into
-# Reports in 0.7.0 and is its own tab again from 0.18: Mod+4 is moved back once, below.)
-RENAMED_ACTIONS = {"tab:planning": "tab:route", "tab:filter": "tab:reports"}
-
 DEFAULT_DISPLAY = {
     "marker_radius": "8",
     "label_size": "12",
@@ -242,46 +217,76 @@ DEFAULT_DISPLAY = {
 }
 
 DEFAULT_SETTINGS = {
-    "online_feeds": [],             # map feeds (Settings → Inputs → Online overlays; feeds.py)
-    "online_display": {},           # online overlays to show, set by a template: {ais, radar_us, radar_world,
-                                    # feeds: [urls], radar_opacity, hide_stopped, stamp}; applied once per stamp
-    "template_added": {},           # what each template used added, by the backup made before it: {backup: {waypoints:
-                                    # [RowIDs], routes, overlays, feeds}}, so restoring that backup removes them
-    "tracking_enabled": False,
+    # --- shared: kept in templates/current/spyhop-config.json and carried by templates (SHARED_SETTINGS)
+    "latlon_format": "DDM",
+    "timezone": "local",            # local | UTC | auto (from the position) | UTC±hh:mm
+    "bearing_reference": "M",
+    "distance_unit": "nm",
+    "mag_variation": "auto",
     "tracking_interval": 10,
     "track_break_kn": 30,           # break the trackline where it moves faster than this (0 = never)
     "track_break_gap_s": 120,       # … or where there are no points for this long (0 = never)
     "effort_reminder_min": 30,
-    "latlon_format": "DDM",
-    "timezone": "local",            # local | UTC | auto (from the position) | UTC±hh:mm
-    "clock_zone_last": "",          # the zone last found from the position (used until there's a fix)
-    "check_updates_on_start": False,  # look on GitHub for a newer Spyhop when it starts (needs internet)
     "keep_awake": "survey",         # stop the computer sleeping: off | survey (while one is active) | always
     "keep_screen_on": False,        # … and keep the screen on too
+    "nmea_log_enabled": False,      # write every received NMEA sentence to <data folder>/nmea_logs
+    "nmea_log_timestamps": True,
+    # --- also in spyhop-config.json, under their own keys (see CONFIG_KEYS)
+    "online_feeds": [],             # map feeds (Settings → Inputs → Online overlays; feeds.py) → map_feeds
+    "online_display": {},           # online overlays to show, set by a template: {ais, radar_us, radar_world,
+                                    # feeds: [urls], radar_opacity, hide_stopped, stamp}; applied once per stamp
+    "nmea_sources": [{"type": "udp", "port": 10110, "enabled": True}],
+                                    # all inputs in order (spyhop-local.json); the network ones (UDP, TCP, gpsd)
+                                    # are also nmea_inputs in spyhop-config.json, which wins when they differ
+    # --- this computer only: spyhop-local.json
+    "data_dir": "",                 # survey data folder; "" = the "data" folder inside Spyhop's folder
+    "last_meta": {},                # survey details used last time, offered for the next survey
+    "tracking_enabled": False,
+    "clock_zone_last": "",          # the zone last found from the position (used until there's a fix)
+    "check_updates_on_start": False,  # look on GitHub for a newer Spyhop when it starts (needs internet)
+    "view": "split-v",
+    "split_ratio": 0.6,
+    "follow_vessel": True,
+    "tile_cache_enabled": True,
+    "last_version": "",             # the Spyhop version that last ran (to say when it was updated)
     "template_url": "",             # web address of the team's template (templates.py)
-    "template_backup": True,        # save a backup of this computer's setup before using a template
-    "template_backup_dir": "",      # where (empty: <survey data folder>/templates/backups)
+    "template_backup": True,        # save a backup (templates/backups) of the setup before using a template
     "template_last": {},            # the last one from the web: {url, pulled, latest: {date, by, changed, notes}, changed}
     "template_author": "",          # the name last given when saving a template
     "template_current": {},         # the template this setup came from or was saved to: {name, how: loaded|saved|backup, when}
     "template_fingerprints": {},    # {from: use|save, when, files: {part: sha1}}: to list what changed since
-    "bearing_reference": "M",
-    "distance_unit": "nm",
-    "mag_variation": "auto",
-    "view": "split-v",
-    "split_ratio": 0.6,
-    "follow_vessel": True,
-    "nmea_sources": [{"type": "udp", "port": 10110, "enabled": True}],
-    "tile_cache_enabled": True,
-    "last_version": "",          # the Spyhop version that last ran (to say when it was updated)
-    "nmea_log_enabled": False,   # write every received NMEA sentence to <data folder>/nmea_logs
-    "nmea_log_timestamps": True,
-    "data_dir": "",          # survey data folder; "" = the "data" folder inside Spyhop's folder
-    "last_meta": {},         # survey details used last time, offered for the next survey
+    "template_added": {},           # what each template used added, by the backup made before it: {backup: {waypoints:
+                                    # [RowIDs], routes, overlays, feeds}}, so restoring that backup removes them
 }
 
-# layers that used to be built in (0.12.0 and before): an old tile_sources.csv mustn't bring them back
-OLD_TILE_SOURCE_NAMES = {"noaa charts (tiled)", "noaa charts (dynamic)", "openseamap seamarks"}
+# settings a team shares, with their names in the check before using a template
+SHARED_SETTINGS = {
+    "latlon_format": "Lat/lon format",
+    "timezone": "Clock",
+    "bearing_reference": "Bearing reference",
+    "distance_unit": "Distance unit",
+    "mag_variation": "Magnetic variation",
+    "tracking_interval": "Track point every (s)",
+    "track_break_kn": "Break the track above (kn)",
+    "track_break_gap_s": "Break the track after a gap of (s)",
+    "effort_reminder_min": "Effort reminder (min)",
+    "keep_awake": "Keep the computer awake",
+    "keep_screen_on": "Keep the screen on",
+    "nmea_log_enabled": "Raw NMEA log",
+    "nmea_log_timestamps": "Raw NMEA log time stamps",
+}
+NETWORK_INPUTS = ("udp", "tcp", "gpsd")       # the GPS / NMEA inputs a template carries
+
+# Spyhop's folder:
+#   templates/current/   the setup in use: LIST_FILES, shortcuts.csv and spyhop-config.json (a template, unzipped)
+#   templates/saved/     templates (<name>.spyhop-template.zip)
+#   templates/backups/   the setup as it was before a template was used
+#   spyhop-local.json    this computer's own settings and the open survey
+#   charts/ overlays/ routes/ feeds/ tile_cache/ logs/ data/ (the default survey data folder)
+CONFIG_FILE = "spyhop-config.json"
+LOCAL_FILE = "spyhop-local.json"
+TEMPLATE_FORMAT = 3
+
 DEFAULT_TILE_SOURCES = ["name", "url", "attribution", "overlay", "max_zoom", "kind"], [
     # kind "style": a MapLibre style (vector tiles), drawn with MapLibre GL and cached like the rest
     ["Seascape depths (feet)", "https://tiles.openwaters.io/seascape/style.json?unit=ft",
@@ -312,21 +317,46 @@ def _write_csv(path: Path, header: list[str], rows: list[list[str]]):
 
 
 class Config:
+    """Spyhop's folder: the setup in use (templates/current), this computer's settings
+    (spyhop-local.json) and the other folders. Settings are one dict in memory (self.settings);
+    save_settings() writes the shared ones to spyhop-config.json and the rest to spyhop-local.json."""
+
     def __init__(self, root: Path):
         self.root = Path(root)
-        self.settings_dir = self.root / "settings"
+        self.templates_root = self.root / "templates"
+        self.current_dir = self.templates_root / "current"
+        self.saved_dir = self.templates_root / "saved"
+        self.backups_dir = self.templates_root / "backups"
         self.charts_dir = self.root / "charts"
         self.overlays_dir = self.root / "overlays"
         self.routes_dir = self.root / "routes"          # saved routes (Tools → Routes), one GPX file each
         self.tile_cache_dir = self.root / "tile_cache"
-        for d in (self.root, self.settings_dir, self.charts_dir, self.overlays_dir, self.routes_dir):
+        self.notices: list[str] = []
+        self.root.mkdir(parents=True, exist_ok=True)
+        from .layout import move_old_layout             # the 0.27 layout, moved once (removed before 1.0)
+        move_old_layout(self)
+        for d in (self.current_dir, self.saved_dir, self.backups_dir, self.charts_dir, self.overlays_dir, self.routes_dir):
             d.mkdir(parents=True, exist_ok=True)
         self.ensure_defaults()
-        self._add_new_list_rows()
-        self.settings = self.load_settings()
-        self.notices: list[str] = []
+        self.load()
         self._resolve_data_dir()
         self.reload()
+
+    # -- paths -----------------------------------------------------------------
+    @property
+    def config_path(self) -> Path:
+        return self.current_dir / CONFIG_FILE
+
+    @property
+    def local_path(self) -> Path:
+        return self.root / LOCAL_FILE
+
+    def list_path(self, name: str) -> Path:
+        return self.current_dir / f"{name}.csv"
+
+    @property
+    def shortcuts_path(self) -> Path:
+        return self.current_dir / "shortcuts.csv"
 
     # -- survey data folder (survey CSVs, waypoints, exports) ------------------------
     @property
@@ -339,7 +369,7 @@ class Config:
         if chosen and not p.is_dir():
             # e.g. a USB drive or network share that isn't connected: don't create it silently
             self.notices.append(f"The data folder {p} wasn't found (is the drive connected?). "
-                                f"Using {self.default_data_dir} for now — change it in the Survey tab.")
+                                f"Using {self.default_data_dir} for now — change it in Settings → General.")
             p = self.default_data_dir
         p.mkdir(parents=True, exist_ok=True)
         self.data_dir = p
@@ -369,50 +399,24 @@ class Config:
         self.save_settings({"data_dir": "" if p == self.default_data_dir else str(p)})
         return p
 
-    # -- files ---------------------------------------------------------------
-    def list_path(self, name: str) -> Path:
-        return self.root / f"{name}.csv"
-
+    # -- the setup in use: templates/current -----------------------------------
     def ensure_defaults(self):
         for name, (hdr, rows) in DEFAULT_LISTS.items():
-            p = self.list_path(name)
-            if not p.exists():
-                _write_csv(p, hdr, rows)
-            else:
-                self._add_missing_list_columns(p, hdr, rows)
-        p = self.root / "shortcuts.csv"
-        if not p.exists():
-            _write_csv(p, *DEFAULT_SHORTCUTS)
-        else:
-            # add shortcuts for actions introduced in later versions to an existing file
-            rows = _read_csv(p)
-            have = {r.get("action") for r in rows}
-            new = [r for r in DEFAULT_SHORTCUTS[1] if r[1] in NEW_ACTIONS and r[1] not in have]
-            keep = [r for r in rows if r.get("action") not in REMOVED_ACTIONS]
-            renamed = False
-            for r in keep:
-                if r.get("action") in RENAMED_ACTIONS:
-                    r["action"] = RENAMED_ACTIONS[r["action"]]
-                    renamed = True
-            moved = self.settings_dir / "summary_shortcut_moved.txt"
-            if not moved.exists():          # 0.18: Mod+4 showed Reports → Summary; Summary is its own tab now
-                for r in keep:
-                    if r.get("combo") == "Mod+4" and r.get("action") == "tab:reports":
-                        r["action"] = "tab:summary"
-                        renamed = True
+            if not self.list_path(name).exists():
+                _write_csv(self.list_path(name), hdr, rows)
+        if not self.shortcuts_path.exists():
+            _write_csv(self.shortcuts_path, *DEFAULT_SHORTCUTS)
+        if not self.config_path.exists():
+            reps = {}
+            for p in sorted((Path(__file__).parent / "report_defs").glob("*.json")):     # the starting reports
                 try:
-                    moved.parent.mkdir(parents=True, exist_ok=True)
-                    moved.write_text("Mod+4 now shows Tools -> Summary (Spyhop 0.18).\n")
-                except OSError:
+                    reps[p.name] = json.loads(p.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
                     pass
-            if new or renamed or len(keep) != len(rows):
-                _write_csv(p, DEFAULT_SHORTCUTS[0],
-                           [[r.get("combo", ""), r.get("action", ""), r.get("prefill", "")] for r in keep] + new)
-        p = self.root / "display.csv"
-        if not p.exists():
-            _write_csv(p, ["key", "value"], [[k, v] for k, v in DEFAULT_DISPLAY.items()])
+            _write_json(self.config_path, {"spyhop_template": TEMPLATE_FORMAT, "history": [], "reports": reps})
         readme = self.charts_dir / "README.txt"
         if not readme.exists():
+            self.charts_dir.mkdir(parents=True, exist_ok=True)
             readme.write_text(
                 "Offline charts and maps, as .mbtiles files. Areas downloaded in Spyhop (Settings -> Basemap)\n"
                 "are saved here, one file per area; you can also add MBTiles files of\n"
@@ -421,67 +425,6 @@ class Config:
                 "folder to use it there.\n\n"
                 "Free NOAA nautical charts for US waters (updated weekly):\n"
                 "  https://distribution.charts.noaa.gov/ncds/  -> click a region -> download the MBTiles file.\n")
-
-    def _add_new_list_rows(self):
-        marker = self.settings_dir / "list_rows_added.txt"
-        try:
-            done = set(marker.read_text(encoding="utf-8").splitlines())
-        except OSError:
-            done = set()
-        todo = {(lst, n) for lst, names in NEW_LIST_ROWS.items() for n in names if f"{lst}:{n}" not in done}
-        if not todo:
-            return
-        for lst in {l for l, _ in todo}:
-            hdr, defaults = DEFAULT_LISTS[lst]
-            p = self.list_path(lst)
-            try:
-                with open(p, newline="", encoding="utf-8-sig") as fh:
-                    rows = list(csv.reader(fh))
-            except OSError:
-                continue
-            if not rows or "name" not in [h.strip() for h in rows[0]]:
-                continue
-            have_hdr = [h.strip() for h in rows[0]]
-            ni = have_hdr.index("name")
-            names = {r[ni].strip().lower() for r in rows[1:] if ni < len(r)}
-            by_name = {d[0]: dict(zip(hdr, d)) for d in defaults}
-            body = rows[1:]
-            for n in NEW_LIST_ROWS[lst]:
-                if (lst, n) not in todo or n.lower() in names:
-                    continue
-                new = [by_name.get(n, {}).get(h, n if h == "name" else "") for h in have_hdr]
-                # new entries go before "Other", so Other stays last
-                at = next((i for i, r in enumerate(body) if ni < len(r) and r[ni].strip().lower() == "other"), len(body))
-                body.insert(at, new)
-                names.add(n.lower())
-            _write_csv(p, have_hdr, body)
-        try:
-            marker.write_text("\n".join(sorted(done | {f"{l}:{n}" for l, n in todo})) + "\n", encoding="utf-8")
-        except OSError:
-            pass
-
-    @staticmethod
-    def _add_missing_list_columns(p: Path, hdr: list[str], defaults: list[list[str]]):
-        """Add columns introduced in later versions (e.g. event_code) to a user's list
-        file, filling them from the defaults where the name matches. Keeps their edits."""
-        try:
-            with open(p, newline="", encoding="utf-8-sig") as fh:
-                r = csv.reader(fh)
-                have = next(r, [])
-                body = [row for row in r]
-        except OSError:
-            return
-        have_clean = [h.strip() for h in have]
-        missing = [h for h in hdr if h not in have_clean]
-        if not missing or "name" not in have_clean:
-            return
-        by_name = {d[0]: dict(zip(hdr, d)) for d in defaults}
-        ni = have_clean.index("name")
-        out = []
-        for row in body:
-            name = row[ni].strip() if ni < len(row) else ""
-            out.append(row + [by_name.get(name, {}).get(h, "") for h in missing])
-        _write_csv(p, have_clean + missing, out)
 
     def list_header(self, name: str) -> list[str]:
         """The columns of a list file as they are now (known ones first)."""
@@ -560,11 +503,12 @@ class Config:
             out.append({"combo": combo, "action": action, "prefill": prefill})
         if problems:
             raise ValueError("\n".join(problems[:12]) + (f"\n… and {len(problems) - 12} more." if len(problems) > 12 else ""))
-        _write_csv(self.root / "shortcuts.csv", DEFAULT_SHORTCUTS[0], [[r["combo"], r["action"], r["prefill"]] for r in out])
+        _write_csv(self.shortcuts_path, DEFAULT_SHORTCUTS[0], [[r["combo"], r["action"], r["prefill"]] for r in out])
         self.reload()
         return out
 
     def reload(self):
+        """Read the lists and shortcuts again (they're CSV files in templates/current)."""
         self.lists: dict[str, list[dict]] = {}
         for name in DEFAULT_LISTS:
             try:
@@ -572,99 +516,116 @@ class Config:
             except FileNotFoundError:
                 self.lists[name] = []
         try:
-            self.shortcuts = [r for r in _read_csv(self.root / "shortcuts.csv") if r.get("combo")]
+            self.shortcuts = [r for r in _read_csv(self.shortcuts_path) if r.get("combo")]
         except FileNotFoundError:
             self.shortcuts = []
-        display = dict(DEFAULT_DISPLAY)
-        try:
-            for r in _read_csv(self.root / "display.csv"):
-                if r.get("key"):
-                    display[r["key"]] = r.get("value", "")
-        except FileNotFoundError:
-            pass
-        self.display = display
-        # the online map layers are defined in code (DEFAULT_TILE_SOURCES), so fixes arrive with updates;
-        # extra layers in an old tile_sources.csv (names not built in) are still added after them
+        # the online map layers are defined in code, so fixes arrive with updates
         hdr = DEFAULT_TILE_SOURCES[0]
         self.tile_sources = [dict(zip(hdr, r)) for r in DEFAULT_TILE_SOURCES[1]]
-        builtin = {r["name"].lower() for r in self.tile_sources} | OLD_TILE_SOURCE_NAMES
-        try:
-            self.tile_sources += [r for r in _read_csv(self.root / "tile_sources.csv")
-                                  if r.get("name") and r.get("url") and r["name"].lower() not in builtin]
-        except (FileNotFoundError, OSError):
-            pass
+        extra = os.environ.get("SPYHOP_EXTRA_TILE_SOURCES")      # tests only: a CSV of more layers (same columns)
+        if extra:
+            try:
+                self.tile_sources += [r for r in _read_csv(Path(extra)) if r.get("name") and r.get("url")]
+            except OSError:
+                pass
         self.mbtiles = sorted(p.name for p in self.charts_dir.glob("*.mbtiles"))
 
-    def save_display(self, updates: dict):
-        self.display.update({k: str(v) for k, v in updates.items()})
-        _write_csv(self.root / "display.csv", ["key", "value"],
-                   [[k, v] for k, v in self.display.items()])
-
-    # -- settings --------------------------------------------------------------
-    @property
-    def settings_path(self) -> Path:
-        return self.settings_dir / "settings.json"
-
-    def load_settings(self) -> dict:
+    # -- settings, map display, saved reports and the record of changes --------
+    def load(self):
+        """Read spyhop-local.json and templates/current/spyhop-config.json into settings, display,
+        reports and history."""
         s = json.loads(json.dumps(DEFAULT_SETTINGS))
-        saved = {}
-        try:
-            saved = json.loads(self.settings_path.read_text())
-            s.update(saved)
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
-        saved_keys = set(saved) if isinstance(saved, dict) else set()
-        s.pop("surfacings_enabled", None)
-        # 0.24: "config packs" became templates
-        for k, v in list(s.items()):
-            if k.startswith("group_config_"):
-                s.pop(k)
-                new = "template_" + k[len("group_config_"):]
-                if new in DEFAULT_SETTINGS and new not in saved_keys:
-                    s[new] = v
-        if isinstance(s.get("template_current"), dict) and s["template_current"].get("how") == "pull":
-            s["template_current"]["how"] = "loaded"
+        local = _read_json(self.local_path)
+        loc = local.get("settings") if isinstance(local.get("settings"), dict) else {}
+        s.update({k: v for k, v in loc.items() if k in DEFAULT_SETTINGS and k not in SHARED_SETTINGS})
+        self.survey_record = local.get("current_survey") if isinstance(local.get("current_survey"), dict) else None
+        doc = _read_json(self.config_path)
+        self.doc = doc
+        shared = doc.get("settings") if isinstance(doc.get("settings"), dict) else {}
+        s.update({k: v for k, v in shared.items() if k in SHARED_SETTINGS})
+        if isinstance(doc.get("map_feeds"), list):
+            s["online_feeds"] = [f for f in doc["map_feeds"] if isinstance(f, dict)]
+        if isinstance(doc.get("online_overlays"), dict):
+            s["online_display"] = doc["online_overlays"]
+        if isinstance(doc.get("nmea_inputs"), list):
+            s["nmea_sources"] = merge_network_inputs(s.get("nmea_sources") or [], doc["nmea_inputs"])
         s["timezone"] = clean_timezone(s.get("timezone"))
-        return s
+        self.settings = s
+        display = dict(DEFAULT_DISPLAY)
+        if isinstance(doc.get("map_display"), dict):
+            display.update({str(k): str(v) for k, v in doc["map_display"].items()})
+        self.display = display
+        self.reports = {str(k): v for k, v in doc["reports"].items()} if isinstance(doc.get("reports"), dict) else {}
+        self.history = [e for e in doc.get("history") or [] if isinstance(e, dict)]
+
+    def _config_doc(self) -> dict:
+        """templates/current/spyhop-config.json as it should be now."""
+        s = self.settings
+        doc = {k: v for k, v in self.doc.items()
+               if k not in ("settings", "nmea_inputs", "map_feeds", "online_overlays", "map_display", "reports", "history")}
+        doc.update({
+            "spyhop_template": TEMPLATE_FORMAT,
+            "history": self.history,
+            "settings": {k: s.get(k) for k in SHARED_SETTINGS},
+            "nmea_inputs": [dict(x) for x in s.get("nmea_sources") or [] if isinstance(x, dict) and x.get("type") in NETWORK_INPUTS],
+            "map_feeds": s.get("online_feeds") or [],
+            "map_display": dict(self.display),
+            "reports": self.reports,
+        })
+        if s.get("online_display"):
+            doc["online_overlays"] = s["online_display"]
+        return doc
+
+    def save(self):
+        """Write both files from what's in memory."""
+        self.doc = self._config_doc()
+        _write_json(self.config_path, self.doc)
+        local = {k: v for k, v in self.settings.items() if k not in SHARED_SETTINGS
+                 and k not in ("online_feeds", "online_display")}
+        _write_json(self.local_path, {"settings": local, "current_survey": self.survey_record})
 
     def save_settings(self, updates: dict | None = None):
         if updates and "timezone" in updates:
             updates = {**updates, "timezone": clean_timezone(updates["timezone"])}
         if updates and "keep_awake" in updates and updates["keep_awake"] not in ("off", "survey", "always"):
             updates = {**updates, "keep_awake": "survey"}
-        if updates:
-            for k, v in updates.items():
-                if k in DEFAULT_SETTINGS:
-                    self.settings[k] = v
-        tmp = self.settings_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.settings, indent=2))
-        os.replace(tmp, self.settings_path)
+        for k, v in (updates or {}).items():
+            if k in DEFAULT_SETTINGS:
+                self.settings[k] = v
+        self.save()
 
-    # -- survey name -----------------------------------------------------------
-    @property
-    def survey_file(self) -> Path:
-        return self.settings_dir / "current_survey.txt"
+    def save_display(self, updates: dict, replace: bool = False):
+        self.display = dict(DEFAULT_DISPLAY) if replace else self.display
+        self.display.update({k: str(v) for k, v in updates.items()})
+        self.save()
 
+    def save_reports(self, reports: dict):
+        self.reports = dict(reports)
+        self.save()
+
+    def save_history(self, history: list[dict]):
+        self.history = list(history)
+        self.save()
+
+    def shared_settings(self) -> dict:
+        return {k: self.settings.get(k) for k in SHARED_SETTINGS}
+
+    # -- the open survey ---------------------------------------------------------
     def current_survey(self) -> dict | None:
-        try:
-            data = json.loads(self.survey_file.read_text())
-            if data.get("data_dir") and Path(data["data_dir"]) != self.data_dir:
-                return None          # it belongs to a different data folder
-            return data if data.get("prefix") else None
-        except (FileNotFoundError, json.JSONDecodeError):
+        data = self.survey_record
+        if not data or not data.get("prefix"):
             return None
+        if data.get("data_dir") and Path(data["data_dir"]) != self.data_dir:
+            return None          # it belongs to a different data folder
+        return data
 
     def set_current_survey(self, survey: dict | None):
-        if survey is None:
-            if self.survey_file.exists():
-                self.survey_file.unlink()
-            return
-        self.survey_file.write_text(json.dumps({**survey, "data_dir": str(self.data_dir)}))
+        self.survey_record = None if survey is None else {**survey, "data_dir": str(self.data_dir)}
+        self.save()
 
     def public(self) -> dict:
-        lists = {k: v for k, v in self.lists.items()}
         return {
-            "lists": lists,
+            "lists": dict(self.lists),
             "shortcuts": self.shortcuts,
             "list_columns": {k: self.list_header(k) for k in DEFAULT_LISTS},
             "list_labels": LIST_COLUMNS,
@@ -676,4 +637,30 @@ class Config:
             "root": str(self.root),
             "data_dir": str(self.data_dir),
             "default_data_dir": str(self.default_data_dir),
+            "current_dir": str(self.current_dir),
         }
+
+
+def merge_network_inputs(mine: list[dict], network: list[dict]) -> list[dict]:
+    """This computer's inputs with its network ones (UDP, TCP, gpsd) replaced by `network`, which go
+    where the first network input was (serial ports, file replays and the simulator keep their places)."""
+    mine = [dict(x) for x in mine if isinstance(x, dict)]
+    first = next((i for i, x in enumerate(mine) if x.get("type") in NETWORK_INPUTS), None)
+    rest = [x for x in mine if x.get("type") not in NETWORK_INPUTS]
+    at = len(rest) if first is None else sum(1 for x in mine[:first] if x.get("type") not in NETWORK_INPUTS)
+    return rest[:at] + [dict(x) for x in network if isinstance(x, dict) and x.get("type") in NETWORK_INPUTS] + rest[at:]
+
+
+def _read_json(p: Path) -> dict:
+    try:
+        d = json.loads(p.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def _write_json(p: Path, d: dict):
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name("." + p.name + ".tmp")
+    tmp.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    os.replace(tmp, p)

@@ -53,18 +53,19 @@ From a terminal you can also run `python -m spyhop --sim` (add `--sim-heading 27
 
 Edit the drop-down lists in **Settings → Dropdowns** (Species, Events, Behaviors, Observers) and the keyboard shortcuts in **Settings → Shortcuts**, then press **Save**. The lists can't be changed while a survey is under way.
 
-Behind the scenes they are plain CSV files, which you can also edit in Excel, Numbers or a text editor for big changes. Each editor has an **Open** button for its file and a **Reload from the file** button:
+Behind the scenes they are plain CSV files in `templates/current` in Spyhop's folder, which you can also edit in Excel, Numbers or a text editor for big changes. Each editor has an **Open** button for its file and a **Reload from the file** button:
 
 - **species.csv:** species names, map colors and codes (e.g. `RIWH`). The code labels sightings on the map, and Reports use it.
 - **observers.csv:** observer codes and full names. `NA` (None) is a placeholder for an empty watch position, and can fill several positions at once.
 - **event_types.csv:** event names, colors and codes (e.g. `GRPT` for Gear Reported).
-- **behaviors.csv**, and **display.csv** (the map's look, also set in Settings → General).
+- **behaviors.csv:** behavior names, codes and definitions (shown in the Behaviors checklist).
+- **spyhop-config.json:** the map display, saved reports and shared settings (set in Settings and Tools → Reports; best left to Spyhop).
 - **shortcuts.csv:** keyboard shortcuts.
   - Each row has a key (e.g. `Mod+Shift+R`; Mod is Ctrl on Windows and ⌘ on a Mac), an action, and optional prefills.
   - For example, `Species=North Atlantic right whale` makes the shortcut start a right whale sighting.
   - **Settings → Shortcuts** lists them all.
 
-After editing a file, save it and press **Reload config files**. Keep the header row as it is. Spyhop adds new columns and entries itself when it is updated.
+After editing a file, save it and press **Reload config files**. Keep the header row as it is.
 
 If your team shares a template, use **Settings → Templates** instead. Paste the address of the team's template under **Get a template from the web** and press **Check** to see what would change, then **Pull it**; or press **Use this template…** on a template already in the list. This replaces this computer's lists, shortcuts, map display, saved reports and shared settings, so keep the backup option ticked. To save your own setup as a template, press **Save as a new template…**. See docs/TEMPLATES.md.
 

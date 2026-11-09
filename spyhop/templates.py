@@ -1,31 +1,26 @@
 """Templates (Settings → Templates): a team's Spyhop setup in one small file, so every computer can
 be set up to record the same way, and a computer can switch between setups.
 
-A template is a zip (or a folder, or a GitHub repository) holding:
+The setup in use is itself a template, unzipped, in templates/current of Spyhop's folder:
 
-    spyhop-config.json   everything that isn't a table: the template's format, the oldest Spyhop that
-                         can use it, the Spyhop that made it, which optional parts it has, its record
-                         of changes, the shared settings, the network GPS / NMEA inputs, the map feeds
-                         (addresses and how to draw them), which online overlays to switch on, the map
-                         display, and the saved reports
+    spyhop-config.json   everything that isn't a table: the record of changes, the shared settings, the
+                         network GPS / NMEA inputs, the map feeds (addresses and how to draw them), which
+                         online overlays to switch on, the map display and the saved reports
     species.csv, event_types.csv, observers.csv, behaviors.csv, shortcuts.csv
-                         the drop-down lists and keyboard shortcuts (tables, kept as CSV so they can be
-                         edited in a spreadsheet)
-    waypoints.csv, routes/*.gpx, overlays/*
-                         optional: waypoints, saved routes and imported overlays
+                         the drop-down lists and keyboard shortcuts (CSV, so they can be edited in a
+                         spreadsheet)
 
-Using a template replaces this computer's lists, shortcuts, map display, saved reports (as a set,
-when the template has any) and shared settings; the network inputs replace this computer's network
-inputs, leaving serial ports, file replays and the simulator alone. Map feeds, waypoints, routes and
-overlays are only added: one already on the computer is kept, and nothing is removed. The data
-folder, survey data and offline charts are never in a template.
+A saved template (templates/saved/<name>.spyhop-template.zip) is a zip of those files, with the
+oldest Spyhop that can use it and which optional parts it has in its spyhop-config.json, and
+optionally waypoints.csv, routes/*.gpx and overlays/*.
 
-Templates are kept in `<survey data folder>/templates` as `<name>.spyhop-template.zip`; older
-templates (`.spyhop.zip`, `.spyhop`, `.zip`, in the 0.14–0.23 `config_packs` folder, with the record
-of changes in spyhop-config.csv, display.csv, reports/*.json, spyhop-pack.json and
-spyhop-settings.json) are still read. A backup (itself a template) is saved before one is used, in
-`templates/backups`; restoring the backup made before a template was used also takes away what that
-template added.
+Using a template replaces the lists, shortcuts, map display, saved reports (as a set, when the
+template has any) and shared settings; the network inputs replace this computer's network inputs,
+leaving serial ports, file replays and the simulator alone. Map feeds, waypoints, routes and overlays
+are only added: one already on the computer is kept, and nothing is removed. The data folder, survey
+data and offline charts are never in a template. A backup (itself a template) is saved in
+templates/backups first; restoring the backup made before a template was used also takes away what
+that template added.
 
 Nothing in a template is run: CSVs are checked for their columns, saved reports like any other, and
 files Spyhop doesn't know are listed and left alone.
@@ -50,14 +45,12 @@ from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 
 from . import __version__, feeds, reports, schema
+from .config import NETWORK_INPUTS, SHARED_SETTINGS, merge_network_inputs
 
 CONFIG = "spyhop-config.json"
-FORMAT = 3                       # 1: CSVs + reports (0.14–0.21); 2: + spyhop-pack/settings.json (0.22–0.23)
-FORMAT_MIN = "0.24.0"            # the first Spyhop that reads spyhop-config.json
+FORMAT = 3
+FORMAT_MIN = "0.28.0"            # the oldest Spyhop a template can say it needs
 TEMPLATE_SUFFIX = ".spyhop-template.zip"
-TEMPLATES_DIR = "templates"      # in the survey data folder
-OLD_TEMPLATES_DIR = "config_packs"
-HISTORY_FILE = "template_history.json"     # this computer's record of changes, in Spyhop's settings folder
 MAX_BYTES = 50 * 1024 * 1024
 TIMEOUT_S = 30
 CACHE_S = 15 * 60
@@ -74,24 +67,6 @@ OPTIONAL = ("waypoints", "routes", "overlays")
 WAYPOINTS = "waypoints.csv"
 WAYPOINT_COLS = [h for h in schema.headers("marks") if h != "RowID"]
 OVERLAY_EXT = (".geojson", ".json", ".gpx", ".kml")
-NETWORK_INPUTS = ("udp", "tcp", "gpsd")
-
-# settings a team shares; everything else in settings.json belongs to the computer or the session
-SHARED_SETTINGS = {
-    "latlon_format": "Lat/lon format",
-    "timezone": "Clock",
-    "bearing_reference": "Bearing reference",
-    "distance_unit": "Distance unit",
-    "mag_variation": "Magnetic variation",
-    "tracking_interval": "Track point every (s)",
-    "track_break_kn": "Break the track above (kn)",
-    "track_break_gap_s": "Break the track after a gap of (s)",
-    "effort_reminder_min": "Effort reminder (min)",
-    "keep_awake": "Keep the computer awake",
-    "keep_screen_on": "Keep the screen on",
-    "nmea_log_enabled": "Raw NMEA log",
-    "nmea_log_timestamps": "Raw NMEA log time stamps",
-}
 ONLINE_KEYS = ("ais", "radar_us", "radar_world", "feeds", "radar_opacity", "hide_stopped")
 
 # what each part is called in the check before using a template (and in "What changed")
@@ -99,27 +74,19 @@ SETTINGS_LABEL = "Settings (clock, units, tracking, keep awake, NMEA log)"
 INPUTS_LABEL = "GPS / NMEA network inputs (UDP, TCP, gpsd)"
 DISPLAY_LABEL = "Map display"
 
-# read from templates made before 0.24
-OLD_MANIFEST = "spyhop-config.csv"
-OLD_INFO = "spyhop-pack.json"
-OLD_SETTINGS = "spyhop-settings.json"
-OLD_DISPLAY = "display.csv"
-OLD_SUFFIXES = (".spyhop.zip", ".spyhop", ".zip")
-
-
 class TemplateError(Exception):
     """A message to show the user."""
 
 
 # ------------------------------------------------------------------ names and folders
 def is_template_name(name: str) -> bool:
-    return str(name).lower().endswith((".zip", ".spyhop"))
+    return str(name).lower().endswith(".zip")
 
 
 def template_stem(name: str) -> str:
-    """The name without .spyhop-template.zip, .spyhop.zip, .spyhop or .zip."""
+    """The name without .spyhop-template.zip or .zip."""
     n = str(name or "")
-    for suf in (TEMPLATE_SUFFIX,) + OLD_SUFFIXES:
+    for suf in (TEMPLATE_SUFFIX, ".zip"):
         if n.lower().endswith(suf):
             return n[: -len(suf)]
     return n
@@ -132,20 +99,12 @@ def safe_template_name(name) -> str:
 
 
 def templates_dir(cfg) -> Path:
-    """<survey data folder>/templates; the 0.14–0.23 config_packs folder is renamed to it once."""
-    d = cfg.data_dir / TEMPLATES_DIR
-    old = cfg.data_dir / OLD_TEMPLATES_DIR
-    if old.is_dir() and not d.exists():
-        try:
-            old.rename(d)
-        except OSError:
-            return old
-    return d
+    """templates/saved in Spyhop's folder."""
+    return cfg.saved_dir
 
 
 def backups_dir(cfg) -> Path:
-    custom = str(cfg.settings.get("template_backup_dir") or "").strip()
-    return Path(custom).expanduser() if custom else templates_dir(cfg) / "backups"
+    return cfg.backups_dir
 
 
 def _template_file(cfg, name: str) -> Path:
@@ -398,45 +357,14 @@ def newest_first(history: list[dict]) -> list[dict]:
     return [history[i] for i in order]
 
 
-def read_old_manifest(text: str) -> list[dict]:
-    """The record of changes of a template made before 0.24 (spyhop-config.csv: Date, Changed by, Files, Notes), oldest first."""
-    rows = _csv_rows(text)
-    if not rows:
-        return []
-    hdr = [h.strip().lower() for h in rows[0]]
-    col = lambda k: hdr.index(k) if k in hdr else None  # noqa: E731
-    idx = {"date": col("date"), "by": col("changed by"), "changed": col("files"), "notes": col("notes")}
-    out = []
-    for r in rows[1:]:
-        e = {k: (r[i].strip() if i is not None and i < len(r) else "") for k, i in idx.items()}
-        if any(e.values()):
-            out.append(e)
-    return out
-
-
 # ------------------------------------------------------------------ this computer
 def local_history(cfg) -> list[dict]:
-    """This computer's record of changes (the one of the template it last used or saved), oldest first.
-    Before 0.24 it was spyhop-config.csv in Spyhop's folder; that is read once and moved aside."""
-    p = cfg.settings_dir / HISTORY_FILE
-    if not p.is_file():
-        old = cfg.root / OLD_MANIFEST
-        text = _local_text(old) if old.is_file() else None
-        if text is not None:
-            save_local_history(cfg, read_old_manifest(text))
-            try:
-                old.replace(cfg.settings_dir / (OLD_MANIFEST + ".before-0.24"))
-            except OSError:
-                pass
-    try:
-        d = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    return [e for e in (_history_entry(x) for x in d if isinstance(d, list)) if e] if isinstance(d, list) else []
+    """The record of changes of the setup in use (the template it last used or saved), oldest first."""
+    return [e for e in (_history_entry(x) for x in cfg.history) if e]
 
 
 def save_local_history(cfg, history: list[dict]):
-    _write(cfg.settings_dir / HISTORY_FILE, json.dumps(history, indent=2, ensure_ascii=False))
+    cfg.save_history(history)
 
 
 def log_change(cfg, by: str, changed: str, notes: str) -> dict:
@@ -447,13 +375,12 @@ def log_change(cfg, by: str, changed: str, notes: str) -> dict:
 
 
 def shared_settings(cfg) -> dict:
-    st = cfg.settings
-    return {k: st.get(k) for k in SHARED_SETTINGS if k in st}
+    return cfg.shared_settings()
 
 
-def local_reports(cfg) -> dict[str, Path]:
-    d = reports.ensure_dir(cfg)            # old report templates moved aside first, so they're never compared
-    return {p.name: p for p in sorted(d.glob("*.json"))} if d.is_dir() else {}
+def local_reports(cfg) -> dict[str, str]:
+    """The saved reports in use, as JSON text by file name."""
+    return {fn: json.dumps(spec, indent=2, ensure_ascii=False) for fn, spec in sorted(cfg.reports.items())}
 
 
 def local_waypoints(cfg) -> list[dict]:
@@ -514,12 +441,7 @@ def config_doc(cfg, include=(), min_spyhop=None, online=None, note: str = "", ba
     o = clean_online(online)
     if o:
         doc["online_overlays"] = o
-    reps = {}
-    for fn, p in local_reports(cfg).items():
-        try:
-            reps[fn] = json.loads(p.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError):
-            continue
+    reps = dict(cfg.reports)
     if reps or backup:            # {} in a backup: restoring it removes reports added since
         doc["reports"] = reps
     return doc
@@ -535,7 +457,7 @@ def make_zip(cfg, note: str = "", backup: bool = False, include=(), min_spyhop: 
         z.writestr(CONFIG, json.dumps(config_doc(cfg, include, min_spyhop, None if backup else online, note, backup),
                                       indent=2, ensure_ascii=False))
         for name in TABLES:
-            p = cfg.root / name
+            p = cfg.current_dir / name
             if p.is_file():
                 z.write(p, name)
         if "waypoints" in include:
@@ -552,14 +474,12 @@ def make_zip(cfg, note: str = "", backup: bool = False, include=(), min_spyhop: 
 # ------------------------------------------------------------------ reading a template
 def _root(files: dict[str, bytes]) -> str:
     """The folder inside the zip that holds the template (zips often have one top folder)."""
-    known = set(TABLES) | {CONFIG, OLD_MANIFEST, OLD_INFO, OLD_SETTINGS, OLD_DISPLAY, WAYPOINTS}
+    known = set(TABLES) | {CONFIG, WAYPOINTS}
     cands = []
     for n in files:
         parts = n.split("/")
         if parts[-1] in known:
             cands.append("/".join(parts[:-1]))
-        elif len(parts) >= 2 and parts[-2] in ("reports", "filters") and parts[-1].endswith((".json", ".txt")):
-            cands.append("/".join(parts[:-2]))
         elif len(parts) >= 2 and parts[-2] in ("routes", "overlays") and not parts[-1].startswith("."):
             cands.append("/".join(parts[:-2]))
     if not cands:
@@ -584,7 +504,7 @@ def read_template(files: dict[str, bytes]) -> dict:
     inside = {n[len(pre):]: b for n, b in files.items() if n.startswith(pre)}
     t = empty_template()
     probs = t["problems"]
-    config, old_history = None, None
+    config = None
     for name, b in sorted(inside.items()):
         top, _, rest = name.partition("/")
         try:
@@ -607,28 +527,6 @@ def read_template(files: dict[str, bytes]) -> dict:
                                  f"{', '.join(missing)} in its first row.")
                 else:
                     t["csv"][name] = text
-            elif name == OLD_MANIFEST:
-                old_history = read_old_manifest(_text(b, name))
-            elif name == OLD_DISPLAY:
-                rows = _csv_rows(_text(b, name))
-                hdr = [h.strip() for h in rows[0]] if rows else []
-                if "key" not in hdr or "value" not in hdr:
-                    probs.append(f"{name} needs the columns key, value in its first row.")
-                else:
-                    ki, vi = hdr.index("key"), hdr.index("value")
-                    t["display"] = {r[ki].strip(): (r[vi].strip() if vi < len(r) else "") for r in rows[1:] if len(r) > ki and r[ki].strip()}
-            elif name == OLD_INFO:
-                d = json.loads(_text(b, name))
-                if isinstance(d, dict):
-                    t["info"] = {"format": 2, "min_spyhop": d.get("min_spyhop"), "made_with": d.get("made_with"),
-                                 "includes": d.get("includes") or []}
-            elif name == OLD_SETTINGS:
-                d = json.loads(_text(b, name))
-                if isinstance(d, dict):
-                    t["settings"] = _read_settings(d.get("settings"), d.get("nmea_sources"), d.get("online_feeds"),
-                                                   d.get("online_display"), probs, OLD_SETTINGS)
-            elif _report_entry(name):
-                _read_report_file(t, name, b)
             elif name == WAYPOINTS:
                 t["waypoints"] = _read_waypoints(_text(b, name), probs)
             elif top == "routes" and rest and "/" not in rest:
@@ -643,10 +541,6 @@ def read_template(files: dict[str, bytes]) -> dict:
                     t["ignored"].append(name)
                 else:
                     t["overlays"] = {**(t["overlays"] or {}), rest: b}
-            elif top == "feeds":
-                continue                    # 0.22–0.23 kept a copy of each feed's data: not needed, not used
-            elif name.startswith("reports/") and (name.endswith("README.md") or "/examples/" in name):
-                continue
             else:
                 t["ignored"].append(name)
         except TemplateError as e:
@@ -655,8 +549,6 @@ def read_template(files: dict[str, bytes]) -> dict:
             probs.append(f"{name} can't be read ({e}).")
     if config is not None:
         _read_config(t, config)
-    elif old_history is not None:
-        t["history"] = old_history
     t["history"] = newest_first(t["history"])
     info = t["info"] or {}
     need = version_tuple(info.get("min_spyhop"))
@@ -709,46 +601,6 @@ def _read_settings(settings, inputs, map_feeds, online, probs, where) -> dict:
             probs.append(f"{where}: the map feed “{(f or {}).get('name', '?') if isinstance(f, dict) else '?'}”: {e}")
     out["online"] = clean_online(online)
     return out
-
-
-def _report_entry(name: str):
-    """"file" | "marker" | "old-marker" if a path in a template is a saved report (reports/*.json; 0.18's
-    filters/ folder counts too) or one of the markers older templates used, else None."""
-    if name in ("filters/_no_saved_filters.txt", "reports/_no_saved_reports.txt"):
-        return "marker"
-    if name == "reports/_no_report_templates.txt":
-        return "old-marker"
-    top, _, rest = name.partition("/")
-    if top in ("reports", "filters") and rest and "/" not in rest and rest.endswith(".json"):
-        return "file"
-    return None
-
-
-def _read_report_file(t: dict, name: str, b: bytes):
-    kind = _report_entry(name)
-    if kind == "old-marker":
-        t["ignored"].append(name)
-        return
-    if kind == "marker":
-        if t["reports"] is None:
-            t["reports"] = {}
-        return
-    fn = name.split("/", 1)[1]
-    try:
-        d = json.loads(_text(b, name))
-    except ValueError as e:
-        t["problems"].append(f"{name} isn't valid JSON ({e}).")
-        return
-    if reports.is_old_report_template(d):           # before 0.19: no longer used, left alone
-        t["ignored"].append(f"{name} (a report template of the old format)")
-        return
-    why = reports.validate(d)
-    if why:
-        t["problems"].append(f"{name}: {why}.")
-        return
-    if t["reports"] is None:
-        t["reports"] = {}
-    t["reports"][fn] = _text(b, name)
 
 
 def _read_waypoints(text: str, probs) -> list[dict]:
@@ -823,7 +675,7 @@ def compare(cfg, t: dict) -> list[dict]:
     when restoring the backup made before it)."""
     out = []
     for name, text in t["csv"].items():
-        here = _local_text(cfg.root / name)
+        here = _local_text(cfg.current_dir / name)
         st = "new" if here is None else ("same" if _norm(here) == _norm(text) else "changed")
         out.append({"file": name, "status": st, "here": _count(here), "in_template": _count(text), "unit": "rows"})
     if t["display"] is not None:
@@ -834,11 +686,11 @@ def compare(cfg, t: dict) -> list[dict]:
     if t["reports"] is not None:
         local = local_reports(cfg)
         for fn, text in sorted(t["reports"].items()):
-            here = _local_text(local[fn]) if fn in local else None
+            here = local.get(fn)
             st = "new" if here is None else ("same" if _json_eq(here, text) else "changed")
             out.append({"file": f"Saved report: {_report_name(text, fn)}", "key": f"reports/{fn}", "status": st, "unit": "report"})
         for fn in sorted(set(local) - set(t["reports"])):
-            out.append({"file": f"Saved report: {_report_name(_local_text(local[fn]) or '', fn)}", "key": f"reports/{fn}",
+            out.append({"file": f"Saved report: {_report_name(local[fn], fn)}", "key": f"reports/{fn}",
                         "status": "removed", "unit": "report"})
     s = t.get("settings")
     if s:
@@ -959,21 +811,15 @@ def apply_all(cfg, t: dict) -> tuple[list[str], dict]:
         raise TemplateError("The template has problems, so nothing was changed:\n" + "\n".join(t["problems"]))
     plan = compare(cfg, t)
     for name, text in t["csv"].items():
-        _write(cfg.root / name, text)
+        _write(cfg.current_dir / name, text)
     if t["display"] is not None:
-        cfg.display = {}
-        cfg.save_display(t["display"])
+        cfg.save_display(t["display"], replace=True)
     if t["reports"] is not None:
-        rdir = reports.ensure_dir(cfg)
-        for fn, text in t["reports"].items():
-            _write(rdir / fn, text)
-        for p in rdir.glob("*.json"):
-            if p.name not in t["reports"]:
-                p.unlink()
+        cfg.save_reports({fn: json.loads(text) for fn, text in t["reports"].items()})
     done = _apply_parts(cfg, t)
     if t["history"]:
         save_local_history(cfg, list(reversed(t["history"])))
-    cfg.ensure_defaults()          # adds columns and display keys a newer Spyhop needs; never removes anything
+    cfg.ensure_defaults()          # a list the template doesn't have keeps the one in use (or the default)
     cfg.reload()
     return [r["file"] for r in plan if r["status"] not in ("same", "kept")], done
 
@@ -986,10 +832,7 @@ def _apply_parts(cfg, t: dict) -> dict:
         upd = {k: v for k, v in s["settings"].items() if cfg.settings.get(k) != v}
         if s["nmea_inputs"] is not None:
             mine = list(cfg.settings.get("nmea_sources") or [])
-            first = next((i for i, x in enumerate(mine) if x.get("type") in NETWORK_INPUTS), None)
-            rest = [x for x in mine if x.get("type") not in NETWORK_INPUTS]
-            at = len(rest) if first is None else sum(1 for x in mine[:first] if x.get("type") not in NETWORK_INPUTS)
-            new = rest[:at] + [dict(x) for x in s["nmea_inputs"]] + rest[at:]
+            new = merge_network_inputs(mine, s["nmea_inputs"])
             if new != mine:
                 upd["nmea_sources"] = new
                 done["inputs"] = True
@@ -1144,6 +987,36 @@ def save_template(cfg, name: str, by: str, changed: str, notes: str, overwrite: 
     return p
 
 
+def _core_differs(cfg, t: dict) -> list[str]:
+    """The parts of the setup (not waypoints, routes or overlays) that differ from a template."""
+    return [r["file"] for r in compare(cfg, t) if r["status"] not in ("same", "kept")
+            and r["file"] != WAYPOINTS and not r["file"].startswith(("routes/", "overlays/"))]
+
+
+def current_status(cfg) -> dict:
+    """Is the setup in use saved as a template? {name: the template it matches (or came from), saved:
+    True if templates/saved has a template with the same lists, shortcuts, settings, display and
+    reports, changed: the parts that differ from the template it came from}. Waypoints, routes and
+    overlays don't count: they change during surveys."""
+    cur = cfg.settings.get("template_current") or {}
+    first = cur.get("name") if cur.get("how") in ("loaded", "saved") else None
+    names = [p.name for p in sorted(templates_dir(cfg).glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)]
+    if first in names:
+        names.remove(first)
+        names.insert(0, first)
+    changed = None
+    for n in names:
+        try:
+            diff = _core_differs(cfg, read_template_file(cfg, n))
+        except TemplateError:
+            continue
+        if n == first:
+            changed = diff
+        if not diff:
+            return {"name": n, "saved": True, "changed": []}
+    return {"name": first or "", "saved": False, "changed": changed if changed is not None else []}
+
+
 def keep_copy(cfg, t: dict, filename: str) -> Path:
     """Save a template pulled from elsewhere in the templates folder, replacing an older copy with the same name."""
     p = templates_dir(cfg) / (safe_template_name(filename) or "template" + TEMPLATE_SUFFIX)
@@ -1151,10 +1024,8 @@ def keep_copy(cfg, t: dict, filename: str) -> Path:
     return p
 
 
-def save_backup(cfg, folder: str | Path | None) -> Path:
-    d = Path(folder).expanduser() if folder else backups_dir(cfg)
-    if folder and not d.is_absolute():
-        raise TemplateError("Give the full path of the backup folder.")
+def save_backup(cfg) -> Path:
+    d = backups_dir(cfg)
     try:
         d.mkdir(parents=True, exist_ok=True)
     except OSError as e:

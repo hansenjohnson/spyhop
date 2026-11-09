@@ -177,26 +177,24 @@ def memory_mb() -> float | None:
 
 # What a diagnostics bundle holds (no survey data, no people's names):
 #   system.txt     versions, system, folders and what the window/inputs were doing
-#   folders.txt    what is in the Spyhop folder and the data folder: names and sizes of the
-#                  settings, maps, overlays, routes, feeds, reports and templates; survey files
-#                  only counted (their names are survey names, not data)
+#   folders.txt    what is in Spyhop's folder and the data folder: names and sizes of the templates,
+#                  maps, overlays, routes, feeds and logs; survey files only counted (their names are
+#                  survey names, not data)
 #   logs/          spyhop.log (and older rotations), crash.log
-#   settings/      settings.json (without the survey team, and with web addresses' ?query removed
-#                  in case one holds a key), template_history.json, the one-time migration markers
-#   config/        display, shortcuts and the species/event/behavior lists (not observers.csv: names)
-SAFE_CONFIG = ["display.csv", "shortcuts.csv", "species.csv", "event_types.csv", "behaviors.csv"]
-SETTINGS_FILES = ["template_history.json"]          # besides settings.json and the *.txt markers
-# Spyhop folder layout (config.Config, feeds.feeds_dir, reports.user_dir, templates.templates_dir)
-SPYHOP_FOLDERS = [("settings", "settings, template history, one-time migration markers"),
+#   current/       the setup in use (templates/current): spyhop-config.json (web addresses' ?query
+#                  removed, in case one holds a key), shortcuts.csv and the species, event and behavior
+#                  lists (not observers.csv: names)
+#   spyhop-local.json   this computer's settings, without the survey team's details
+SAFE_CURRENT = ["spyhop-config.json", "shortcuts.csv", "species.csv", "event_types.csv", "behaviors.csv"]
+# Spyhop's folder (config.Config, feeds.feeds_dir)
+SPYHOP_FOLDERS = [("templates", "the setup in use (current/), saved templates (saved/) and backups (backups/)"),
                   ("charts", "offline maps (.mbtiles), downloaded in Settings → Basemap or added"),
                   ("overlays", "map overlays (GeoJSON, GPX, KML) from Tools → Overlays"),
                   ("routes", "saved routes (GPX), Tools → Routes"),
                   ("feeds", "online overlay feeds (GeoJSON kept for offline use)"),
-                  ("reports", "report definitions (JSON), Tools → Reports"),
                   ("tile_cache", "online map tiles kept for offline use"),
                   ("logs", "these logs")]
-DATA_FOLDERS = [("templates", "templates (.spyhop-template.zip) and backups/"),
-                ("nmea_logs", "raw NMEA logs"), ("exports", "exports and reports")]
+DATA_FOLDERS = [("nmea_logs", "raw NMEA logs"), ("exports", "exports and reports")]
 
 
 def _size(n: int) -> str:
@@ -246,12 +244,12 @@ def folder_report(root: Path, data_dir: Path) -> str:
     lines += [f"    {p.name}  {_size(p.stat().st_size)}" for p in top]
     for name, what in SPYHOP_FOLDERS:
         lines.append(f"  {name}/  — {what}")
-        lines += _tree(root / name, names=name != "tile_cache", depth=1 if name == "tile_cache" else 2)
+        lines += _tree(root / name, names=name != "tile_cache", depth=1 if name == "tile_cache" else 3)
     lines.append("")
     lines.append(f"Data folder: {data_dir}" + ("  (the default, inside the Spyhop folder)" if data_dir == root / "data" else ""))
     for name, what in DATA_FOLDERS:
         lines.append(f"  {name}/  — {what}")
-        lines += _tree(data_dir / name, names=name == "templates")
+        lines += _tree(data_dir / name, names=False)
     other = [p for p in sorted(data_dir.glob("*")) if p.name not in {n for n, _ in DATA_FOLDERS}] if data_dir.is_dir() else []
     nfiles = sum(1 for p in other if p.is_file())
     size = sum(p.stat().st_size for p in other if p.is_file())
@@ -273,37 +271,44 @@ def _redact(v):
     return v
 
 
-def make_bundle(root: Path, data_dir: Path, settings_path: Path, extra: dict, dest: Path) -> Path:
-    """Zip the logs, settings, folder layout and system details (no survey data) for a bug report."""
+def make_bundle(cfg, extra: dict, dest: Path) -> Path:
+    """Zip the logs, the setup in use, this computer's settings, the folder layout and system details
+    (no survey data) for a bug report."""
+    root, data_dir = Path(cfg.root), Path(cfg.data_dir)
     dest.mkdir(parents=True, exist_ok=True)
     out = dest / f"spyhop_diagnostics_{__version__}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         info = system_info(root, data_dir) | extra
         z.writestr("system.txt", "\n".join(f"{k}: {v}" for k, v in info.items()) + "\n")
         try:
-            z.writestr("folders.txt", folder_report(Path(root), Path(data_dir)))
+            z.writestr("folders.txt", folder_report(root, data_dir))
         except Exception as e:  # noqa: BLE001 — the report must still be made
             z.writestr("folders.txt", f"(couldn't list the folders: {e})\n")
         for p in sorted(log_dir(root).glob("*.log*")):
             if p.resolve() != out.resolve():
                 z.write(p, f"logs/{p.name}")
+        for name in SAFE_CURRENT:
+            p = cfg.current_dir / name
+            if not p.is_file():
+                continue
+            if name.endswith(".json"):
+                try:
+                    z.writestr(f"current/{name}", json.dumps(_redact(json.loads(p.read_text(encoding="utf-8"))),
+                                                             indent=2, ensure_ascii=False))
+                except (OSError, ValueError):
+                    pass
+            else:
+                z.write(p, f"current/{name}")
         try:
-            s = json.loads(settings_path.read_text(encoding="utf-8"))
-            s.pop("last_meta", None)                  # names and email of the survey team
-            z.writestr("settings/settings.json", json.dumps(_redact(s), indent=2, ensure_ascii=False))
-        except (OSError, ValueError):
+            loc = json.loads(cfg.local_path.read_text(encoding="utf-8"))
+            if isinstance(loc.get("settings"), dict):
+                loc["settings"].pop("last_meta", None)          # names and email of the survey team
+            z.writestr("spyhop-local.json", json.dumps(_redact(loc), indent=2, ensure_ascii=False))
+        except (OSError, ValueError, AttributeError):
             pass
-        sdir = settings_path.parent
-        for p in [sdir / n for n in SETTINGS_FILES] + sorted(sdir.glob("*.txt")):
-            if p.is_file() and p.stat().st_size < 2 * 1024 ** 2:
-                z.write(p, f"settings/{p.name}")
-        for name in SAFE_CONFIG:
-            p = root / name
-            if p.exists():
-                z.write(p, f"config/{name}")
-        z.writestr("README.txt", io.StringIO(
-            "Spyhop diagnostics bundle. It holds Spyhop's logs, its settings (without the survey team's names,\n"
-            "and with any ?query removed from web addresses), the display, shortcut and list settings (not the\n"
-            "observers list), a listing of Spyhop's folders (folders.txt) and system details.\n"
-            "It does not hold any survey data.\n").getvalue())
+        z.writestr("README.txt",
+                   "Spyhop diagnostics bundle. It holds Spyhop's logs, the setup in use (templates/current, without the\n"
+                   "observers list, and with any ?query removed from web addresses), this computer's settings (without\n"
+                   "the survey team's details), a listing of Spyhop's folders (folders.txt) and system details.\n"
+                   "It does not hold any survey data.\n")
     return out

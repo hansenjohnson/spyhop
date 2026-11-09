@@ -278,11 +278,21 @@ def test_clear_survey(rec):
 
 
 def test_config_files_created(tmp_path):
+    """A new Spyhop folder: the setup in use in templates/current, and nothing at the top but folders
+    (spyhop-local.json appears with the first setting saved)."""
     rec = Recorder(tmp_path)
-    for n in ("species", "event_types", "observers", "behaviors", "shortcuts", "display"):
-        assert (tmp_path / f"{n}.csv").exists()
-    # the online map layers come from the code, not a file (0.12.0)
-    assert not (tmp_path / "tile_sources.csv").exists()
+    cur = tmp_path / "templates" / "current"
+    for n in ("species", "event_types", "observers", "behaviors", "shortcuts"):
+        assert (cur / f"{n}.csv").exists() and not (tmp_path / f"{n}.csv").exists()
+    doc = json.loads((cur / "spyhop-config.json").read_text())
+    assert sorted(doc["reports"]) == ["blue_whales.json", "dead_birds.json", "gear.json", "right_whales.json"]
+    assert (tmp_path / "templates" / "saved").is_dir() and (tmp_path / "templates" / "backups").is_dir()
+    for gone in ("settings", "reports", "display.csv"):
+        assert not (tmp_path / gone).exists()
+    rec.cfg.save_settings({"latlon_format": "DD", "view": "split-h"})
+    assert json.loads((cur / "spyhop-config.json").read_text())["settings"]["latlon_format"] == "DD"
+    loc = json.loads((tmp_path / "spyhop-local.json").read_text())
+    assert loc["settings"]["view"] == "split-h" and "latlon_format" not in loc["settings"]
     names = [s["name"] for s in rec.cfg.tile_sources]
     assert names[:2] == ["Seascape depths (feet)", "Esri Ocean"] and rec.cfg.tile_sources[0]["kind"] == "style"
     assert not any("OpenSeaMap" in n or "tiled" in n for n in names)
@@ -408,27 +418,6 @@ def test_utc_clock(rec):
     assert r["DateTime"][11:] == "07:05:00+00:00"
 
 
-def test_old_timezone_and_surfacings_settings_cleaned(tmp_path):
-    (tmp_path / "settings").mkdir(parents=True)
-    (tmp_path / "settings" / "settings.json").write_text('{"timezone": "America/New_York", "surfacings_enabled": true}')
-    (tmp_path / "shortcuts.csv").write_text("combo,action,prefill\nMod+Shift+L,cycle-latlon,\nMod+Shift+S,add:sightings,\n")
-    r = Recorder(tmp_path)
-    assert r.cfg.settings["timezone"] == "local" and "surfacings_enabled" not in r.cfg.settings
-    actions = [s["action"] for s in r.cfg.shortcuts]
-    assert "cycle-latlon" not in actions and "add:sightings" in actions and "toggle-log" in actions
-    assert "surfacings" not in r.tables
-
-
-def test_event_code_column_added_to_existing_list(tmp_path):
-    (tmp_path / "event_types.csv").write_text("name,color\nCTD cast,blue\nMy own event,red\n")
-    r = Recorder(tmp_path)
-    rows = {e["name"]: e for e in r.cfg.lists["event_types"]}
-    assert rows["CTD cast"]["event_code"] == "CTD"          # default filled in by name
-    assert rows["My own event"]["event_code"] == ""          # user rows kept, code left blank
-    assert rows["My own event"]["color"] == "red"
-    assert read_csv(tmp_path / "event_types.csv")[0].keys() >= {"name", "color", "event_code"}
-
-
 def test_column_order_and_help():
     sk = schema.headers("sightings")
     assert sk.index("FieldID") == sk.index("Images") + 1
@@ -454,22 +443,6 @@ def test_reordered_columns_migrate(tmp_path):
     assert any("Observer" in n for n in r2.notices)            # dropped data is called out
 
 
-def test_old_data_folder_is_moved_to_spyhop(tmp_path, monkeypatch):
-    from spyhop import config as cfgmod
-    monkeypatch.delenv("SPYHOP_DATA_DIR", raising=False)
-    monkeypatch.delenv("WSR_DATA_DIR", raising=False)
-    monkeypatch.setattr(cfgmod, "_base_dir", lambda: tmp_path)
-    old = tmp_path / "WhaleSurveyRecorder" / "data"
-    old.mkdir(parents=True)
-    (old / "Leg A_sightings.csv").write_text("x")
-    d = cfgmod.default_data_dir()
-    assert d == tmp_path / "Spyhop"
-    assert (d / "data" / "Leg A_sightings.csv").read_text() == "x"
-    assert not (tmp_path / "WhaleSurveyRecorder").exists()
-    assert cfgmod.default_data_dir() == d          # second start: nothing to move
-
-
-# ---------------------------------------------------------------- survey lifecycle
 def test_no_survey_open_blocks_survey_tabs_but_not_marks(tmp_path):
     r = Recorder(tmp_path)
     assert r.survey is None and r.survey_info() is None
@@ -556,22 +529,6 @@ def test_crash_recovery_asks_to_continue(tmp_path):
     assert r3.survey["prefix"] == "Leg A" and r3.pending_resume is None   # ended: nothing to ask
     r3.answer_resume("close")
     assert r3.survey is None
-
-
-def test_older_survey_gets_a_start_row(tmp_path):
-    r = Recorder(tmp_path)
-    d = r.cfg.data_dir
-    hdr = schema.headers("effort")
-    with open(d / "Old_effort.csv", "w", newline="") as fh:
-        w = csv.writer(fh); w.writerow(hdr)
-        w.writerow(["a1", "2026-11-03T10:05:00-05:00", "41.9", "-70.3", "ON"] + [""] * (len(hdr) - 5))
-    with open(d / "Old_sightings.csv", "w", newline="") as fh:
-        w = csv.writer(fh); h = schema.headers("sightings"); w.writerow(h)
-        w.writerow(["s1", "1", "2026-11-03T10:00:00-05:00"] + [""] * (len(h) - 3))
-    r.open_survey("Old")
-    rows = r.tables["effort"].rows
-    assert rows[0]["Effort"] == "Start" and rows[0]["DateTime"] == "2026-11-03T10:00:00-05:00"
-    assert rows[1]["Effort"] == "ON" and any("Start row" in n for n in r.notices)
 
 
 def test_choose_data_folder(tmp_path):
@@ -716,24 +673,6 @@ def test_export_choices(rec):
         rec.export(["pdf"])
     with pytest.raises(ValueErrorMsg):
         rec.export(["html"])                                        # the summary page must be supplied
-
-
-def test_new_event_types_added_once(tmp_path):
-    from spyhop.config import Config
-    root = tmp_path / "app"
-    root.mkdir()
-    (root / "event_types.csv").write_text("name,color,event_code\nCTD cast,blue,CTD\nOther,black,OTH\nMy event,red,MINE\n")
-    cfg = Config(root)
-    names = [r["name"] for r in cfg.lists["event_types"]]
-    assert names == ["CTD cast", "Gear Reported", "Gear Recovered", "Other", "My event"]
-    gr = next(r for r in cfg.lists["event_types"] if r["name"] == "Gear Reported")
-    assert gr["event_code"] == "GRPT"
-    # a user who deletes one keeps it deleted
-    (root / "event_types.csv").write_text("name,color,event_code\nCTD cast,blue,CTD\nGear Recovered,x,GRCV\n")
-    cfg = Config(root)
-    assert [r["name"] for r in cfg.lists["event_types"]] == ["CTD cast", "Gear Recovered"]
-    fresh = Config(tmp_path / "fresh")
-    assert {"Gear Reported", "Gear Recovered", "Other"} <= {r["name"] for r in fresh.lists["event_types"]}
 
 
 def test_instruments_decoded():
@@ -887,19 +826,6 @@ def test_negative_bearings(rec):
         rec.edit("sightings", row["RowID"], {"Bearing": "-400"})
 
 
-def test_marks_renamed_to_waypoints(tmp_path):
-    from spyhop.recorder import Recorder
-    d = tmp_path / "app" / "data"
-    d.mkdir(parents=True)
-    (d / "marks.csv").write_text("RowID,Name,DateTime,Lat,Lon,Shape,Color,Notes,Map\nr1,Buoy,,42,-70,Circle,red,,1\n")
-    r = Recorder(tmp_path / "app")
-    assert (d / "waypoints.csv").exists() and not (d / "marks.csv").exists()
-    assert [x["Name"] for x in r.tables["marks"].rows] == ["Buoy"]
-    from spyhop import schema
-    assert schema.TABS["marks"]["title"] == "Waypoints"
-
-
-# ---------------------------------------------------------------- 0.7.0
 def test_past_survey_as_overlay(rec):
     rec.cfg.settings["tracking_enabled"] = True
     rec.new_row("effort", {"Effort": "ON"})
@@ -928,35 +854,6 @@ def test_past_survey_as_overlay(rec):
         rec.survey_overlay("Nope")
 
 
-def test_renamed_tab_shortcuts_migrated(tmp_path):
-    from spyhop.config import Config
-    Config(tmp_path)
-    p = tmp_path / "shortcuts.csv"
-    rows = read_csv(p)
-    assert any(r["combo"] == "Mod+4" and r["action"] == "tab:summary" for r in rows)
-    with open(p, "a", newline="") as fh:
-        fh.write("Mod+9,tab:summary,\nMod+8,tab:planning,\n")
-    Config(tmp_path)
-    acts = [r["action"] for r in read_csv(p)]
-    assert "tab:planning" not in acts and "tab:route" in acts and acts.count("tab:summary") == 2
-
-
-def test_mod4_moves_back_to_summary_once(tmp_path):
-    from spyhop.config import Config
-    Config(tmp_path)
-    p = tmp_path / "shortcuts.csv"
-    (tmp_path / "settings" / "summary_shortcut_moved.txt").unlink(missing_ok=True)
-    text = p.read_text().replace("Mod+4,tab:summary", "Mod+4,tab:reports")
-    p.write_text(text + "Mod+7,tab:reports,\n")
-    Config(tmp_path)
-    acts = {r["combo"]: r["action"] for r in read_csv(p)}
-    assert acts["Mod+4"] == "tab:summary" and acts["Mod+7"] == "tab:reports"
-    p.write_text(p.read_text().replace("Mod+4,tab:summary", "Mod+4,tab:reports"))
-    Config(tmp_path)                                       # only once: the user's choice now stays
-    assert {r["combo"]: r["action"] for r in read_csv(p)}["Mod+4"] == "tab:reports"
-
-
-# ---------------------------------------------------------------- 0.8.0
 def test_qc_duplicates_fieldids_and_visibility(rec):
     _complete_meta(rec)
     rec.new_row("effort", {**GOOD_EFFORT, "Visibility": "1-2 nm"})
@@ -1264,19 +1161,6 @@ def _serve(routes: dict):
 
 
 
-def test_tile_sources_from_code_keep_extras(tmp_path):
-    from spyhop.config import Config
-    (tmp_path / "tile_sources.csv").write_text(
-        "name,url,attribution,overlay,max_zoom\nEsri Ocean,https://old.example/{z}/{x}/{y},,0,10\n"
-        "Team charts,https://charts.example/{z}/{x}/{y}.png,Team,0,14\n"
-        "NOAA charts (tiled),https://gis.charttools.noaa.gov/x/{z}/{y}/{x},NOAA,0,18\n"
-        "OpenSeaMap seamarks,https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png,OSM,1,18\n")
-    cfg = Config(tmp_path)
-    names = [s["name"] for s in cfg.tile_sources]
-    assert names.count("Esri Ocean") == 1 and names[-1] == "Team charts"
-    assert "old.example" not in next(s for s in cfg.tile_sources if s["name"] == "Esri Ocean")["url"]
-
-
 def test_save_lists_and_shortcuts(tmp_path):
     from spyhop.config import Config, clean_combo
     cfg = Config(tmp_path)
@@ -1575,9 +1459,9 @@ def test_reports_presets_run_and_export(rec):
     assert csv_text.startswith("﻿Species code,Num\r\n")
     # save, rename (replace), delete
     f = filters.save(rec.cfg, spec)
-    assert f["file"] == "big_groups.json" and (filters.user_dir(rec.cfg) / "big_groups.json").exists()
+    assert f["file"] == "big_groups.json" and "big_groups.json" in rec.cfg.reports
     g = filters.save(rec.cfg, {**spec, "name": "Groups"}, replace=f["file"])
-    assert g["file"] == "groups.json" and not (filters.user_dir(rec.cfg) / "big_groups.json").exists()
+    assert g["file"] == "groups.json" and "big_groups.json" not in rec.cfg.reports
     filters.delete(rec.cfg, "groups.json")
     with pytest.raises(filters.ReportError):
         filters.delete(rec.cfg, "../species.csv")
@@ -1591,29 +1475,6 @@ def test_reports_presets_run_and_export(rec):
     with pytest.raises(ValueErrorMsg):
         rec.export(["report:nope.json"])
 
-
-
-def test_reports_folder_migrates_old_templates_and_filters(tmp_path):
-    import json as _json
-    from spyhop import reports
-    from spyhop.config import Config
-    cfg = Config(tmp_path / "app")
-    (cfg.root / "reports" / "examples").mkdir(parents=True)
-    (cfg.root / "reports" / "README.md").write_text("old")
-    (cfg.root / "reports" / "mine.json").write_text(_json.dumps(
-        {"id": "mine", "title": "Mine", "table": "events", "columns": [{"label": "Time", "value": "time"}]}))
-    (cfg.root / "filters").mkdir()
-    (cfg.root / "filters" / "big.json").write_text(_json.dumps({"name": "Big", "table": "sightings", "columns": ["Count"]}))
-    saved, errors = reports.load(cfg)
-    assert not errors and [f["name"] for f in saved] == ["Big"]          # 0.18 user: no starting reports re-added
-    old = cfg.root / "reports" / reports.OLD_DIR
-    assert (old / "mine.json").exists() and (old / "README.md").exists() and (old / "examples").is_dir()
-    assert not (cfg.root / "filters").exists()
-    cfg2 = Config(tmp_path / "fresh")
-    assert len(reports.load(cfg2)[0]) == 4
-    for f in reports.load(cfg2)[0]:
-        reports.delete(cfg2, f["file"])
-    assert reports.load(cfg2)[0] == []                                   # not put back
 
 
 def test_saved_routes_folder(tmp_path):
@@ -1754,22 +1615,24 @@ def test_template_resolve():
 
 
 def test_template_check_use_backup(tmp_path):
-    """An older template (CSVs, spyhop-config.csv, reports/) from the web: read, compared, used; a backup
-    (a new-style template) puts things back; problems stop it; a folder on disk works."""
+    """A template from the web: read, compared, used; a backup puts things back; problems stop it;
+    a folder on disk works."""
     import json as _json, zipfile as _zf
-    from spyhop import templates, reports as _reports
+    from spyhop import templates
     from spyhop.config import Config
     cfg = Config(tmp_path / "app")
-    _reports.ensure_dir(cfg)
-    (cfg.root / "reports" / "mine.json").write_text(_json.dumps({"name": "Mine", "table": "events", "columns": ["time"]}))
+    cfg.save_reports({"mine.json": {"name": "Mine", "table": "events", "columns": ["time"]}})
+    cur = cfg.current_dir
     species = "name,color,species_code\r\nNorth Atlantic right whale,red,RIWH\r\nHumpback whale,orange,HUWH\r\nSpyhop test whale,pink,SPTW\r\n"
     observers = "name,full_name\r\nHJ,Hansen Johnson\r\n"
-    gear = _json.dumps({"name": "Gear (team)", "table": "events", "codes": ["GRPT"], "columns": ["time"]})
-    manifest = "Date,Changed by,Files,Notes\r\n2026-10-01,HJ,all,First version\r\n2026-11-06,HJ,species.csv,Added test whale\r\n"
-    good = _template_zip({"spyhop-config.csv": manifest, "species.csv": species, "observers.csv": observers,
-                          "display.csv": "key,value\r\nmarker_radius,11\r\n",
-                          "reports/team_gear.json": gear, "notes.txt": "hello"}, top="team-cfg-abc123/")
-    bad = _template_zip({"species.csv": "color\r\nred\r\n", "reports/x.json": "{nope"})
+    gear = {"name": "Gear (team)", "table": "events", "codes": ["GRPT"], "columns": ["time"]}
+    conf = _json.dumps({"spyhop_template": 3, "history": [
+        {"date": "2026-10-01", "by": "HJ", "changed": "all", "notes": "First version"},
+        {"date": "2026-11-06", "by": "HJ", "changed": "species.csv", "notes": "Added test whale"}],
+        "map_display": {"marker_radius": "11"}, "reports": {"team_gear.json": gear}})
+    good = _template_zip({"spyhop-config.json": conf, "species.csv": species, "observers.csv": observers,
+                          "notes.txt": "hello"}, top="team-cfg-abc123/")
+    bad = _template_zip({"species.csv": "color\r\nred\r\n", "spyhop-config.json": "{nope"})
     base, stop = _serve({"/good.zip": (200, "application/zip", good), "/bad.zip": (200, "application/zip", bad),
                          "/page": (200, "text/html", b"<!DOCTYPE html><html>sign in</html>"),
                          "/private": (403, "text/plain", b"no")})
@@ -1785,8 +1648,8 @@ def test_template_check_use_backup(tmp_path):
         assert plan["Map display"]["status"] == "changed" and "marker_radius: 8 → 11" in plan["Map display"]["detail"]
         assert plan["Saved report: Gear (team)"]["status"] == "new" and plan["Saved report: Mine"]["status"] == "removed"
 
-        backup = templates.save_backup(cfg, tmp_path / "bk")
-        assert backup.name.startswith("spyhop-backup-") and backup.name.endswith(".spyhop-template.zip")
+        backup = templates.save_backup(cfg)
+        assert backup.parent == cfg.backups_dir and backup.name.startswith("spyhop-backup-") and backup.name.endswith(".spyhop-template.zip")
         with _zf.ZipFile(backup) as z:
             names = set(z.namelist())
             old_species = z.read("species.csv").decode()
@@ -1799,7 +1662,7 @@ def test_template_check_use_backup(tmp_path):
         changed = templates.apply(cfg, t)
         assert "species.csv" in changed and "Saved report: Mine" in changed and "Map display" in changed
         assert [s["name"] for s in cfg.lists["species"]] == ["North Atlantic right whale", "Humpback whale", "Spyhop test whale"]
-        assert sorted(p.name for p in (cfg.root / "reports").glob("*.json")) == ["team_gear.json"]   # replaced as a set
+        assert sorted(cfg.reports) == ["team_gear.json"]                     # replaced as a set
         assert cfg.display["marker_radius"] == "11" and cfg.display["label_size"] == "12"      # missing keys come back
         assert [e["notes"] for e in templates.local_history(cfg)] == ["First version", "Added test whale"]
         assert cfg.shortcuts                                    # tables not in the template are untouched
@@ -1807,31 +1670,31 @@ def test_template_check_use_backup(tmp_path):
 
         # a computer with no saved reports: its templates leave reports alone, its backups remove them
         cfg2 = Config(tmp_path / "app2")
-        for p in _reports.ensure_dir(cfg2).glob("*.json"):
-            p.unlink()
+        cfg2.save_reports({})
         assert templates.read_template(templates.unzip(templates.make_zip(cfg2)))["reports"] is None
         empty = templates.read_template(templates.unzip(templates.make_zip(cfg2, "none", backup=True)))
         assert empty["reports"] == {}
         templates.apply(cfg2, t)
-        assert (cfg2.root / "reports" / "team_gear.json").exists()
+        assert "team_gear.json" in cfg2.reports
+        assert "team_gear.json" in json.loads(cfg2.config_path.read_text())["reports"]
         templates.apply(cfg2, empty)
-        assert not (cfg2.root / "reports" / "team_gear.json").exists()
+        assert not cfg2.reports
 
         # the backup is itself a template: using it puts things back
         restore = templates.read_template(templates.fetch(str(backup))[0])
         assert not restore["problems"]
         templates.apply(cfg, restore)
-        assert (cfg.root / "species.csv").read_text(encoding="utf-8-sig").replace("\r\n", "\n") == old_species.replace("\r\n", "\n").lstrip("﻿")
-        assert (cfg.root / "reports" / "mine.json").exists() and not (cfg.root / "reports" / "team_gear.json").exists()
+        assert (cur / "species.csv").read_text(encoding="utf-8-sig").replace("\r\n", "\n") == old_species.replace("\r\n", "\n").lstrip("﻿")
+        assert sorted(cfg.reports) == ["mine.json"]
         assert cfg.display["marker_radius"] == "8"
 
         badt = templates.read_template(templates.fetch(base + "/bad.zip")[0])
         assert any("species.csv needs the column name" in p for p in badt["problems"])
-        assert any("x.json isn't valid JSON" in p for p in badt["problems"])
-        before = (cfg.root / "species.csv").read_text()
+        assert any("spyhop-config.json isn't valid JSON" in p for p in badt["problems"])
+        before = (cur / "species.csv").read_text()
         with pytest.raises(templates.TemplateError):
             templates.apply(cfg, badt)
-        assert (cfg.root / "species.csv").read_text() == before          # nothing changed
+        assert (cur / "species.csv").read_text() == before              # nothing changed
 
         for path, words in (("/page", "web page"), ("/private", "refused"), ("/missing.zip", "404")):
             with pytest.raises(templates.TemplateError, match=words):
@@ -1841,7 +1704,7 @@ def test_template_check_use_backup(tmp_path):
 
         # a template as a folder on disk (e.g. a USB stick), with an Excel-saved CSV
         d = tmp_path / "usb"
-        (d / "reports").mkdir(parents=True)
+        d.mkdir()
         (d / "observers.csv").write_bytes("name,full_name\r\nJM,José Martínez\r\n".encode("cp1252"))
         p2 = templates.read_template(templates.fetch(str(d))[0])
         assert not p2["problems"] and "José" in p2["csv"]["observers.csv"] and p2["reports"] is None
@@ -1864,30 +1727,33 @@ def test_templates_folder(tmp_path):
     from spyhop.server import App
     app = App(tmp_path)
     cfg = app.rec.cfg
-    folder = cfg.data_dir / "templates"
+    folder = tmp_path / "templates" / "saved"
     assert _run(app.templates_list(_Req()))["templates"] == []
+    assert _run(app.templates_status(_Req()))["status"] == {"name": "", "saved": False, "changed": []}
     assert _run(app.templates_changes(_Req()))["files"] is None     # nothing to compare with yet
     with pytest.raises(ValueErrorMsg, match="your name"):
         asyncio.run(app.templates_save(_Req({"by": "", "notes": "x", "name": "a"})))
 
-    # save a new template: <name>.spyhop-template.zip in the data folder's templates, with the change logged
+    # save a new template: <name>.spyhop-template.zip in templates/saved, with the change logged
     r = _run(app.templates_save(_Req({"by": "H. Johnson", "notes": "First version", "name": "2026-NEA-CCB"})))
     assert r["name"] == "2026-NEA-CCB.spyhop-template.zip" and (folder / r["name"]).is_file()
     with _zf.ZipFile(folder / r["name"]) as z:
         doc = json.loads(z.read("spyhop-config.json"))
     assert doc["history"][-1] == {**doc["history"][-1], "by": "H. Johnson", "notes": "First version", "changed": "all"}
     with pytest.raises(ValueErrorMsg, match="already a template"):
-        asyncio.run(app.templates_save(_Req({"by": "H", "notes": "again", "name": "2026-NEA-CCB.spyhop.zip"})))
+        asyncio.run(app.templates_save(_Req({"by": "H", "notes": "again", "name": "2026-NEA-CCB.zip"})))
     L = _run(app.templates_list(_Req()))
     assert [p["name"] for p in L["templates"]] == ["2026-NEA-CCB.spyhop-template.zip"] and L["templates"][0]["matches"]
     assert L["current"]["name"] == "2026-NEA-CCB.spyhop-template.zip" and L["current"]["how"] == "saved"
-    assert L["backups_folder"] == str(folder / "backups")
+    assert L["backups_folder"] == str(tmp_path / "templates" / "backups")
+    assert L["status"] == {"name": "2026-NEA-CCB.spyhop-template.zip", "saved": True, "changed": []}
     assert _run(app.templates_changes(_Req()))["files"] == []
 
     # change a list: the template now differs; updating it continues the template's own record
     cfg.save_list("observers", [{"name": "JM", "full_name": "J. M."}])
     L = _run(app.templates_list(_Req()))
     assert L["templates"][0]["differs"] == ["observers.csv"] and not L["templates"][0]["matches"]
+    assert L["status"] == {"name": "2026-NEA-CCB.spyhop-template.zip", "saved": False, "changed": ["observers.csv"]}
     assert _run(app.templates_changes(_Req(query={"name": "2026-NEA-CCB.spyhop-template.zip"})))["files"] == ["observers.csv"]
     assert _run(app.templates_changes(_Req()))["files"] == ["observers.csv"]
     templates.save_local_history(cfg, [{"date": "2020-01-01", "by": "X", "changed": "all", "notes": "unrelated"}])
@@ -1903,10 +1769,10 @@ def test_templates_folder(tmp_path):
     cfg.save_list("observers", [{"name": "ZZ", "full_name": "Z. Z."}])
     chk = _run(app.templates_check(_Req({"template": "with-jm.spyhop-template.zip"})))
     assert chk["kind"] == "folder" and [f["file"] for f in chk["files"] if f["status"] != "same"] == ["observers.csv"]
-    assert chk["history"][0]["notes"] == "with JM" and chk["info"]["min_spyhop"] == "0.24.0"
+    assert chk["history"][0]["notes"] == "with JM" and chk["info"]["min_spyhop"] == "0.28.0"
     res = _run(app.templates_use(_Req({"token": chk["token"], "backup": True})))
     assert res["changed"] == ["observers.csv"] and res["copy"] is None
-    assert Path(res["backup"]).parent == folder / "backups" and res["backup"].endswith(".spyhop-template.zip")
+    assert Path(res["backup"]).parent == tmp_path / "templates" / "backups" and res["backup"].endswith(".spyhop-template.zip")
     assert cfg.lists["observers"][0]["name"] == "JM"
     L = _run(app.templates_list(_Req()))
     assert L["current"] == {**L["current"], "name": "with-jm.spyhop-template.zip", "how": "loaded"}
@@ -1938,8 +1804,7 @@ def test_templates_folder(tmp_path):
         asyncio.run(app.templates_file(_Req(match={"name": "../x.zip"})))
     assert templates.safe_template_name('a/b:c') == "a_b_c.spyhop-template.zip" and templates.safe_template_name("  ") == ""
     assert templates.safe_template_name("x.zip") == "x.spyhop-template.zip"
-    assert templates.safe_template_name("y.spyhop.zip") == "y.spyhop-template.zip"
-    assert templates.template_stem("t.spyhop-template.zip") == "t" and templates.template_stem("t.spyhop") == "t"
+    assert templates.template_stem("t.spyhop-template.zip") == "t" and templates.template_stem("t.zip") == "t"
     assert templates._download_name("https://drive.google.com/uc?export=download&id=1",
                                     {"Content-Disposition": 'attachment; filename="2026-NEA-CCB-spyhop_config.zip"'}) == "2026-NEA-CCB-spyhop_config.zip"
     assert templates._download_name("https://api.github.com/repos/team/spyhop-config/zipball", {}) == "spyhop-config"
@@ -1964,24 +1829,17 @@ def test_reports_travel_in_templates(tmp_path):
     assert plan["Saved report: Rough"] == "new" and plan["Saved report: Gear"] == "removed"
     templates.apply(cfg, t)
     assert sorted(f["name"] for f in reports.load(cfg)[0]) == ["Blue whales", "Dead birds", "Right whales", "Rough"]
-    # older templates: 0.19–0.23 (reports/*.json), 0.18 (filters/*.json), and old report templates (ignored)
-    flat = {k: v for k, v in files.items() if k != "spyhop-config.json"}
-    flat.update({f"reports/{fn}": _json.dumps(spec).encode() for fn, spec in doc["reports"].items()})
-    assert set(templates.read_template(flat)["reports"]) == set(doc["reports"])
-    old18 = {("filters/" + k.split("/", 1)[1] if k.startswith("reports/") else k): v for k, v in flat.items()}
-    p18 = templates.read_template(old18)
-    assert not p18["problems"] and "sea_state.json" in p18["reports"]
-    old = {"species.csv": files["species.csv"], "reports/gear.json": _json.dumps(
-        {"id": "gear", "title": "Gear", "table": "events", "columns": [{"label": "Time", "value": "time"}]}).encode(),
-        "reports/_no_report_templates.txt": b"x"}
-    pold = templates.read_template(old)
-    assert not pold["problems"] and pold["reports"] is None and len(pold["ignored"]) == 2   # saved reports left alone
+    assert sorted(_json.loads(cfg.config_path.read_text())["reports"]) == ["blue_whales.json", "dead_birds.json",
+                                                                         "right_whales.json", "sea_state.json"]
+    # a template without reports leaves the saved reports alone
+    no_reps = {k: v for k, v in files.items() if k != "spyhop-config.json"}
+    assert templates.read_template(no_reps)["reports"] is None
 
 
 def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
     """Shared settings are replaced; feeds, waypoints, routes and overlays are only added; serial inputs and
     the data folder stay; feeds travel as addresses only; a minimum Spyhop version is checked; restoring the
-    backup takes away what the template added; a 0.22 template is still read."""
+    backup takes away what the template added."""
     import asyncio, zipfile as _zf
     from spyhop import templates, feeds, __version__
     from spyhop.server import App
@@ -2000,18 +1858,18 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
     (ca.overlays_dir / "Survey - old.geojson").write_text('{"type":"FeatureCollection","features":[]}')
 
     info = _run(a.templates_changes(_Req()))
-    assert (info["waypoints"], info["routes"], info["overlays"]) == (2, 1, 1) and info["min_default"] == "0.24.0"
+    assert (info["waypoints"], info["routes"], info["overlays"]) == (2, 1, 1) and info["min_default"] == "0.28.0"
     with pytest.raises(ValueErrorMsg, match="can't be newer"):
         asyncio.run(a.templates_save(_Req({"by": "H", "notes": "x", "name": "t", "min_spyhop": "99.0.0"})))
     r = _run(a.templates_save(_Req({"by": "H", "notes": "Team setup", "name": "team", "include": ["waypoints", "routes", "overlays"],
                                     "online": {"ais": True, "radar_us": False, "feeds": ["https://example.org/FeatureServer/3"]}})))
-    tf = ca.data_dir / "templates" / r["name"]
+    tf = ca.saved_dir / r["name"]
     with _zf.ZipFile(tf) as z:
         names = set(z.namelist())
         doc = json.loads(z.read("spyhop-config.json"))
     assert names == {"spyhop-config.json", "species.csv", "event_types.csv", "observers.csv", "behaviors.csv", "shortcuts.csv",
                      "waypoints.csv", "routes/Line 1.gpx", "overlays/zones.geojson"}      # no feed data, no display.csv
-    assert doc["min_spyhop"] == "0.24.0" and doc["includes"] == ["waypoints", "routes", "overlays"] and doc["made_with"] == __version__
+    assert doc["min_spyhop"] == "0.28.0" and doc["includes"] == ["waypoints", "routes", "overlays"] and doc["made_with"] == __version__
     assert doc["nmea_inputs"] == [{"type": "udp", "port": 2000}] and "data_dir" not in doc["settings"]
     assert doc["settings"]["timezone"] == "UTC" and doc["online_overlays"]["ais"] is True
     assert doc["map_feeds"] == [{"id": "abc12345", "name": "SMAs", "url": "https://example.org/FeatureServer/3",
@@ -2019,7 +1877,7 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
     assert set(doc) >= {"history", "map_display", "reports"}
     assert _run(a.templates_changes(_Req(query={"name": r["name"]})))["includes"] == ["waypoints", "routes", "overlays"]
     _run(a.templates_save(_Req({"by": "H", "notes": "lists only", "name": "lists"})))
-    with _zf.ZipFile(ca.data_dir / "templates" / "lists.spyhop-template.zip") as z:
+    with _zf.ZipFile(ca.saved_dir / "lists.spyhop-template.zip") as z:
         assert "waypoints.csv" not in z.namelist() and not any(n.startswith("routes/") for n in z.namelist())
 
     # computer B: its own serial port, a waypoint called Harbor somewhere else, its own route of the same name
@@ -2031,7 +1889,7 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
     assert st["waypoints.csv"]["status"] == "new" and st["waypoints.csv"]["add"] == 1 and "kept" in st["waypoints.csv"]["detail"]
     assert st["routes/Line 1.gpx"]["status"] == "kept" and st["overlays/zones.geojson"]["status"] == "new"
     assert st["Map feed: SMAs"]["status"] == "new" and "UTC" in st[templates.SETTINGS_LABEL]["detail"]
-    assert chk["info"]["min_spyhop"] == "0.24.0" and chk["online"]["ais"] is True and chk["online"]["feed_names"] == ["SMAs"]
+    assert chk["info"]["min_spyhop"] == "0.28.0" and chk["online"]["ais"] is True and chk["online"]["feed_names"] == ["SMAs"]
     res = _run(b.templates_use(_Req({"token": chk["token"], "backup": True})))
     assert res["added"] == {"waypoints": 1, "routes": 0, "overlays": 1, "feeds": 1}
     assert cb.settings["timezone"] == "UTC" and cb.settings["effort_reminder_min"] == 20
@@ -2060,73 +1918,17 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
     assert any("needs Spyhop 9.0.0" in x and __version__ in x for x in t["problems"])
     with pytest.raises(templates.TemplateError):
         templates.apply(cb, t)
-    assert templates.clean_min_version("") == "0.24.0"
+    assert templates.clean_min_version("") == "0.28.0"
     with pytest.raises(templates.TemplateError):
-        templates.clean_min_version("0.22.0")
+        templates.clean_min_version("0.27.0")
 
-    # a template made by Spyhop 0.22–0.23 (spyhop-pack.json, spyhop-settings.json, feeds/) still works; its feed data is skipped
-    old = {"spyhop-pack.json": json.dumps({"format": 2, "min_spyhop": "0.22.0", "includes": []}).encode(),
-           "spyhop-settings.json": json.dumps({"settings": {"timezone": "UTC"}, "nmea_sources": [{"type": "udp", "port": 3000}],
-                                               "online_feeds": doc["map_feeds"], "online_display": {"ais": True}}).encode(),
-           "feeds/abc12345.geojson": b'{"type":"FeatureCollection","features":[]}',
-           "spyhop-config.csv": b"Date,Changed by,Files,Notes\r\n2026-11-07,H,all,0.22 pack\r\n",
-           "species.csv": files["species.csv"]}
-    t22 = templates.read_template(old)
-    assert not t22["problems"] and not t22["ignored"] and t22["settings"]["nmea_inputs"] == [{"type": "udp", "port": 3000}]
-    assert t22["history"][0]["notes"] == "0.22 pack" and t22["settings"]["online"] == {"ais": True}
-    copy = templates.read_template(templates.unzip(templates.template_to_zip(t22)))
-    assert copy["settings"] == t22["settings"] and copy["history"] == t22["history"]
-
-
-def test_templates_renamed_from_config_packs(tmp_path):
-    """0.24: settings group_config_* → template_*, the config_packs folder → templates, and this computer's
-    record of changes (spyhop-config.csv) → template_history.json."""
-    from spyhop import templates
-    from spyhop.config import Config
-    root = tmp_path / "app"
-    (root / "settings").mkdir(parents=True)
-    (root / "settings" / "settings.json").write_text(json.dumps({
-        "group_config_url": "https://example.org/t.zip", "group_config_author": "HJ", "group_config_pack_name": "x",
-        "group_config_current": {"name": "team.spyhop.zip", "how": "loaded"}, "template_backup": False}))
-    (root / "spyhop-config.csv").write_text("Date,Changed by,Files,Notes\r\n2026-11-01,HJ,species.csv,Old record\r\n")
-    old = root / "data" / "config_packs"
-    old.mkdir(parents=True)
-    (old / "team.spyhop.zip").write_bytes(b"PK")
-    cfg = Config(root)
-    st = cfg.settings
-    assert st["template_url"] == "https://example.org/t.zip" and st["template_author"] == "HJ"
-    assert st["template_current"]["name"] == "team.spyhop.zip" and st["template_backup"] is False
-    assert not any(k.startswith("group_config") for k in st)
-    cfg.save_settings()
-    assert "group_config_url" not in json.loads((root / "settings" / "settings.json").read_text())
-    assert templates.templates_dir(cfg) == root / "data" / "templates" and (root / "data" / "templates" / "team.spyhop.zip").is_file()
-    assert not old.exists()
-    assert templates.local_history(cfg) == [{"date": "2026-11-01", "by": "HJ", "changed": "species.csv", "notes": "Old record"}]
-    assert not (root / "spyhop-config.csv").exists()
-
-
-def test_veslat_veslon_become_lat_lon(tmp_path):
-    """0.26: the Sightings and Effort columns VesLat/VesLon are now Lat/Lon. Older survey files are
-    carried over (with a backup), past surveys drawn as overlays read them, and saved reports using
-    the old names still work."""
-    from spyhop import schema, store, reports
-    hdr_old = ["VesLat" if h == "Lat" else "VesLon" if h == "Lon" else h for h in schema.headers("sightings")]
-    assert "VesLat" in hdr_old and "Lat" in schema.headers("sightings")
-    p = tmp_path / "Old_sightings.csv"
-    row = {h: "" for h in hdr_old}
-    row.update(RowID="abc", DateTime="2026-11-01T10:00:00-05:00", VesLat="41.900000", VesLon="-70.300000",
-               SigLat="41.910000", SigLon="-70.310000", Species="Humpback whale", Num="1")
-    with open(p, "w", newline="", encoding="utf-8") as fh:
-        w = csv.writer(fh)
-        w.writerow(hdr_old)
-        w.writerow([row[h] for h in hdr_old])
-    t = store.Table("sightings", p)
-    assert t.rows[0]["Lat"] == "41.900000" and t.rows[0]["Lon"] == "-70.300000" and "VesLat" not in t.rows[0]
-    assert "renamed VesLat → Lat, VesLon → Lon" in t.notice and "only in the backup" not in t.notice
-    assert list(csv.reader(open(p, encoding="utf-8-sig")))[0] == schema.headers("sightings")
-    spec = reports.clean({"name": "Old", "table": "effort", "columns": ["time", "VesLat", "VesLon"],
-                          "rules": [{"column": "VesLat", "op": "not_blank"}]})
-    assert spec["columns"] == ["time", "Lat", "Lon"] and spec["rules"][0]["column"] == "Lat"
+    # the network inputs are part of the setup in use: in templates/current/spyhop-config.json, while the
+    # serial port stays in spyhop-local.json, in its place in the list
+    cur = json.loads(cb.config_path.read_text())
+    loc = json.loads(cb.local_path.read_text())
+    assert cur["nmea_inputs"] == [{"type": "udp", "port": 10110}]
+    assert loc["settings"]["nmea_sources"][0] == {"type": "serial", "port": "/dev/ttyUSB0"}
+    assert "timezone" not in loc["settings"] and "online_feeds" not in loc["settings"]
 
 
 def test_prefetch_estimate_counts_without_listing(tmp_path):
@@ -2201,19 +2003,20 @@ def test_diagnostics_bundle_lists_folders_without_data(tmp_path):
     cfg = Config(tmp_path / "spy")
     (cfg.routes_dir / "Leg A.gpx").write_text("<gpx/>")
     (cfg.data_dir / "SecretSurvey_sightings.csv").write_text("a,b\n1,2\n")
-    (cfg.data_dir / "templates").mkdir()
-    (cfg.data_dir / "templates" / "Ship.spyhop-template.zip").write_bytes(b"PK")
-    cfg.save_settings({"online_feeds": [{"url": "https://x.org/f.json?key=SECRET"}]})
-    z = diag.make_bundle(cfg.root, cfg.data_dir, cfg.settings_path, {"survey": "none"}, tmp_path / "out")
+    (cfg.saved_dir / "Ship.spyhop-template.zip").write_bytes(b"PK")
+    cfg.save_settings({"online_feeds": [{"url": "https://x.org/f.json?key=SECRET"}],
+                       "last_meta": {"chief_scientist": "Dr Secret"}})
+    z = diag.make_bundle(cfg, {"survey": "none"}, tmp_path / "out")
     zz = zipfile.ZipFile(z)
     names = zz.namelist()
-    assert "folders.txt" in names and "settings/settings.json" in names and "config/behaviors.csv" in names
-    assert "config/observers.csv" not in names
+    assert {"folders.txt", "spyhop-local.json", "current/spyhop-config.json", "current/behaviors.csv"} <= set(names)
+    assert "current/observers.csv" not in names
     f = zz.read("folders.txt").decode()
-    assert "Leg A.gpx" in f and "Ship.spyhop-template.zip" in f and "routes/" in f
+    assert "Leg A.gpx" in f and "Ship.spyhop-template.zip" in f and "routes/" in f and "current/" in f
     assert "SecretSurvey" not in f and "1 files" in f
-    s = zz.read("settings/settings.json").decode()
+    s = zz.read("current/spyhop-config.json").decode()
     assert "SECRET" not in s and "https://x.org/f.json?…" in s
+    assert "Dr Secret" not in zz.read("spyhop-local.json").decode()
     assert not any("SecretSurvey" in n for n in names)
 
 
@@ -2264,7 +2067,7 @@ def test_uninstall_plan_and_run(tmp_path, monkeypatch):
     _wait_helper(r["helper_log"])
     assert not prog.exists()
     assert (cfg.data_dir / "S1_sightings.csv").exists()
-    assert not (cfg.root / "settings").exists() and not (cfg.root / "routes").exists()
+    assert not (cfg.root / "templates").exists() and not (cfg.root / "routes").exists()
 
 
 def test_uninstall_refuses_unsafe_folders(tmp_path, monkeypatch):
@@ -2301,6 +2104,80 @@ def test_reinstall_replaces_program_keeps_data(tmp_path, monkeypatch):
     _wait_helper(r["helper_log"])
     assert '9.9.9' in (prog / "spyhop" / "__init__.py").read_text()
     assert not (prog / "old_only.txt").exists() and not (prog / ".venv").exists()
-    assert (cfg.data_dir / "S1_sightings.csv").exists() and (cfg.root / "settings").exists()
+    assert (cfg.data_dir / "S1_sightings.csv").exists() and (cfg.current_dir / "species.csv").exists()
     assert list((cfg.root / "updates").glob("*.zip"))
     assert not list(tmp_path.glob(".spyhop-reinstall-*"))
+
+
+def test_old_layout_moved_once(tmp_path):
+    """0.28: a 0.27 Spyhop folder (lists at the top, settings/, reports/, templates in the data folder) is moved
+    into templates/current, templates/saved, templates/backups and spyhop-local.json, and the old files go."""
+    from spyhop.config import Config
+    root = tmp_path / "Spyhop"
+    (root / "settings").mkdir(parents=True)
+    (root / "reports").mkdir()
+    (root / "data" / "templates" / "backups").mkdir(parents=True)
+    (root / "species.csv").write_text("name,color,species_code\nTest whale,red,TEWH\n")
+    (root / "shortcuts.csv").write_text("combo,action,prefill\nMod+Shift+T,add:sightings,Species=Test whale\n")
+    (root / "display.csv").write_text("key,value\nmarker_radius,11\n")
+    (root / "settings" / "settings.json").write_text(json.dumps({
+        "timezone": "UTC", "view": "split-h", "last_meta": {"organization": "NEAq"},
+        "nmea_sources": [{"type": "serial", "port": "COM4"}, {"type": "udp", "port": 2000}],
+        "online_feeds": [{"id": "abc12345", "name": "SMAs", "url": "https://example.org/x", "color": "#ff0000", "refresh_min": 60}],
+        "template_current": {"name": "Team.spyhop-template.zip", "how": "saved"}}))
+    (root / "settings" / "template_history.json").write_text(json.dumps([{"date": "2026-11-01", "by": "H", "changed": "all", "notes": "v1"}]))
+    (root / "settings" / "current_survey.txt").write_text(json.dumps({"prefix": "S1", "data_dir": str(root / "data")}))
+    for marker in ("list_rows_added.txt", "reports_started.txt"):
+        (root / "settings" / marker).write_text("x")
+    (root / "reports" / "mine.json").write_text(json.dumps({"name": "Mine", "table": "events", "columns": ["time"]}))
+    (root / "data" / "templates" / "Team.spyhop-template.zip").write_bytes(b"PK")
+    (root / "data" / "templates" / "backups" / "spyhop-backup-1.spyhop-template.zip").write_bytes(b"PK")
+    (root / "data" / "S1_effort.csv").write_text("x\n")
+
+    cfg = Config(root)
+    assert any("new layout" in n for n in cfg.notices)
+    assert sorted(p.name for p in root.iterdir()) == ["charts", "data", "overlays", "routes", "spyhop-local.json", "templates"]
+    assert [r["name"] for r in cfg.lists["species"]] == ["Test whale"] and cfg.shortcuts[0]["combo"] == "Mod+Shift+T"
+    assert cfg.display["marker_radius"] == "11" and sorted(cfg.reports) == ["mine.json"]
+    assert cfg.settings["timezone"] == "UTC" and cfg.settings["view"] == "split-h"
+    assert cfg.settings["nmea_sources"] == [{"type": "serial", "port": "COM4"}, {"type": "udp", "port": 2000}]
+    assert cfg.settings["online_feeds"][0]["name"] == "SMAs" and cfg.history[0]["notes"] == "v1"
+    assert cfg.current_survey()["prefix"] == "S1"
+    assert (cfg.saved_dir / "Team.spyhop-template.zip").is_file() and (cfg.backups_dir / "spyhop-backup-1.spyhop-template.zip").is_file()
+    assert sorted(p.name for p in (root / "data").iterdir()) == ["S1_effort.csv"]
+    # a second start changes nothing
+    again = Config(root)
+    assert not again.notices and again.settings["timezone"] == "UTC"
+
+
+def test_survey_records_template_and_version(tmp_path):
+    """0.28: a survey's details silently record the Spyhop version and the template the setup came from,
+    and whether the setup still matched it."""
+    import csv as _csv
+    from spyhop import templates, __version__
+    rec = Recorder(tmp_path)
+    cfg = rec.cfg
+
+    def meta(prefix):
+        with open(cfg.data_dir / f"{prefix}_metadata.csv", newline="", encoding="utf-8-sig") as fh:
+            return {r["field"]: r["value"] for r in _csv.DictReader(fh)}
+    rec.start_survey("A")
+    m = meta("A")
+    assert m["spyhop_version_created"] == __version__ and m["template_created"] == ""
+    assert m["template_created_matches"] == "no — not saved as a template"
+    rec.end_survey()
+    p = templates.save_template(cfg, "Team", "H", "all", "v1")
+    cfg.save_settings({"template_current": {"name": p.name, "how": "saved"}})
+    rec.start_survey("B")
+    assert (meta("B")["template_created"], meta("B")["template_created_matches"]) == ("Team.spyhop-template.zip", "yes")
+    rec.set_meta({"organization": "NEAq"})                         # editing the details keeps what was recorded
+    assert meta("B")["template_created"] == "Team.spyhop-template.zip" and meta("B")["organization"] == "NEAq"
+    rec.end_survey()
+    cfg.save_list("observers", [{"name": "JM", "full_name": "J. M."}])
+    rec.start_survey("C")
+    assert meta("C")["template_created_matches"] == "no — changed since: observers.csv"
+    # waypoints don't count as a change of setup
+    from spyhop.config import DEFAULT_LISTS
+    rec.tables["marks"].add({"Name": "W", "Lat": "41", "Lon": "-70"})
+    cfg.save_list("observers", [dict(zip(DEFAULT_LISTS["observers"][0], r)) for r in DEFAULT_LISTS["observers"][1]])
+    assert templates.current_status(cfg) == {"name": "Team.spyhop-template.zip", "saved": True, "changed": []}

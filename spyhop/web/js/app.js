@@ -31,12 +31,11 @@ class App {
     try { this.logSize = localStorage.getItem('wsr.logsize') || 'normal'; } catch { this.logSize = 'normal'; }
     this.setView(this.S.config.settings.view || 'split-v', false);
     this.updateLogButtons();
-    // the sub-tab last used in each group (Tools, Settings); before 0.15 one Survey group (wsr.surveytab)
+    // the sub-tab last used in each group (Tools, Settings)
     this.lastSub = { tools: 'marks', config: 'settings' };
     try {
       const saved = JSON.parse(localStorage.getItem('wsr.subtabs') || 'null');
       if (saved) Object.assign(this.lastSub, saved);
-      else { const old = this.tabAlias(localStorage.getItem('wsr.surveytab') || ''); const g = this.groupOf(old); if (g) this.lastSub[g] = old; }
     } catch {}
     this.connect();
     setInterval(() => {
@@ -51,6 +50,8 @@ class App {
     window.addEventListener('resize', () => this.map.invalidate());
     (this.S.notices || []).forEach((n) => toast(n, 'warn', 15000));
     this.showTab(this.S.survey ? (localStorage.getItem('wsr.tab') || 'sightings') : 'survey');
+    // a survey open at startup (active or ended): show all of it, once the panes have their sizes
+    if (this.S.survey) setTimeout(() => { this.map.map.invalidateSize(); this.map.fitSurvey(); }, 300);
     if (this.S.resume_prompt) this.askResume();
   }
 
@@ -128,7 +129,7 @@ class App {
     this.map.drawTrack();
     this.map.loadOverlays(this.S.overlays);
     this.online?.applyPackDisplay();
-    this.showTab(this.allTabs().includes(this.tabAlias(tab)) ? tab : 'sightings');
+    this.showTab(this.allTabs().includes(tab) ? tab : 'sightings');
     if (this.pendingFit) { this.pendingFit = false; this.map.fitSurvey(); }
   }
 
@@ -165,8 +166,6 @@ class App {
     if (!t) return tab === 'survey' ? 'Survey' : (this.S.schema.tabs[tab]?.title || tab);
     return `${this.tabGroups().find(([g]) => g === t[2])[1]} → ${t[1]}`;
   }
-  // tabs that were renamed: Planning → Route (0.7.0); Filter → Reports (0.19, when the old Reports went).
-  tabAlias(tab) { return { planning: 'route', filter: 'reports' }[tab] || tab; }
   allTabs() { return [...this.topTabs(), 'survey', ...this.groupTabs().map(([k]) => k)]; }
 
   // ---------------------------------------------------------------- layout
@@ -399,7 +398,6 @@ class App {
   }
 
   showTab(tab) {
-    tab = this.tabAlias(tab);
     if (!this.allTabs().includes(tab)) tab = 'sightings';
     if (this.tab === 'route' && tab !== 'route') this.planner.hide();
     this.tab = tab;
@@ -673,6 +671,7 @@ class App {
       if (!how) return;
       try { await api(`/api/survey/${how}`, {}); } catch { return; }
     }
+    if (!await this.offerTemplateSave()) return;
     const last = this.S.config.settings.last_meta || {};
     const nameBox = el('input', { type: 'text', style: { width: '100%' } });
     const fields = {};
@@ -865,11 +864,11 @@ class App {
         isDefault ? null : el('button', { onclick: () => this.chooseDataFolder('') }, 'Use the default')),
       el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Or type a path:', pathBox),
         el('button', { onclick: () => this.chooseDataFolder(pathBox.value) }, 'Use this folder')),
-      el('p', { class: 'hint' }, 'Pick a backed-up folder if you like. Spyhop remembers it between sessions. Your lists (species, observers…) and settings stay in Spyhop’s own folder.'),
+      el('p', { class: 'hint' }, 'Pick a backed-up folder if you like. Spyhop remembers it between sessions. Your lists (species, observers…), settings and templates stay in Spyhop’s own folder.'),
       el('h4', {}, 'Spyhop folder'),
       el('p', {}, 'Spyhop’s own files are in ', el('span', { class: 'mono' }, S.config.root), '. ',
         el('a', { href: '#', id: 'open-app-folder', onclick: (e) => { e.preventDefault(); this.open('app'); } }, 'Open folder')),
-      el('p', { class: 'hint' }, 'It holds the config files (lists and shortcuts, edited in Settings → Dropdowns and Shortcuts; map display), saved reports, settings, offline charts, map overlays and the tile cache, logs, and config backups. Spyhop always uses this folder.'));
+      el('p', { class: 'hint' }, 'It holds templates/ (current: the setup in use, i.e. the lists, shortcuts and spyhop-config.json with the shared settings, map display and saved reports; saved: your templates; backups), spyhop-local.json (this computer’s own settings), offline charts, map overlays, routes, map feeds, the tile cache and logs. Spyhop always uses this folder.'));
   }
 
   async exportData() {
@@ -1112,8 +1111,8 @@ class App {
         ? 'Spyhop closes, downloads a clean copy of the latest version, replaces its program folder with it (Python packages are set up again when it starts) and opens again in a new window. A copy of the current program files is kept in Spyhop’s folder (updates/).'
         : 'Spyhop closes and removes itself from this computer. This can’t be undone.'),
       el('label', { class: 'check' }, setBox, el('span', {}, re
-        ? 'Also reset the settings, lists, offline maps, overlays, routes, feeds and reports (Spyhop’s folder) to a fresh start'
-        : 'Also delete the settings, lists, offline maps, overlays, routes, feeds and reports (Spyhop’s folder)')),
+        ? 'Also reset the settings, templates, offline maps, overlays, routes and feeds (Spyhop’s folder) to a fresh start'
+        : 'Also delete the settings, templates, offline maps, overlays, routes and feeds (Spyhop’s folder)')),
       re ? null : el('label', { class: 'check' }, dataBox, el('span', {}, 'Also delete the survey data, waypoints, templates, NMEA logs and exports')),
       re ? null : el('div', { class: 'indent hint' }, 'To delete the survey data, type ', el('b', { class: 'mono' }, 'DELETE'), ': ', typed),
       planBox,
@@ -1467,7 +1466,7 @@ class App {
   }
 
   // ---------------------------------------------------------------- templates (templates.py)
-  // Settings → Templates: a team's setup in one file, kept in the templates folder of the survey data folder
+  // Settings → Templates: a team's setup in one file, kept in templates/saved of Spyhop's folder (the one in use: templates/current)
   renderTemplates() {
     const pane = $('#pane-templates');
     if (!pane) return;
@@ -1478,16 +1477,16 @@ class App {
     const S = this.S, st = S.config.settings, tp = (this.tpl ||= {});
     const sec = (title, ...kids) => el('section', { class: 'settings-sec', id: 'templates' }, el('h3', {}, title), ...kids);
     const when = (iso) => { const p = iso && timeParts(iso, this.clock()); return p ? `${p.date} ${p.time.slice(0, 5)} ${p.abbr}` : ''; };
-    if ((!tp.list || tp.listDir !== S.config.data_dir) && !tp.loading) this.loadTemplates();
+    if (!tp.list && !tp.loading) this.loadTemplates();
     const L = tp.list;
-    const stem = (n) => n.replace(/\.spyhop-template\.zip$|\.spyhop\.zip$|\.spyhop$|\.zip$/i, '');
+    const stem = (n) => n.replace(/\.spyhop-template\.zip$|\.zip$/i, '');
     const ext = (n) => n.slice(stem(n).length);
     const cur = L?.current?.name && L.templates.find((p) => p.name === L.current.name);
     const btn = (label, attrs, fn) => el('button', { ...attrs, onclick: fn }, label);
 
     // ---- this computer's setup and the templates in the folder
     const kids = [
-      el('p', {}, 'A template is your team’s Spyhop setup in one small file, so every computer records the same way: the species, event types, observers and behaviors lists, keyboard shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log, network GPS / NMEA inputs), the map feeds and which online overlays are on, and, if you choose, waypoints, routes and overlays. Update the template and use it again whenever the team changes something. Templates are kept in the templates folder of the survey data folder; share one by uploading it (or copying it to a USB stick). Offline charts, survey data, serial GPS ports and the data folder are never in a template.'),
+      el('p', {}, 'A template is your team’s Spyhop setup in one small file, so every computer records the same way: the species, event types, observers and behaviors lists, keyboard shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log, network GPS / NMEA inputs), the map feeds and which online overlays are on, and, if you choose, waypoints, routes and overlays. Update the template and use it again whenever the team changes something. The setup in use is itself a template, unzipped, in templates/current of Spyhop’s folder; saved templates are in templates/saved. Share one by uploading it (or copying it to a USB stick). Offline charts, survey data, serial GPS ports and the data folder are never in a template.'),
     ];
     if (!L) kids.push(el('p', { class: 'hint' }, tp.loading ? 'Reading the templates folder…' : ''));
     else {
@@ -1499,7 +1498,7 @@ class App {
           c.when ? ` (${when(c.when)})` : '', cur.matches ? ' — no changes since.'
             : cur.differs?.length ? ` — changed since: ${cur.differs.join(', ')}.` : '.');
       } else if (c?.how === 'backup') curText = el('p', { id: 'tpl-current' }, el('b', {}, 'This computer’s setup: '), `restored from a backup${c.when ? ` (${when(c.when)})` : ''}.`);
-      else curText = el('p', { id: 'tpl-current' }, el('b', {}, 'This computer’s setup: '), c?.name ? `from ${c.name}, which is no longer in the folder.` : 'not saved to or loaded from a template in this folder yet.');
+      else curText = el('p', { id: 'tpl-current' }, el('b', {}, 'This computer’s setup: '), c?.name ? `from ${c.name}, which is no longer in the folder.` : 'not saved as a template yet.');
       kids.push(curText);
       kids.push(el('p', { class: 'hint' }, 'Templates in ', el('span', { class: 'mono' }, L.folder)));
       if (!L.templates.length) kids.push(el('p', { class: 'hint', id: 'tpl-none' }, 'No templates here yet. Save this computer’s setup as a template, or get one from a web address below.'));
@@ -1527,6 +1526,7 @@ class App {
     kids.push(el('div', { class: 'btnrow' },
       btn('Save as a new template…', { id: 'tpl-save-new', class: 'primary' }, () => this.saveTemplate(null)),
       btn('Open the templates folder', {}, () => this.open('templates')),
+      btn('Open the setup in use', { title: 'templates/current: the lists, shortcuts and spyhop-config.json in use' }, () => this.open('current')),
       btn('Refresh', {}, () => this.loadTemplates())));
 
     // ---- what a template did / would change (from the list, the web or a backup)
@@ -1569,7 +1569,7 @@ class App {
         btn('Open the backups folder', {}, () => this.open('backups'))),
       el('details', { class: 'hint' }, el('summary', {}, 'How to share a template with the team'),
         el('p', {}, 'Save this computer’s setup as a template (or Update the team’s template with it), giving your name and what you changed: that’s added to the template’s record of changes. Then upload the file in place of the old one, keeping the same link (in Google Drive: Manage versions → Upload new version). Others press Check with that link.'),
-        el('p', {}, 'Templates are ordinary zip files named .spyhop-template.zip, so they open in any zip tool: the lists and shortcuts are CSV files, and everything else is in spyhop-config.json. Spyhop also reads templates named .spyhop.zip, .spyhop or .zip, including ones made by older versions. SharePoint and OneDrive links usually need a sign-in, so they don’t work. See docs/TEMPLATES.md.')));
+        el('p', {}, 'Templates are ordinary zip files named .spyhop-template.zip, so they open in any zip tool: the lists and shortcuts are CSV files, and everything else is in spyhop-config.json. SharePoint and OneDrive links usually need a sign-in, so they don’t work. See docs/TEMPLATES.md.')));
     return sec('Templates', ...kids);
   }
 
@@ -1618,16 +1618,11 @@ class App {
           el('div', { class: 'btnrow' }, el('button', { id: 'btn-tpl-use', onclick: () => this.useTemplate() },
             r.kind === 'web' || r.kind === 'file' ? 'Keep a copy in the templates folder' : 'Mark it as in use'), cancel));
       } else {
-        const dirBox = el('input', { type: 'text', id: 'tpl-backup-dir', value: tp.backupDir ?? st.template_backup_dir ?? '',
-          placeholder: tp.list?.backups_folder || '', style: { flex: '1', minWidth: '18em' },
-          oninput: (e) => { tp.backupDir = e.target.value; } });
         const backup = el('input', { type: 'checkbox', id: 'tpl-backup', checked: tp.backup ?? st.template_backup !== false,
           onchange: (e) => { tp.backup = e.target.checked; } });
         const verb = r.kind === 'backup' ? 'Restore' : r.kind === 'folder' ? 'Use it' : 'Pull it';
         box.push(
-          el('label', { class: 'check' }, backup, el('span', {}, 'Save a backup of this computer’s setup first (it can be restored to undo)')),
-          el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Backup folder:', dirBox),
-            el('button', { onclick: async () => { const p = await this.pickFolder(); if (p) { tp.backupDir = p; dirBox.value = p; } } }, 'Choose…')),
+          el('label', { class: 'check' }, backup, el('span', {}, 'Save a backup of this computer’s setup first, in templates/backups (it can be restored to undo)')),
           el('div', { class: 'btnrow' }, el('button', { id: 'btn-tpl-use', class: 'primary', onclick: () => this.useTemplate() },
             tp.busy === 'use' ? 'Working…' : `${verb}: ${todo.length} change${todo.length > 1 ? 's' : ''}`), cancel));
       }
@@ -1639,7 +1634,6 @@ class App {
     const tp = (this.tpl ||= {});
     tp.loading = true;
     try { tp.list = await api('/api/templates'); } catch { tp.list = tp.list || null; }
-    tp.listDir = this.S.config.data_dir;
     tp.loading = false;
     if (this.tab === 'templates') this.renderTemplates();
   }
@@ -1656,7 +1650,7 @@ class App {
     // the optional parts: the updated template's choice, else the last one made here
     let inc = info.includes;
     if (!Array.isArray(inc)) {
-      try { inc = JSON.parse(localStorage.getItem('wsr.templateInclude') || localStorage.getItem('wsr.packInclude') || '[]'); } catch { inc = []; }
+      try { inc = JSON.parse(localStorage.getItem('wsr.templateInclude') || '[]'); } catch { inc = []; }
     }
     const part = (key, label, n) => el('label', { class: 'check' },
       el('input', { type: 'checkbox', class: 'tpl-include', value: key, checked: inc.includes(key) }),
@@ -1686,7 +1680,7 @@ class App {
       const ok = await modal({ title: name ? 'Update a template' : 'Save a new template', body,
         buttons: [{ label: 'Cancel', value: false }, { label: name ? 'Update the template' : 'Save the template', value: true, primary: true }],
         onOpen: () => { setTimeout(() => (!name ? fname : by.value ? notes : by).focus(), 0); return true; } });
-      if (!ok) return;
+      if (!ok) return false;
       if (!name && !fname.value.trim()) { toast('Please give the template a name.', 'warn'); continue; }
       if (by.value.trim() && notes.value.trim()) break;
       toast('Please give your name and what you changed.', 'warn');
@@ -1697,8 +1691,30 @@ class App {
       const r = await api('/api/templates/save', { name: name || fname.value, overwrite: !!name, by: by.value, notes: notes.value, changed: changed.value,
         include, min_spyhop: minV.value.trim(), online: withOnline.checked ? online : null });
       toast(`${name ? 'Template updated' : 'Template saved'}: ${r.name}`, 'info', 6000);
-    } catch { return; }
+    } catch { return false; }
     await this.loadTemplates();
+    return true;
+  }
+
+  // Before a survey starts: if the setup in use isn't saved as a template, offer to save it, so the
+  // survey's details can say which template it was recorded with. Returns false to stop.
+  async offerTemplateSave() {
+    let st;
+    try { st = (await api('/api/templates/status')).status; } catch { return true; }
+    if (!st || st.saved) return true;
+    const known = st.name && st.changed?.length;
+    const choice = await modal({ title: 'Save the setup as a template first?', width: 'min(560px, 94vw)',
+      body: el('div', { id: 'tpl-start-prompt' },
+        el('p', {}, known
+          ? ['The setup in use has changed since it was saved as ', el('span', { class: 'mono' }, st.name), ` (${st.changed.join(', ')}).`]
+          : 'The setup in use (lists, shortcuts, map display, saved reports and settings) isn’t saved as a template.'),
+        el('p', {}, 'Saving it first means this survey’s details record exactly which setup it was made with, and the team can use the same one.')),
+      buttons: [{ label: 'Cancel', value: null }, { label: 'Start without saving', value: 'skip' },
+        ...(known ? [{ label: `Update ${st.name.replace(/\.spyhop-template\.zip$|\.zip$/i, '')}…`, value: 'update' }] : []),
+        { label: 'Save as a new template…', value: 'save', primary: true }] });
+    if (!choice) return false;
+    if (choice === 'skip') return true;
+    return await this.saveTemplate(choice === 'update' ? st.name : null);
   }
 
   async pickFolder() {
@@ -1723,7 +1739,6 @@ class App {
     if (!r) return;
     const todo = r.files.filter((f) => f.status !== 'same' && f.status !== 'kept');
     const backup = todo.length ? ($('#tpl-backup')?.checked ?? true) : false;
-    const backupDir = ($('#tpl-backup-dir')?.value ?? '').trim();
     if (todo.length) {
       const over = todo.filter((f) => f.status !== 'new' || f.unit === 'rows' || f.unit === 'report');
       const adds = todo.filter((f) => !over.includes(f));
@@ -1735,7 +1750,7 @@ class App {
     }
     tp.busy = 'use'; this.renderTemplates();
     try {
-      const res = await api('/api/templates/use', { token: r.token, backup, backup_dir: backupDir });
+      const res = await api('/api/templates/use', { token: r.token, backup });
       tp.done = { changed: res.changed, backup: res.backup, copy: res.copy, added: res.added, removed: res.removed_waypoints }; tp.result = null;
       toast(r.kind === 'backup' ? 'Backup restored' : 'Template used');
     } catch { /* toast shown */ }
@@ -1745,9 +1760,8 @@ class App {
 
   async backupTemplate() {
     const tp = (this.tpl ||= {});
-    const dir = ($('#tpl-backup-dir')?.value ?? tp.backupDir ?? this.S.config.settings.template_backup_dir ?? '').trim();
     try {
-      const r = await api('/api/templates/backup', { dir });
+      const r = await api('/api/templates/backup', {});
       toast(`Backup saved: ${r.path}`);
     } catch { return; }
     await this.loadTemplates();

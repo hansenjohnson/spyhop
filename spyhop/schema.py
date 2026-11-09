@@ -160,21 +160,6 @@ MARKER_POS = {
     "marks": [("Lat", "Lon")],
 }
 
-# columns renamed in later versions, by table: old name -> new name (files and saved reports are
-# read with the new names; 0.26: VesLat/VesLon became Lat/Lon, so they suit any platform)
-RENAMED_COLUMNS = {
-    "sightings": {"VesLat": "Lat", "VesLon": "Lon"},
-    "effort": {"VesLat": "Lat", "VesLon": "Lon"},
-}
-
-
-def renamed(tab: str, names):
-    """Column names with old ones replaced by their new names (an old name is kept if the new one is already there)."""
-    ren = RENAMED_COLUMNS.get(tab, {})
-    names = list(names)
-    return [ren[n] if n in ren and ren[n] not in names else n for n in names]
-
-
 TRACK_COLUMNS = ["DateTime", "Lat", "Lon", "SOG", "COG", "Effort"]
 
 
