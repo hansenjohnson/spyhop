@@ -20,7 +20,9 @@ class App {
   constructor() {
     this.S = null;
     this.grids = {};
-    this.tab = 'sightings';
+    this.tab = 'sightings';       // the tab used last, in either pane (shortcuts that add rows go there)
+    this.dataTab = 'sightings';   // the data pane's tab: Sightings, Effort or Events
+    this.utilTab = 'survey';      // the Survey/Tools/Settings pane's tab
     this.wsOk = false;
   }
 
@@ -34,9 +36,7 @@ class App {
     this.online = new OnlineOverlays(this);
     this.applyDisplay();
     this.renderAll();
-    try { this.logSize = localStorage.getItem('wsr.logsize') || 'normal'; } catch { this.logSize = 'normal'; }
-    this.setView(this.S.config.settings.view || 'split-v', false);
-    this.updateLogButtons();
+    this.applyLayout();
     // the sub-tab last used in each group (Tools, Settings)
     this.lastSub = { tools: 'marks', config: 'settings' };
     try {
@@ -46,7 +46,7 @@ class App {
     this.connect();
     setInterval(() => {
       this.updateStatus();
-      if (this.tab === 'summary' && !window.getSelection()?.toString()) this.renderSummary();   // live counters
+      if (this.shown('summary') && !window.getSelection()?.toString()) this.renderSummary();   // live counters
     }, 1000);
     document.addEventListener('keydown', (e) => this.onShortcut(e), true);
     this.watchSlowness();
@@ -55,7 +55,12 @@ class App {
     if (ab.updated_from) toast(`Spyhop has been updated from ${ab.updated_from} to ${ab.spyhop}. See what's new in Settings → About.`, 'info', 12000);
     window.addEventListener('resize', () => this.map.invalidate());
     (this.S.notices || []).forEach((n) => toast(n, 'warn', 15000));
-    this.showTab(this.S.survey ? (localStorage.getItem('wsr.tab') || 'sightings') : 'survey');
+    // each pane opens on the tab it had last; with no survey open, on Survey
+    let saved = {};
+    try { saved = { data: localStorage.getItem('wsr.datatab'), util: localStorage.getItem('wsr.utiltab') }; } catch {}
+    this.showTab(this.allTabs().includes(saved.util) && !this.topTabs().includes(saved.util) ? saved.util : 'survey', { reveal: false });
+    this.showTab(this.topTabs().includes(saved.data) ? saved.data : 'sightings', { reveal: false });
+    if (!this.S.survey) this.showTab('survey', { reveal: false });
     // a survey open at startup (active or ended): show all of it, once the panes have their sizes
     if (this.S.survey) setTimeout(() => { this.map.map.invalidateSize(); this.map.fitSurvey(); }, 300);
     if (this.S.resume_prompt) this.askResume();
@@ -76,7 +81,7 @@ class App {
       if (pending.length) body.errors = pending.splice(0);
       if (n % 30 === 0) {      // every 5 minutes
         const mem = performance.memory ? `${Math.round(performance.memory.usedJSHeapSize / 1e6)} MB used` : 'memory n/a';
-        body.perf = `${mem}, ${longTasks} long tasks (${Math.round(longMs)} ms) in 5 min, ${document.querySelectorAll('*').length} page elements, tab ${this.tab}, view ${this.S.config.settings.view}`;
+        body.perf = `${mem}, ${longTasks} long tasks (${Math.round(longMs)} ms) in 5 min, ${document.querySelectorAll('*').length} page elements, tabs ${this.dataTab} + ${this.utilTab}`;
         longTasks = 0; longMs = 0;
       }
       if (body.errors || body.perf) fetch('/api/client-log', { method: 'POST', body: JSON.stringify(body) }).catch(() => {});
@@ -117,7 +122,7 @@ class App {
       this.S.overlays = d.overlays; this.S.surveys = d.surveys;
       this.map.loadOverlays(d.overlays);
       this.renderOverlays();
-      if (this.tab === 'survey') this.renderSurvey();
+      if (this.shown('survey')) this.renderSurvey();
     } catch { /* toast shown */ }
   }
 
@@ -127,7 +132,7 @@ class App {
     // Spyhop was updated and restarted: load the new version's page
     if (before && this.S.about?.spyhop && this.S.about.spyhop !== before) { location.reload(); return; }
     // a survey action can ask for a tab to show once the new data is in (e.g. Effort after Start)
-    const tab = this.pendingTab || this.tab;
+    const tab = this.pendingTab || this.tab, dataTab = this.dataTab, utilTab = this.utilTab;
     this.pendingTab = null;
     this.rebuildTabs();
     this.applyDisplay();
@@ -135,7 +140,9 @@ class App {
     this.map.drawTrack();
     this.map.loadOverlays(this.S.overlays);
     this.online?.applyPackDisplay();
-    this.showTab(this.allTabs().includes(tab) ? tab : 'sightings');
+    this.showTab(utilTab, { reveal: false });
+    this.showTab(dataTab, { reveal: false });
+    this.showTab(this.allTabs().includes(tab) ? tab : 'sightings', { reveal: tab !== dataTab && tab !== utilTab });
     if (this.pendingFit) { this.pendingFit = false; this.map.fitSurvey(); }
   }
 
@@ -188,25 +195,42 @@ class App {
   allTabs() { return [...this.topTabs(), 'survey', ...this.groupTabs().map(([k]) => k)]; }
 
   // ---------------------------------------------------------------- layout
+  // Three panes: the map and Survey/Tools/Settings ("utilities") share the top; the data tables
+  // (Sightings, Effort, Events) span the full width below. Each can be resized, minimized to a strip
+  // or maximized; the sizes and states are kept on this computer (settings.pane_layout).
   buildLayout() {
     const root = $('#app');
+    const winBtns = (k, label) => [
+      el('button', { class: 'pane-btn pane-min', 'data-pane': k, 'aria-label': `Minimize ${label}`, title: `Minimize ${label}`, onclick: () => this.setPaneMin(k, !this.paneLayout().min[k]) },
+        el('span', { 'aria-hidden': 'true' }, '▁')),
+      el('button', { class: 'pane-btn pane-max', 'data-pane': k, onclick: () => this.setPaneMax(k) })];
     root.replaceChildren(
       el('header', { id: 'status' }),
       el('main', { id: 'main' },
-        el('section', { id: 'map-pane' }, el('div', { id: 'map' })),
-        el('div', { id: 'splitter', title: 'Drag to resize' }),
-        el('section', { id: 'log-pane' },
-          el('div', { id: 'log-title' }, el('span', {}, 'Survey log'), el('button', { class: 'icon', title: 'Dock the log beside the map', onclick: () => this.setView('split-v') }, '⇥')),
-          el('button', { id: 'log-mini', title: `Show the data tables (${MOD}+Shift+M)`, onclick: () => this.setLogSize('normal') }, '▶ Data'),  // rotated 180°, so it shows as ◀
-          el('nav', { id: 'tabs', role: 'tablist' }),
+        el('section', { id: 'map-pane', class: 'pane', 'aria-label': 'Map' },
+          el('div', { class: 'pane-head map-head' }, el('b', { class: 'pane-title' }, 'Map'), el('span', { class: 'tabs-spacer' }), ...winBtns('map', 'the map')),
+          el('div', { class: 'pane-body' }, el('div', { id: 'map' })),
+          el('button', { class: 'strip-btn', 'data-pane': 'map', title: 'Show the map', onclick: () => this.setPaneMin('map', false) }, 'Map ▸')),
+        el('section', { id: 'util-pane', class: 'pane', 'aria-label': 'Survey, Tools and Settings' },
+          el('div', { class: 'pane-head' }, el('nav', { id: 'util-tabs', class: 'pane-tabs', role: 'tablist' }), el('span', { class: 'tabs-spacer' }), ...winBtns('util', 'Survey, Tools and Settings')),
           el('nav', { id: 'subtabs', role: 'tablist' }),
-          el('div', { id: 'tab-body' }),
-          el('footer', { id: 'bottom' }))));
+          el('div', { class: 'pane-body', id: 'util-body' }),
+          el('button', { class: 'strip-btn', 'data-pane': 'util', title: 'Show Survey, Tools and Settings', onclick: () => this.setPaneMin('util', false) }, '◂ Survey · Tools · Settings')),
+        el('section', { id: 'data-pane', class: 'pane', 'aria-label': 'Data tables' },
+          el('div', { class: 'pane-head' }, el('nav', { id: 'tabs', class: 'pane-tabs', role: 'tablist' }), el('span', { class: 'tabs-spacer' }), ...winBtns('data', 'the data tables')),
+          el('div', { class: 'pane-body', id: 'data-body' }),
+          el('footer', { id: 'bottom' })),
+        el('button', { id: 'split-v', class: 'pane-split', 'aria-label': 'Resize the map and Survey/Tools/Settings (drag, or use ← →)', title: 'Drag to resize · double-click to share equally' }),
+        el('button', { id: 'split-h', class: 'pane-split', 'aria-label': 'Resize the top and the data tables (drag, or use ↑ ↓)', title: 'Drag to resize · double-click for the default' })));
     this.buildStatus();
     this.rebuildTabs();
     this.buildBottom();
-    this.initSplitter();
-    this.initFloating();
+    this.initSplitters();
+    // the pane last clicked or typed in: its tab is the one "the current tab" shortcuts act on
+    $('#data-body').addEventListener('pointerdown', () => { this.tab = this.dataTab; }, true);
+    $('#data-body').addEventListener('focusin', () => { this.tab = this.dataTab; });
+    $('#util-body').addEventListener('pointerdown', () => { this.tab = this.utilTab; }, true);
+    $('#util-body').addEventListener('focusin', () => { this.tab = this.utilTab; });
   }
 
   buildStatus() {
@@ -221,6 +245,7 @@ class App {
       f('sf-track', 'Internal trackline (switch on/off in Settings)'),
       f('sf-effort', 'Latest effort state'),
       el('div', { class: 'sf grow' }),
+      el('button', { id: 'btn-reset-panes', class: 'sf', title: 'Put the map, Survey/Tools/Settings and the data tables back to their starting sizes', onclick: () => this.resetPanes() }, 'Reset panes'),
       f('sf-version', 'Spyhop version — click for details (Settings → About)', `Spyhop ${this.S.about?.spyhop || ''}`),
       f('sf-conn', 'Connection to Spyhop'));
     $('#sf-version').addEventListener('click', () => this.showTab('about'));
@@ -229,37 +254,33 @@ class App {
   }
 
   rebuildTabs() {
-    const nav = $('#tabs');
     const combo = (t) => (this.S.config.shortcuts.find((x) => x.action === `tab:${t}`)?.combo || '').replace('Mod', MOD);
-    const restore = () => { if (this.logSize === 'min') this.setLogSize('normal'); };
-    nav.replaceChildren(...this.topTabs().map((t) => el('button', {
-      role: 'tab', 'data-tab': t, onclick: () => { restore(); this.showTab(t); }, title: combo(t) },
-      this.S.schema.tabs[t].title, el('span', { class: 'count', id: `count-${t}` }))),
+    // the data pane: Sightings, Effort, Events
+    $('#tabs').replaceChildren(...this.topTabs().map((t) => el('button', {
+      role: 'tab', 'data-tab': t, onclick: () => this.showTab(t), title: combo(t) },
+      this.S.schema.tabs[t].title, el('span', { class: 'count', id: `count-${t}` }))));
+    // Survey, then Tools and Settings, which open the tab of theirs used last
+    $('#util-tabs').replaceChildren(
       el('button', { role: 'tab', 'data-tab': 'survey', title: 'Start, end, open and export surveys' + (combo('survey') ? ` (${combo('survey')})` : ''),
-        onclick: () => { restore(); this.showTab('survey'); } }, 'Survey'),
-      // Tools and Settings open the tab of theirs you used last
+        onclick: () => this.showTab('survey') }, 'Survey'),
       ...this.tabGroups().map(([g, label, tabs]) => el('button', { role: 'tab', 'data-group': g, class: 'group-tab', title: tabs.map(([, l]) => l).join(', '),
-        onclick: () => { restore(); const last = this.lastSub[g]; this.showTab(tabs.some(([k]) => k === last) ? last : tabs[0][0]); } }, label)),
-      el('span', { class: 'tabs-spacer' }),
-      el('button', { id: 'log-btn-min', class: 'winbtn', onclick: () => this.setLogSize(this.logSize === 'min' ? 'normal' : 'min') }),
-      el('button', { id: 'log-btn-max', class: 'winbtn', onclick: () => this.setLogSize(this.logSize === 'max' ? 'normal' : 'max') }));
-    this.updateLogButtons();
+        onclick: () => { const last = this.lastSub[g]; this.showTab(tabs.some(([k]) => k === last) ? last : tabs[0][0]); } }, label)));
     $('#subtabs').replaceChildren(...this.groupTabs().map(([k, label, g]) => el('button', {
       role: 'tab', 'data-tab': k, 'data-group': g, title: combo(k), onclick: () => this.showTab(k) }, label,
       this.S.schema.tabs[k] ? el('span', { class: 'count', id: `count-${k}` }) : null)));
-    const body = $('#tab-body');
-    body.replaceChildren();
+    const dataBody = $('#data-body'), utilBody = $('#util-body');
+    dataBody.replaceChildren(); utilBody.replaceChildren();
     this.grids = {};
-    for (const t of this.dataTabs()) {
+    for (const t of this.dataTabs()) {        // Waypoints is a table too, in Tools
       const pane = el('div', { class: 'tab-pane', id: `pane-${t}` }, this.toolbar(t));
-      body.append(pane);
+      (this.topTabs().includes(t) ? dataBody : utilBody).append(pane);
       this.grids[t] = new Grid(this, t, pane);
     }
-    body.append(...['survey', ...this.groupTabs().map(([k]) => k)].filter((k) => !this.grids[k]).map((k) => el('div', { class: 'tab-pane scroll', id: `pane-${k}` })));
+    utilBody.append(...['survey', ...this.groupTabs().map(([k]) => k)].filter((k) => !this.grids[k]).map((k) => el('div', { class: 'tab-pane scroll', id: `pane-${k}` })));
+    this.updatePaneButtons();
   }
 
   toolbar(tab) {
-    const disp = this.S.config.display;
     const sc = (action) => {
       const s = this.S.config.shortcuts.find((x) => x.action === action && !x.prefill);
       return s ? ` (${s.combo.replace('Mod', MOD)})` : '';
@@ -281,107 +302,141 @@ class App {
   }
 
   buildBottom() {
-    const b = $('#bottom');
-    const viewSel = el('select', { id: 'view-select', onchange: (e) => this.setView(e.target.value) },
-      [['split-v', 'Split vertical'], ['split-h', 'Split horizontal'], ['overlay', 'Overlay (floating log)'],
-      ].map(([v, l]) => el('option', { value: v }, l)));
-    b.replaceChildren(
-      el('div', { id: 'col-help', 'aria-live': 'polite' }),
-      el('label', { class: 'inline' }, 'View:', viewSel));
+    $('#bottom').replaceChildren(el('div', { id: 'col-help', 'aria-live': 'polite' }));
   }
 
-  initSplitter() {
-    const sp = $('#splitter');
-    sp.addEventListener('dblclick', () => this.setLogSize(this.logSize === 'min' ? 'normal' : 'min'));
-    sp.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      sp.setPointerCapture(e.pointerId);
-      if (this.logSize !== 'normal') this.setLogSize('normal');
-      const main = $('#main').getBoundingClientRect();
-      const vertical = this.view === 'split-v';
-      const move = (ev) => {
-        let r = vertical ? (ev.clientX - main.left) / main.width : (ev.clientY - main.top) / main.height;
-        r = Math.max(0.15, Math.min(0.85, r));
-        this.S.config.settings.split_ratio = r;
-        this.applySplit();
-      };
-      const up = () => {
-        sp.removeEventListener('pointermove', move); sp.removeEventListener('pointerup', up);
-        this.map.invalidate();
-        this.saveSettings({ split_ratio: Math.round(this.S.config.settings.split_ratio * 100) / 100 }, true);
-      };
-      sp.addEventListener('pointermove', move); sp.addEventListener('pointerup', up);
-    });
+  // ---- the panes' sizes and states
+  paneLayout() {
+    const d = { fx: 0.62, fy: 0.5, min: { map: false, util: false, data: false }, max: null };
+    const p = this.S.config.settings.pane_layout || {};
+    return { fx: +p.fx || d.fx, fy: +p.fy || d.fy, min: { ...d.min, ...(p.min || {}) }, max: ['map', 'util', 'data'].includes(p.max) ? p.max : null };
   }
 
-  initFloating() {
-    // In overlay view the log is a floating window that can be dragged by its title.
-    const pane = $('#log-pane'), title = $('#log-title');
-    title.addEventListener('pointerdown', (e) => {
-      if (this.view !== 'overlay' || e.target.closest('button')) return;
-      const r = pane.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
-      title.setPointerCapture(e.pointerId);
-      const move = (ev) => {
-        pane.style.left = `${Math.max(0, Math.min(window.innerWidth - 120, ev.clientX - dx))}px`;
-        pane.style.top = `${Math.max(0, Math.min(window.innerHeight - 60, ev.clientY - dy))}px`;
-      };
-      const up = () => { title.removeEventListener('pointermove', move); title.removeEventListener('pointerup', up);
-        try { localStorage.setItem('wsr.float', JSON.stringify({ left: pane.style.left, top: pane.style.top, width: pane.style.width, height: pane.style.height })); } catch {} };
-      title.addEventListener('pointermove', move); title.addEventListener('pointerup', up);
-    });
+  savePaneLayout(lay, now = false) {
+    this.S.config.settings.pane_layout = lay;
+    this.applyLayout();
+    clearTimeout(this._paneSave);
+    const send = () => api('/api/settings', { updates: { pane_layout: this.S.config.settings.pane_layout } }).catch(() => {});
+    if (now) send(); else this._paneSave = setTimeout(send, 400);
   }
 
-  setView(v, save = true) {
-    if (v === 'map') { v = 'split-v'; this.logSize = 'min'; save = true; }       // old "Map only" setting
-    if (v === 'log') { v = 'split-v'; this.logSize = 'max'; save = true; }       // old "Log only" setting
-    if (!['split-v', 'split-h', 'overlay'].includes(v)) v = 'split-v';
-    this.view = v;
-    const main = $('#main');
-    main.dataset.view = v;
-    $('#view-select').value = v;
-    const pane = $('#log-pane');
-    if (v === 'overlay') {
-      let f = null;
-      try { f = JSON.parse(localStorage.getItem('wsr.float') || 'null'); } catch {}
-      Object.assign(pane.style, f || { left: '', top: '', width: '', height: '' });
+  setPaneMin(k, on) {
+    const L = this.paneLayout();
+    L.min[k] = on; L.max = null;
+    this.savePaneLayout(L, true);
+    if (!on && k === 'data') this.grids[this.dataTab]?.wrap.focus({ preventScroll: true });
+    if (!on) this.renderPane(k === 'util' ? this.utilTab : k === 'data' ? this.dataTab : null);
+  }
+
+  setPaneMax(k) {
+    const L = this.paneLayout();
+    L.max = L.max === k ? null : k;
+    L.min[k] = false;
+    this.savePaneLayout(L, true);
+  }
+
+  resetPanes() { this.savePaneLayout({}, true); toast('Panes back to their starting sizes', 'info', 2000); }
+
+  // show the pane a tab lives in (out of a strip, or back from another pane filling the window)
+  revealPaneOf(tab) {
+    const k = this.topTabs().includes(tab) ? 'data' : 'util';
+    const L = this.paneLayout();
+    if (!L.min[k] && (!L.max || L.max === k)) return;
+    L.min[k] = false;
+    if (L.max && L.max !== k) L.max = null;
+    this.savePaneLayout(L, true);
+  }
+
+  applyLayout() {
+    const L = this.paneLayout(), m = L.min, S = 34, G = 6;
+    const pct = (v) => `${(v * 100).toFixed(3)}%`;
+    const set = (id, mode, l, t, w, h) => {
+      const p = $(id);
+      p.dataset.mode = mode;
+      Object.assign(p.style, mode === 'hidden' ? { display: 'none' } : { display: '', left: l, top: t, width: w, height: h });
+    };
+    const sv = $('#split-v'), sh = $('#split-h');
+    sv.hidden = true; sh.hidden = true;
+    if (L.max) {
+      for (const k of ['map', 'util', 'data']) set(`#${k}-pane`, k === L.max ? 'full' : 'hidden', '0', '0', '100%', '100%');
     } else {
-      Object.assign(pane.style, { left: '', top: '', width: '', height: '' });
+      const topBoth = m.map && m.util;
+      let topH, dataTop, dataH;
+      if (m.data && topBoth) { topH = `${S}px`; dataTop = `${S + G}px`; dataH = `${S}px`; }
+      else if (m.data) { topH = `calc(100% - ${S + G}px)`; dataTop = `calc(100% - ${S}px)`; dataH = `${S}px`; }
+      else if (topBoth) { topH = `${S}px`; dataTop = `${S + G}px`; dataH = `calc(100% - ${S + G}px)`; }
+      else { topH = `calc(${pct(L.fy)} - ${G / 2}px)`; dataTop = `calc(${pct(L.fy)} + ${G / 2}px)`; dataH = `calc(${pct(1 - L.fy)} - ${G / 2}px)`; }
+      set('#data-pane', m.data ? 'head' : 'full', '0', dataTop, '100%', dataH);
+      if (topBoth) {
+        set('#map-pane', 'hstrip', '0', '0', `calc(50% - ${G / 2}px)`, topH);
+        set('#util-pane', 'hstrip', `calc(50% + ${G / 2}px)`, '0', `calc(50% - ${G / 2}px)`, topH);
+      } else if (m.map) {
+        set('#map-pane', 'vstrip', '0', '0', `${S}px`, topH);
+        set('#util-pane', 'full', `${S + G}px`, '0', `calc(100% - ${S + G}px)`, topH);
+      } else if (m.util) {
+        set('#map-pane', 'full', '0', '0', `calc(100% - ${S + G}px)`, topH);
+        set('#util-pane', 'vstrip', `calc(100% - ${S}px)`, '0', `${S}px`, topH);
+      } else {
+        set('#map-pane', 'full', '0', '0', `calc(${pct(L.fx)} - ${G / 2}px)`, topH);
+        set('#util-pane', 'full', `calc(${pct(L.fx)} + ${G / 2}px)`, '0', `calc(${pct(1 - L.fx)} - ${G / 2}px)`, topH);
+        sv.hidden = false;
+        Object.assign(sv.style, { left: `calc(${pct(L.fx)} - 5px)`, top: '0', width: '10px', height: topH });
+      }
+      if (!m.data && !topBoth) {
+        sh.hidden = false;
+        Object.assign(sh.style, { top: `calc(${pct(L.fy)} - 5px)`, left: '0', height: '10px', width: '100%' });
+      }
     }
-    this.applySplit();
+    this.updatePaneButtons();
     this.map?.invalidate();
-    if (save) this.saveSettings({ view: v }, true);
   }
 
-  applySplit() {
-    const size = this.logSize || 'normal';
-    let r = this.S.config.settings.split_ratio || 0.6;
-    if (size === 'max') r = 0.22;                      // maximized: keep a strip of map visible
+  updatePaneButtons() {
+    const L = this.paneLayout();
+    for (const b of $$('.pane-max')) {
+      const on = L.max === b.dataset.pane, name = { map: 'the map', util: 'Survey, Tools and Settings', data: 'the data tables' }[b.dataset.pane];
+      b.replaceChildren(el('span', { 'aria-hidden': 'true' }, on ? '❐' : '□'));
+      b.title = on ? 'Restore (back to three panes)' : `Maximize ${name}`;
+      b.setAttribute('aria-label', b.title);
+    }
+    for (const b of $$('.pane-min')) b.hidden = !!L.max;
+    const dm = $('.pane-min[data-pane="data"]');
+    if (dm && L.min.data) { dm.hidden = false; dm.replaceChildren(el('span', { 'aria-hidden': 'true' }, '▴')); dm.title = `Show the data tables (${MOD}+Shift+M)`; }
+    else if (dm) { dm.replaceChildren(el('span', { 'aria-hidden': 'true' }, '▁')); dm.title = `Minimize the data tables (${MOD}+Shift+M)`; }
+    if (dm) dm.setAttribute('aria-label', dm.title);
+  }
+
+  initSplitters() {
     const main = $('#main');
-    main.dataset.log = size;
-    if (this.view === 'split-v') main.style.gridTemplateColumns = size === 'min' ? '1fr 6px auto' : `${r * 100}% 6px 1fr`;
-    else main.style.gridTemplateColumns = '';
-    if (this.view === 'split-h') main.style.gridTemplateRows = size === 'min' ? '1fr 6px auto' : `${r * 100}% 6px 1fr`;
-    else main.style.gridTemplateRows = '';
-  }
-
-  // Minimize / maximize / restore the data tables.
-  setLogSize(size) {
-    this.logSize = size;
-    try { localStorage.setItem('wsr.logsize', size); } catch {}
-    this.applySplit();
-    this.updateLogButtons();
-    this.map?.invalidate();
-    if (size !== 'min') this.grids[this.tab]?.wrap.focus({ preventScroll: true });
-  }
-
-  updateLogButtons() {
-    const min = $('#log-btn-min'), max = $('#log-btn-max');
-    if (!min) return;
-    const s = this.logSize || 'normal';
-    min.textContent = s === 'min' ? '▴' : '▁';
-    min.title = s === 'min' ? `Show the data tables (${MOD}+Shift+M)` : `Minimize the data tables (${MOD}+Shift+M)`;
-    max.textContent = s === 'max' ? '❐' : '□';
-    max.title = s === 'max' ? 'Restore the normal size' : 'Maximize the data tables';
+    const wire = (btn, key) => {
+      const set = (v, now) => { const L = this.paneLayout(); L[key] = Math.max(0.15, Math.min(0.85, v)); this.savePaneLayout(L, now); };
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        btn.setPointerCapture(e.pointerId);
+        document.body.classList.add('pane-resizing');
+        const r = main.getBoundingClientRect();
+        const move = (ev) => {
+          const v = key === 'fx' ? (ev.clientX - r.left) / r.width : (ev.clientY - r.top) / r.height;
+          const L = this.paneLayout(); L[key] = Math.max(0.15, Math.min(0.85, v));
+          this.S.config.settings.pane_layout = L; this.applyLayout();
+        };
+        const up = () => {
+          btn.removeEventListener('pointermove', move); btn.removeEventListener('pointerup', up);
+          document.body.classList.remove('pane-resizing');
+          this.savePaneLayout(this.paneLayout(), true);
+        };
+        btn.addEventListener('pointermove', move); btn.addEventListener('pointerup', up);
+      });
+      btn.addEventListener('dblclick', () => set(key === 'fx' ? 0.62 : 0.5, true));
+      btn.addEventListener('keydown', (e) => {
+        const d = key === 'fx' ? { ArrowLeft: -0.02, ArrowRight: 0.02 }[e.key] : { ArrowUp: -0.02, ArrowDown: 0.02 }[e.key];
+        if (d === undefined) return;
+        e.preventDefault(); e.stopPropagation();
+        set(this.paneLayout()[key] + d, false);
+      });
+    };
+    wire($('#split-v'), 'fx');
+    wire($('#split-h'), 'fy');
   }
 
   applyDisplay() {
@@ -400,7 +455,8 @@ class App {
     this.rendered = { fmt: this.S.config.settings.latlon_format, clock: this.clock() };
     this.map.updateVessel(this.S.vessel);
     this.updateStatus();
-    this.renderPane(this.tab);
+    this.renderPane(this.dataTab);
+    this.renderPane(this.utilTab);
   }
 
   // draw one of the panes that aren't data tables
@@ -497,24 +553,38 @@ class App {
     try { res = await api('/api/sightings/resight', { id: r.RowID }); } catch { return; }
     const t = this.S.tables.sightings;
     if (!t.rows.some((x) => x.RowID === res.row.RowID)) { t.rows.push(res.row); t.can_undo = true; this.renderTab('sightings'); this.map.drawMarkers('sightings'); }
-    if (this.logSize === 'min') this.setLogSize('normal');
     this.showTab('sightings');
     // the new row, in the column that was selected (the cursor doesn't jump to another column)
     const g = this.grids.sightings;
     g.select(res.row.RowID, key);
   }
 
-  showTab(tab) {
+  // is this tab the one showing in its pane? (Sightings/Effort/Events in the data pane, the others in
+  // the Survey/Tools/Settings pane: one of each is showing at a time)
+  shown(tab) { return tab === this.dataTab || tab === this.utilTab; }
+
+  showTab(tab, { reveal = true } = {}) {
     if (!this.allTabs().includes(tab)) tab = 'sightings';
-    if (this.tab === 'route' && tab !== 'route') this.planner.hide();
+    const inData = this.topTabs().includes(tab);
+    if (!inData && this.utilTab === 'route' && tab !== 'route') this.planner.hide();
     this.tab = tab;
+    if (inData) this.dataTab = tab; else this.utilTab = tab;
+    if (reveal) this.revealPaneOf(tab);
     const group = this.groupOf(tab);
     if (group) this.lastSub[group] = tab;
-    try { localStorage.setItem('wsr.tab', tab); if (group) localStorage.setItem('wsr.subtabs', JSON.stringify(this.lastSub)); } catch {}
-    $$('#tabs button[data-tab], #tabs button[data-group]').forEach((b) => b.classList.toggle('active', group ? b.dataset.group === group : b.dataset.tab === tab));
-    $$('#subtabs button').forEach((b) => { b.classList.toggle('active', b.dataset.tab === tab); b.hidden = b.dataset.group !== group; });
-    $('#log-pane')?.classList.toggle('survey-group', !!group);
-    $$('.tab-pane').forEach((p) => p.classList.toggle('active', p.id === `pane-${tab}`));
+    try {
+      localStorage.setItem(inData ? 'wsr.datatab' : 'wsr.utiltab', tab);
+      if (group) localStorage.setItem('wsr.subtabs', JSON.stringify(this.lastSub));
+    } catch {}
+    if (inData) {
+      $$('#tabs button[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+      $$('#data-body > .tab-pane').forEach((p) => p.classList.toggle('active', p.id === `pane-${tab}`));
+    } else {
+      $$('#util-tabs button').forEach((b) => b.classList.toggle('active', group ? b.dataset.group === group : b.dataset.tab === tab));
+      $$('#subtabs button').forEach((b) => { b.classList.toggle('active', b.dataset.tab === tab); b.hidden = b.dataset.group !== group; });
+      $('#util-pane')?.classList.toggle('survey-group', !!group);
+      $$('#util-body > .tab-pane').forEach((p) => p.classList.toggle('active', p.id === `pane-${tab}`));
+    }
     this.renderPane(tab);
     if (tab === 'route') this.planner.show();
     if (this.grids[tab]) {
@@ -522,7 +592,7 @@ class App {
       if (g.pendingRender) g.render();
       g.wrap.focus({ preventScroll: true });
     }
-    this.showHelp(tab, this.grids[tab]?.sel?.key);
+    if (this.grids[tab]) this.showHelp(tab, this.grids[tab].sel?.key);
   }
 
   onRowSelected(tab, id) { this.map?.focusRow(tab, id); if (tab === 'sightings') this.updateResightButton(); }
@@ -538,7 +608,6 @@ class App {
   }
 
   selectRow(tab, id, key) {
-    if (this.logSize === 'min') this.setLogSize('normal');
     this.showTab(tab);
     const g = this.grids[tab];
     const col = key && this.S.schema.tabs[tab]?.columns.find((c) => c.key === key && !c.hidden) ? key : g?.sel?.key;
@@ -564,18 +633,18 @@ class App {
         }
         this.map.updateVessel(m.vessel);
         if (m.nmea) { this.S.nmea = { ...this.S.nmea, ...m.nmea }; this.updateNmeaStatus(); this.updateRawLog(); }
-        if (m.inst) { this.S.inst = m.inst; if (this.tab === 'nmea') this.updateInstruments(); }
+        if (m.inst) { this.S.inst = m.inst; if (this.shown('nmea')) this.updateInstruments(); }
         this.planner.onVessel();
         if (m.prefetch) this.updatePrefetch(m.prefetch);
         break;
       case 'tab':
         this.S.tables[m.tab] = { rows: m.rows, can_undo: m.can_undo, can_redo: m.can_redo };
-        if (this.qcReport && !this.qcStale) { this.qcStale = true; if (this.tab === 'qc') this.renderQc(); }
+        if (this.qcReport && !this.qcStale) { this.qcStale = true; if (this.shown('qc')) this.renderQc(); }
         this.renderTab(m.tab);
         this.map.drawMarkers(m.tab);
         if (m.tab === 'effort') this.map.drawTrack();        // ERROR rows break the line
-        if (this.tab === 'summary') this.renderSummary();
-        if (this.tab === 'resights' && m.tab === 'sightings') this.resightTool.render();
+        if (this.shown('summary')) this.renderSummary();
+        if (this.shown('resights') && m.tab === 'sightings') this.resightTool.render();
         this.reportsTool.onData(m.tab);
         this.updateStatus();
         break;
@@ -591,14 +660,14 @@ class App {
         this.refreshFormats();
         for (const g of Object.values(this.grids)) g.refreshColumns?.();
         this.updateStatus();
-        if (this.tab === 'survey' && !document.activeElement?.closest('#pane-survey input[type=text], #pane-survey textarea')) this.renderSurvey();
-        if (this.tab === 'settings' && !document.activeElement?.closest('#pane-settings')) this.renderSettings();
-        if (this.tab === 'nmea' && !document.activeElement?.closest('#pane-nmea')) this.renderNmea();
-        if (this.tab === 'inputs' && !document.activeElement?.closest('#pane-inputs input[type=text], #pane-inputs input[type=number], #pane-inputs select')) this.renderInputs();
-        if (this.tab === 'basemap' && !document.activeElement?.closest('#pane-basemap input, #pane-basemap select')) this.renderBasemap();
-        if (this.tab === 'overlays') this.renderOverlays();
-        if (this.tab === 'templates' && !document.activeElement?.closest('#pane-templates input[type=text], #pane-templates textarea')) this.renderTemplates();
-        if (this.tab === 'shortcuts') this.renderShortcuts();
+        if (this.shown('survey') && !document.activeElement?.closest('#pane-survey input[type=text], #pane-survey textarea')) this.renderSurvey();
+        if (this.shown('settings') && !document.activeElement?.closest('#pane-settings')) this.renderSettings();
+        if (this.shown('nmea') && !document.activeElement?.closest('#pane-nmea')) this.renderNmea();
+        if (this.shown('inputs') && !document.activeElement?.closest('#pane-inputs input[type=text], #pane-inputs input[type=number], #pane-inputs select')) this.renderInputs();
+        if (this.shown('basemap') && !document.activeElement?.closest('#pane-basemap input, #pane-basemap select')) this.renderBasemap();
+        if (this.shown('overlays')) this.renderOverlays();
+        if (this.shown('templates') && !document.activeElement?.closest('#pane-templates input[type=text], #pane-templates textarea')) this.renderTemplates();
+        if (this.shown('shortcuts')) this.renderShortcuts();
         break;
       }
       case 'display':
@@ -608,8 +677,8 @@ class App {
         this.map.redrawData();
         this.map.updateVessel(this.S.vessel);
         this.grids.sightings?.render();          // resights nested or in time order
-        if (this.tab === 'settings') this.renderSettings();
-        if (this.tab === 'resights') this.resightTool.render();
+        if (this.shown('settings')) this.renderSettings();
+        if (this.shown('resights')) this.resightTool.render();
         break;
       case 'notice': toast(m.text, m.level || 'info', m.level === 'error' ? 12000 : 5000); break;
       case 'awake':
@@ -619,7 +688,7 @@ class App {
       case 'update':
         this.updateInfo = m.info;
         toast(`Spyhop ${m.info.latest} is available: see Settings → About → Updates.`, 'info', 10000);
-        if (this.tab === 'about') this.renderAbout();
+        if (this.shown('about')) this.renderAbout();
         break;
       case 'charts':
         this.S.mbtiles = m.mbtiles;
@@ -743,7 +812,6 @@ class App {
     // make sure the grid has the new row even if the websocket update is still on its way
     const t = this.S.tables[tab];
     if (!t.rows.some((r) => r.RowID === res.row.RowID)) { t.rows.push(res.row); t.can_undo = true; this.renderTab(tab); this.map.drawMarkers(tab); }
-    if (this.logSize === 'min') this.setLogSize('normal');
     this.showTab(tab);
     const g = this.grids[tab];
     g.select(res.row.RowID, g.firstEmptyEditable(res.row));
@@ -1410,9 +1478,9 @@ class App {
       case 'toggle-effort': this.toggleEffort(); break;
       case 'undo': this.undo(); break;
       case 'redo': this.redo(); break;
-      case 'tab': if (this.logSize === 'min') this.setLogSize('normal'); this.showTab(arg); break;
-      case 'toggle-log': this.setLogSize(this.logSize === 'min' ? 'normal' : 'min'); break;
-      case 'max-log': this.setLogSize(this.logSize === 'max' ? 'normal' : 'max'); break;
+      case 'tab': this.showTab(arg); break;
+      case 'toggle-log': this.setPaneMin('data', !this.paneLayout().min.data); break;
+      case 'max-log': this.setPaneMax('data'); break;
       case 'next-tab': this.showTab(tabs[(tabs.indexOf(this.tab) + 1) % tabs.length]); break;
       case 'prev-tab': this.showTab(tabs[(tabs.indexOf(this.tab) - 1 + tabs.length) % tabs.length]); break;
       case 'center-vessel': this.map.centerVessel(); break;
@@ -1591,7 +1659,7 @@ class App {
 
   async saveSummaryHtml(format = 'html') {
     if (!this.S.survey) return;
-    if (this.tab !== 'summary') this.showTab('summary');
+    if (!this.shown('summary')) this.showTab('summary');
     this.renderSummaryPane();
     toast(format === 'pdf' ? 'Making the PDF (a few seconds)…' : 'Building the summary file…', 'info', 3000);
     let html, r;
@@ -1783,7 +1851,7 @@ class App {
     tp.loading = true;
     try { tp.list = await api('/api/templates'); } catch { tp.list = tp.list || null; }
     tp.loading = false;
-    if (this.tab === 'templates') this.renderTemplates();
+    if (this.shown('templates')) this.renderTemplates();
   }
 
   // name: update that template in the folder; null: save a new one
@@ -2377,7 +2445,7 @@ class App {
   onClockChanged() {
     this.refreshFormats();
     this.updateStatus();
-    if (this.tab === 'settings') this.renderSettings();
+    if (this.shown('settings')) this.renderSettings();
   }
 
   nmeaSection() {
@@ -2495,7 +2563,7 @@ class App {
 
   // an online overlay loaded or changed: redraw its part of Settings → Inputs (not while typing in it)
   onlineChanged() {
-    if (this.tab !== 'inputs') return;
+    if (!this.shown('inputs')) return;
     const box = $('#online-overlays');
     if (!box || box.contains(document.activeElement) && document.activeElement.matches('input[type=text], select')) return;
     box.replaceWith(this.online.section());
@@ -2660,7 +2728,7 @@ class App {
         } catch { est.textContent = ''; }
       }, 400);
     };
-    if (!this._dlMoveHook) { this._dlMoveHook = true; this.map.map.on('moveend', () => { if (this.tab === 'basemap' && $('#dl-estimate')) this.renderSettingsMapEstimate?.(); }); }
+    if (!this._dlMoveHook) { this._dlMoveHook = true; this.map.map.on('moveend', () => { if (this.shown('basemap') && $('#dl-estimate')) this.renderSettingsMapEstimate?.(); }); }
     this.renderSettingsMapEstimate = estimate;
     estimate();
     return el('section', { class: 'settings-sec', id: 'map-offline' }, el('h3', {}, 'Download an area for offline use'),

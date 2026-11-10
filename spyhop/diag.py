@@ -98,8 +98,8 @@ def log_startup(root: Path, data_dir: Path, settings: dict, argv: list[str]):
         log.info("  %-16s %s", k, v)
     log.info("  %-16s %s", "command", " ".join(argv) or "(none)")
     srcs = [f"{s.get('type')}{'' if s.get('enabled', True) else ' (off)'}" for s in settings.get("nmea_sources") or []]
-    log.info("  %-16s inputs: %s; tracking every %ss; clock %s; view %s", "settings", ", ".join(srcs) or "none",
-             settings.get("tracking_interval"), settings.get("clock", "local"), settings.get("view"))
+    log.info("  %-16s inputs: %s; tracking every %ss; clock %s; panes %s", "settings", ", ".join(srcs) or "none",
+             settings.get("tracking_interval"), settings.get("clock", "local"), settings.get("pane_layout") or "default")
 
 
 class PerfMonitor:

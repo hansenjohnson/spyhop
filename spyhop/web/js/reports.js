@@ -67,11 +67,11 @@ export class ReportsTool {
   }
 
   onDefsChanged() {
-    this.loadDefs(true).then(() => { if (this.app.tab === 'reports') this.render(); });
+    this.loadDefs(true).then(() => { if (this.app.shown('reports')) this.render(); });
   }
 
   onData(tab) {
-    if (this.app.tab === 'reports' && (tab === this.spec?.table || (this.spec?.on_effort && tab === 'effort'))) this.run();
+    if (this.app.shown('reports') && (tab === this.spec?.table || (this.spec?.on_effort && tab === 'effort'))) this.run();
   }
 
   // ---------------------------------------------------------------- drawing
@@ -233,8 +233,8 @@ export class ReportsTool {
     if (n !== this.seq) return;           // a newer change is on its way
     const before = JSON.stringify(this.counts);
     this.res = r.result; this.counts = r.counts;
-    if (JSON.stringify(this.counts) !== before && this.app.tab === 'reports') this.drawSide();
-    if (this.app.tab === 'reports') this.drawResult();
+    if (JSON.stringify(this.counts) !== before && this.app.shown('reports')) this.drawSide();
+    if (this.app.shown('reports')) this.drawResult();
   }
 
   async export(format) {

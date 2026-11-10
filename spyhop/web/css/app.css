@@ -58,61 +58,58 @@ a { color: var(--accent); }
 .pill.err { background: #c0392b; color: #fff; }
 
 /* ------------------------------------------------------------ layout */
-#main { flex: 1; min-height: 0; display: grid; position: relative; }
-#main[data-view="split-v"] { grid-template-columns: 60% 6px 1fr; grid-template-areas: "map split log"; }
-#main[data-view="split-h"] { grid-template-rows: 60% 6px 1fr; grid-template-areas: "map" "split" "log"; }
-#main[data-view="overlay"] { grid-template-areas: "map"; }
-#map-pane { grid-area: map; position: relative; min-width: 0; min-height: 0; }
+/* three panes (app.js applyLayout): the map and Survey/Tools/Settings share the top, the data tables
+   span the full width below; each is placed absolutely, with resize bars between them */
+#main { flex: 1; min-height: 0; position: relative; margin: 4px; }
+.pane { position: absolute; display: flex; flex-direction: column; min-width: 0; min-height: 0; box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.pane-head { display: flex; align-items: flex-end; gap: 2px; padding: 0.25em 0.4em 0; border-bottom: 1px solid var(--line); background: var(--panel2); flex: none; min-height: 30px; box-sizing: border-box; }
+.pane-head.map-head { align-items: center; padding: 0.15em 0.4em; }
+.pane-title { padding: 0 0.4em; }
+.pane-body { flex: 1; min-height: 0; position: relative; }
 #map { position: absolute; inset: 0; background: var(--sea); }
-#splitter { grid-area: split; background: var(--line); cursor: col-resize; touch-action: none; }
-#main[data-view="split-h"] #splitter { cursor: row-resize; }
-#main[data-view="overlay"] #splitter { display: none; }
-#splitter { position: relative; }
-#splitter:hover { background: var(--accent); }
-
-/* minimize / maximize the data tables */
-#log-mini { display: none; }
 .tabs-spacer { flex: 1; }
-#tabs button.winbtn { padding: 0.15em 0.55em; margin-bottom: 3px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--panel); align-self: center; }
-#main[data-log="min"] #tab-body, #main[data-log="min"] #subtabs, #main[data-log="min"] #bottom { display: none; }
-/* side-by-side: minimized panel becomes a slim vertical "Data" button */
-#main[data-view="split-v"][data-log="min"] #log-pane > :not(#log-mini) { display: none; }
-#main[data-view="split-v"][data-log="min"] #log-mini { display: block; writing-mode: vertical-rl; transform: rotate(180deg);
-  border: none; border-radius: 0; background: var(--accent); color: var(--accent-text); padding: 1em 0.45em; font-weight: 600; height: 100%; cursor: pointer; }
-#main[data-view="overlay"][data-log="min"] #log-pane { height: auto !important; resize: none; }
-#main[data-view="overlay"][data-log="max"] #log-pane { left: 8px !important; top: 8px !important; right: 8px; width: auto !important; height: auto !important; bottom: 8px; resize: none; }
-#log-pane { grid-area: log; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); }
-#log-title { display: none; }
-#main[data-view="overlay"] #log-pane { position: absolute; z-index: 1000; right: 12px; top: 12px; width: min(760px, 70vw); height: min(520px, 70vh);
-  resize: both; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
-#main[data-view="overlay"] #log-title { display: flex; justify-content: space-between; align-items: center; padding: 0.2em 0.6em;
-  background: var(--accent); color: var(--accent-text); cursor: move; user-select: none; font-weight: 600; }
-#main[data-view="overlay"] #log-title button { color: var(--accent-text); }
+.pane-btn { align-self: center; margin-bottom: 2px; min-width: 28px; height: 26px; padding: 0 0.4em; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text); }
+.pane-btn:hover { border-color: var(--line); background: var(--panel); }
+.strip-btn { display: none; }
+/* minimized: a strip with a button to bring the pane back (the data pane keeps its tabs) */
+.pane[data-mode="vstrip"] > :not(.strip-btn), .pane[data-mode="hstrip"] > :not(.strip-btn) { display: none !important; }
+.pane[data-mode="vstrip"] .strip-btn, .pane[data-mode="hstrip"] .strip-btn { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;
+  border: none; border-radius: 0; background: var(--panel2); color: var(--accent); font-weight: 600; cursor: pointer; padding: 0.4em; }
+.pane[data-mode="vstrip"] .strip-btn { writing-mode: vertical-rl; }
+.pane .strip-btn:hover { background: #e3eff7; }
+.pane[data-mode="head"] > :not(.pane-head) { display: none !important; }
+.pane-split { position: absolute; z-index: 600; padding: 0; margin: 0; border: none; border-radius: 3px; background: transparent; touch-action: none; }
+#split-v { cursor: col-resize; }
+#split-h { cursor: row-resize; }
+.pane-split:hover, .pane-split:focus-visible { background: rgba(11, 95, 134, 0.3); outline: none; }
+body.pane-resizing { user-select: none; }
+body.pane-resizing .pane { pointer-events: none; }
 
 /* ------------------------------------------------------------ tabs */
-#tabs { display: flex; gap: 2px; padding: 0.3em 0.4em 0; border-bottom: 1px solid var(--line); background: var(--panel2); flex: none; overflow-x: auto; }
-#tabs button { border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; background: transparent; padding: 0.35em 0.9em; color: var(--muted); white-space: nowrap; }
-#tabs button.active { background: var(--panel); border-color: var(--line); color: var(--text); font-weight: 600; margin-bottom: -1px; }
-#tabs button.overdue { color: var(--alert); }
-/* the Survey tab stands apart from the data tabs: a tinted, outlined tab with a gap before it */
-#tabs button[data-tab="survey"] { margin-left: 0.6em; background: #e3eff7; border-color: #9cc3dc; color: #0b5f86; font-weight: 600; }
-#tabs button[data-tab="survey"].active { background: var(--panel); border-color: #0b5f86; border-bottom-color: transparent; color: #0b5f86; box-shadow: inset 0 3px 0 #0b5f86; }
-/* second row of tabs inside Survey */
+.pane-tabs { display: flex; gap: 2px; flex: none; overflow-x: auto; }
+.pane-tabs button { border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; background: transparent; padding: 0.35em 0.9em; color: var(--muted); white-space: nowrap; }
+.pane-tabs button.active { background: var(--panel); border-color: var(--line); color: var(--text); font-weight: 600; margin-bottom: -1px; }
+.pane-tabs button.overdue { color: var(--alert); }
+/* the Survey tab stands apart: a tinted, outlined tab */
+#util-tabs button[data-tab="survey"] { background: #e3eff7; border-color: #9cc3dc; color: #0b5f86; font-weight: 600; }
+#util-tabs button[data-tab="survey"].active { background: var(--panel); border-color: #0b5f86; border-bottom-color: transparent; color: #0b5f86; box-shadow: inset 0 3px 0 #0b5f86; }
+/* second row of tabs inside Tools and Settings */
 #subtabs { display: none; flex-wrap: wrap; gap: 0.25em; padding: 0.35em 0.5em; border-bottom: 1px solid var(--line); background: var(--panel); flex: none; }
-#log-pane.survey-group #subtabs { display: flex; }
+#util-pane.survey-group:not([data-mode="vstrip"]):not([data-mode="hstrip"]) #subtabs { display: flex; }
 #subtabs button { border: 1px solid transparent; border-radius: 999px; background: transparent; padding: 0.2em 0.7em; color: var(--muted); white-space: nowrap; }
 #subtabs button:hover { background: var(--panel2); color: var(--text); }
 #subtabs button.active { background: var(--accent, #0b5f86); border-color: var(--accent, #0b5f86); color: #fff; font-weight: 600; }
-.shortcut-list td:first-child { white-space: nowrap; }
-#tabs .count { margin-left: 0.45em; font-size: 0.82em; color: var(--muted); }
-#tab-body { flex: 1; min-height: 0; position: relative; }
+.pane-tabs .count { margin-left: 0.45em; font-size: 0.82em; color: var(--muted); }
 .tab-pane { position: absolute; inset: 0; display: none; flex-direction: column; }
 .tab-pane.active { display: flex; }
 .tab-pane.scroll { overflow: auto; padding: 0.6em 1em 2em; display: none; }
 .tab-pane.scroll.active { display: block; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em; padding: 0.4em 0.5em; border-bottom: 1px solid var(--line); flex: none; }
 label.inline { display: inline-flex; align-items: center; gap: 0.35em; }
-#bottom { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; padding: 0.4em 0.5em; border-top: 1px solid var(--line); background: var(--panel2); flex: none; }
+#bottom { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; padding: 0.3em 0.5em; border-top: 1px solid var(--line); background: var(--panel2); flex: none; }
+#btn-reset-panes { cursor: pointer; background: transparent; border: 1px solid var(--line); border-radius: 4px; color: inherit; font: inherit; padding: 0 0.5em; }
+.shortcut-list td:first-child { white-space: nowrap; }
 
 /* ------------------------------------------------------------ grid */
 .grid-wrap { flex: 1; overflow: auto; outline: none; position: relative; }
@@ -287,10 +284,10 @@ table.kv td button { margin-left: 0.6em; }
 @media print {
   @page { margin: 14mm; }
   html, body, #app, #main { height: auto !important; overflow: visible !important; background: #fff; color: #000; }
-  #status, #map-pane, #splitter, #tabs, #subtabs, #bottom, #toasts, #log-title, .no-print, .leaflet-container { display: none !important; }
-  #main { display: block !important; }
-  #log-pane { position: static !important; width: auto !important; height: auto !important; border: none !important; box-shadow: none !important; }
-  #tab-body { position: static !important; }
+  #status, #map-pane, #data-pane, .pane-split, .pane-head, #subtabs, #bottom, #toasts, .no-print, .leaflet-container { display: none !important; }
+  #main { display: block !important; margin: 0 !important; }
+  #util-pane { display: block !important; position: static !important; width: auto !important; height: auto !important; border: none !important; box-shadow: none !important; }
+  #util-body { position: static !important; }
   .tab-pane { display: none !important; }
   #pane-summary { display: block !important; position: static !important; overflow: visible !important; padding: 0 !important; }
   .print-only { display: block; }

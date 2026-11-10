@@ -270,8 +270,7 @@ DEFAULT_SETTINGS = {
     "tracking_enabled": False,
     "clock_zone_last": "",          # the zone last found from the position (used until there's a fix)
     "check_updates_on_start": False,  # look on GitHub for a newer Spyhop when it starts (needs internet)
-    "view": "split-v",
-    "split_ratio": 0.6,
+    "pane_layout": {},              # this computer's panes: {fx, fy, min: {map, util, data}, max} (app.js)
     "follow_vessel": True,
     "tile_cache_enabled": True,
     "last_version": "",             # the Spyhop version that last ran (to say when it was updated)

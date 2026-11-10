@@ -105,6 +105,14 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
 
 ## What's on screen
 
+The window has **three panes** under the status bar: the **map** (top left), **Survey, Tools and Settings** (top right), and the **data tables**, Sightings, Effort and Events, across the full width at the bottom so their columns have room. A data table and a Survey/Tools/Settings page show at the same time (e.g. Sightings below, Tools → Summary above).
+
+- **Resize:** drag the bar between the map and Survey/Tools/Settings, or the bar above the data tables (or click a bar and use the arrow keys; double-click it for the starting size).
+- **Minimize** (▁ in a pane's header): the map or Survey/Tools/Settings shrinks to a thin strip at the side and the other takes the top (click the strip to bring it back); the data tables shrink to their tab bar (click a tab, or ▴, to bring them back; Ctrl/Cmd+Shift+M toggles it). With both top panes minimized, the data tables get almost the whole window.
+- **Maximize** (□): one pane fills the window; ❐ restores the three panes. Going to a tab in a hidden pane (e.g. with a shortcut) brings it back.
+- **Reset panes** (in the status bar) goes back to the starting sizes.
+- The sizes and which panes are minimized are kept **on this computer** (like column widths), since they depend on the screen.
+
 - **Status bar (top):**
   - the time, with its zone (e.g. `14:31:05 EST`, or `UTC` — choose the clock in Settings), and the position, with a warning if there is **NO GPS**, the **GPS is LOST** (no fix for 10 s), or the position is **NOT MOVING** (the GPS stopped updating while under way)
   - speed, course and heading
@@ -135,7 +143,7 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
   - **labels:** sightings show the species code plus the FieldID if there is one, e.g. `RIWH Eg-3720` (or SightNo if there's no species yet); events show their event code and ID, e.g. `CTD C-07` (or E1, E2… if both are blank)
   - **right-click menu:** add a sighting, event or waypoint at that point; measure from here; copy the position
   - **readout (bottom-left):** cursor position, bearing and distance from the vessel, and a nautical-mile scale
-- **Tabs:** **Sightings**, **Effort**, **Events**, **Survey**, **Tools** and **Settings**. Each data tab has **Add row**, **Delete row**, **Undo** and **Redo**. With no survey open, Spyhop opens on **Survey** (see *Surveys* below).
+- **Tabs:** **Sightings**, **Effort** and **Events** in the data pane; **Survey**, **Tools** and **Settings** in the pane beside the map. Each data tab has **Add row**, **Delete row**, **Undo** and **Redo**. With no survey open, Spyhop opens on **Survey** (see *Surveys* below).
   - **Survey:** start, end, close, open, export and clear surveys; survey details; the surveys in the data folder; the folders.
   - **Tools** has a second row of tabs:
     - **Waypoints:** the waypoints table.
@@ -168,13 +176,7 @@ It reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG
   - **observers on watch**: time each observer spent at Port, Recorder and Stbd while effort was ON, and their total
   - the range of environmental conditions (visibility, sea state, weather, glare) for the whole survey and on effort only
   - While effort is ON, *Time on effort*, the distances and the watch times count up live (marked ●).
-- **Bottom row:** a description of the selected column (e.g. what **Ref** means) and **View**. Start, End, Close, Export and Clear are in **Survey** only, so they can't be clicked by accident. **View** options:
-  - **Split vertical** or **Split horizontal:** drag the divider to resize
-  - **Overlay:** a floating log window you can drag and resize
-- **Minimize / maximize the tables:** use the ▁ and □ buttons at the right end of the tab bar, Ctrl+Shift+M (Cmd on Mac), or double-click the divider.
-  - Minimized in the side-by-side view, the tables shrink to a slim **◀ Data** bar. In the other views only the tab bar is left.
-  - Clicking a tab, the Data bar or ▴, or adding a row with a shortcut, brings the tables back.
-  - Maximized leaves a strip of map visible. ❐ restores the normal size.
+- **Bottom of the data pane:** a description of the selected column (e.g. what **Ref** means). Start, End, Close, Export and Clear are in **Survey** only, so they can't be clicked by accident.
 
 ### Entering data
 
@@ -415,7 +417,7 @@ Kept from the plugin:
 - immediate saves and `.bak` files on schema changes
 - New Survey, Clear Survey (double confirm) and Export
 - the config CSVs and remappable shortcuts
-- split and overlay views (map-only/log-only were replaced by minimize/maximize buttons)
+- three resizable panes (map, Survey/Tools/Settings, data tables), each of which can be minimized or maximized
 - marker shape and color per tab, with species and event colors
 - grid and UI font sizes
 

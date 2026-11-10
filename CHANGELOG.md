@@ -6,6 +6,12 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.33.0 — 2026-11-09
+
+- **Three panes** replace the split and overlay views: the **map** and **Survey/Tools/Settings** share the top, and the **data tables** (Sightings, Effort, Events) span the full width below, so a data table and a Tools or Settings page show at the same time. Drag the bars between them (or use the arrow keys on a focused bar) to resize; ▁ minimizes a pane to a strip (the data pane to its tab bar; Ctrl/Cmd+Shift+M), □ fills the window with it and ❐ restores; **Reset panes** in the status bar goes back to the start. The map keeps its own zoom controls.
+- The pane sizes and states are kept on this computer (`pane_layout` in `spyhop-local.json`), like column widths. The old `view` and `split_ratio` settings are gone.
+- Each pane remembers its own tab. Shortcuts that act on "the current tab" (e.g. add a row) use the pane you last clicked in.
+
 ## 0.32.0 — 2026-11-09
 
 - **Map distance unit** (Settings → General): a separate setting for the measuring tool, popups, routes and the Summary (nm, km, m, mi, yd; no reticles). The Sightings default unit is unchanged.

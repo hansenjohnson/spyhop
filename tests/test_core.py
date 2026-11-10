@@ -289,10 +289,10 @@ def test_config_files_created(tmp_path):
     assert (tmp_path / "templates" / "saved").is_dir() and (tmp_path / "templates" / "backups").is_dir()
     for gone in ("settings", "reports", "display.csv"):
         assert not (tmp_path / gone).exists()
-    rec.cfg.save_settings({"latlon_format": "DD", "view": "split-h"})
+    rec.cfg.save_settings({"latlon_format": "DD", "follow_vessel": False})
     assert json.loads((cur / "spyhop-config.json").read_text())["settings"]["latlon_format"] == "DD"
     loc = json.loads((tmp_path / "spyhop-local.json").read_text())
-    assert loc["settings"]["view"] == "split-h" and "latlon_format" not in loc["settings"]
+    assert loc["settings"]["follow_vessel"] is False and "latlon_format" not in loc["settings"]
     names = [s["name"] for s in rec.cfg.tile_sources]
     assert names[:2] == ["Seascape depths (feet)", "Esri Ocean"] and rec.cfg.tile_sources[0]["kind"] == "style"
     assert not any("OpenSeaMap" in n or "tiled" in n for n in names)
@@ -2121,7 +2121,7 @@ def test_old_layout_moved_once(tmp_path):
     (root / "shortcuts.csv").write_text("combo,action,prefill\nMod+Shift+T,add:sightings,Species=Test whale\n")
     (root / "display.csv").write_text("key,value\nmarker_radius,11\n")
     (root / "settings" / "settings.json").write_text(json.dumps({
-        "timezone": "UTC", "view": "split-h", "last_meta": {"organization": "NEAq"},
+        "timezone": "UTC", "follow_vessel": False, "last_meta": {"organization": "NEAq"},
         "nmea_sources": [{"type": "serial", "port": "COM4"}, {"type": "udp", "port": 2000}],
         "online_feeds": [{"id": "abc12345", "name": "SMAs", "url": "https://example.org/x", "color": "#ff0000", "refresh_min": 60}],
         "template_current": {"name": "Team.spyhop-template.zip", "how": "saved"}}))
@@ -2139,7 +2139,7 @@ def test_old_layout_moved_once(tmp_path):
     assert sorted(p.name for p in root.iterdir()) == ["charts", "data", "overlays", "routes", "spyhop-local.json", "templates"]
     assert [r["name"] for r in cfg.lists["species"]] == ["Test whale"] and cfg.shortcuts[0]["combo"] == "Mod+Shift+T"
     assert cfg.display["marker_radius"] == "11" and sorted(cfg.reports) == ["mine.json"]
-    assert cfg.settings["timezone"] == "UTC" and cfg.settings["view"] == "split-h"
+    assert cfg.settings["timezone"] == "UTC" and cfg.settings["follow_vessel"] is False
     assert cfg.settings["nmea_sources"] == [{"type": "serial", "port": "COM4"}, {"type": "udp", "port": 2000}]
     assert cfg.settings["online_feeds"][0]["name"] == "SMAs" and cfg.history[0]["notes"] == "v1"
     assert cfg.current_survey()["prefix"] == "S1"
@@ -2443,3 +2443,16 @@ def test_clock_bearings_and_insert_at_time(rec):
         rec.insert_row("sightings", s["RowID"], "time", time_text="")
     assert any(b[0] == "First surfacing" for b in DEFAULT_LISTS["behaviors"][1])
     assert DEFAULT_DISPLAY["fade_min"] == "30" and "fade_hours" not in DEFAULT_DISPLAY
+
+
+def test_pane_layout_is_kept_on_this_computer(tmp_path):
+    """0.33: the three panes' sizes and states are a local setting, cleaned by the server."""
+    from spyhop.server import clean_pane_layout
+    from spyhop.config import Config, DEFAULT_SETTINGS
+    assert "view" not in DEFAULT_SETTINGS and "split_ratio" not in DEFAULT_SETTINGS
+    got = clean_pane_layout({"fx": 0.05, "fy": "0.7", "min": {"map": 1, "data": 0, "x": True}, "max": "bogus"})
+    assert got == {"fx": 0.15, "fy": 0.7, "min": {"map": True, "util": False, "data": False}, "max": None}
+    assert clean_pane_layout({"max": "data"})["max"] == "data" and clean_pane_layout(None) == {"min": {"map": False, "util": False, "data": False}, "max": None}
+    cfg = Config(tmp_path)
+    cfg.save_settings({"pane_layout": got})
+    assert "pane_layout" in cfg.local_path.read_text() and "pane_layout" not in cfg.config_path.read_text()

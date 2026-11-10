@@ -182,6 +182,22 @@ async def no_cache(request, handler):
 
 
 
+
+def clean_pane_layout(v) -> dict:
+    """The three panes' sizes and states (this computer only): fx (the map's share of the top), fy (the
+    top's share of the height), min {map, util, data}, max (one pane filling the window, or none)."""
+    v = v if isinstance(v, dict) else {}
+    out = {}
+    for k in ("fx", "fy"):
+        try:
+            out[k] = round(max(0.15, min(0.85, float(v[k]))), 4)
+        except (KeyError, TypeError, ValueError):
+            pass
+    m = v.get("min") if isinstance(v.get("min"), dict) else {}
+    out["min"] = {k: bool(m.get(k)) for k in ("map", "util", "data")}
+    out["max"] = v.get("max") if v.get("max") in ("map", "util", "data") else None
+    return out
+
 def clean_column_layout(v) -> dict:
     """{tab: {order: [column keys], widths: {key: px}}}: only known tabs and columns, widths 30–800 px."""
     out = {}
@@ -566,6 +582,8 @@ class App:
                 raise ValueError("The effort segment column is show or hide.")
             if "column_layout" in updates:
                 updates["column_layout"] = clean_column_layout(updates["column_layout"])
+            if "pane_layout" in updates:
+                updates["pane_layout"] = clean_pane_layout(updates["pane_layout"])
         except (TypeError, ValueError) as e:
             raise ValueErrorMsg(str(e) if str(e) and not str(e).startswith("could not convert") else "That isn't a number.")
         self.rec.cfg.save_settings(updates)
