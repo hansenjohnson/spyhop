@@ -6,6 +6,20 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.32.0 — 2026-11-09
+
+- **Map distance unit** (Settings → General): a separate setting for the measuring tool, popups, routes and the Summary (nm, km, m, mi, yd; no reticles). The Sightings default unit is unchanged.
+- **Calibrated marks:** choosing it in Settings → General now shows the calibration table at once (Settings didn't redraw while it had the focus).
+- **Clock bearings:** Ref **C**: the Bearing cell offers 1–12 o'clock, each hour 30° from the bow, converted with the vessel heading. Also a default bearing reference; QC checks 1–12 and a heading; a map-picked position goes back to the nearest hour.
+- **Add resight** keeps the selected column instead of jumping to Behaviors. Resights' SightNo is indented in time order too.
+- **Lines:** show/hide, width and line style for the lines from the vessel to each sighting, the FieldID lines and the resight lines (Settings → General → Map display → Lines and vectors), in the app and the HTML/PDF summary.
+- **Fade after** is in minutes (default 30); `fade_hours` is replaced by `fade_min`.
+- **Insert row… at a time you type:** in time order, at the vessel's position then from the trackline.
+- **Survey tab** stands out from the data tabs.
+- **Move the map to a selected row** can be switched off (Settings → General → Map display).
+- **First surfacing** behavior (SU) in the default behaviors list (an existing behaviors.csv doesn't get it: add it in Settings → Dropdowns).
+- **Tools → Resights:** per sighting with resights, the looks, time span, distance, average and net swim speed (kn and km/h) and dive times (a dive behavior to the next First surfacing), with details per look and Save as CSV.
+
 ## 0.31.0 — 2026-11-09
 
 - **Columns:** drag a header to move a column, drag its edge to resize it (double-click for the default width), or use the table's new **Columns…** button (↑/↓, Reset). Kept on this computer only (`spyhop-local.json`); Settings → General → Tables resets every table.

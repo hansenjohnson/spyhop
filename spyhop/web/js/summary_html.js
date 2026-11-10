@@ -110,6 +110,8 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
       offWidth: +disp.track_off_width || 1.5,
       onDash: dashFor(disp.track_on_style || 'solid', +disp.track_width || 3), offDash: dashFor(disp.track_off_style || 'solid', +disp.track_off_width || 1.5),
       showOn: disp.show_track_on !== '0', showOff: disp.show_track_off !== '0', lines: disp.sighting_lines !== '0',
+      lineW: +disp.sighting_lines_width || 1.5, lineDash: dashFor(disp.sighting_lines_style || 'dashed', +disp.sighting_lines_width || 1.5),
+      reW: +disp.resight_lines_width || 2.5, reDash: dashFor(disp.resight_lines_style || 'dotted', +disp.resight_lines_width || 2.5),
       labelSize: +disp.label_size || 12 },
     online: ONLINE,
     pdf,
@@ -191,11 +193,11 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
       var mk = L.marker([m.lat, m.lon], { icon: icon, riseOnHover: true, interactive: !D.pdf });
       if (!D.pdf) mk.bindPopup(m.popup, { maxWidth: 360 });
       mk.addTo(g);
-      if (m.ves && D.style.lines) L.polyline([m.ves, [m.lat, m.lon]], { color: m.color, weight: 1.5, dashArray: '4 4', interactive: false }).addTo(lines);
+      if (m.ves && D.style.lines) L.polyline([m.ves, [m.lat, m.lon]], { color: m.color, weight: D.style.lineW, dashArray: D.style.lineDash, interactive: false }).addTo(lines);
     });
     return g;
   }
-  (D.resightLines || []).forEach(function (l) { L.polyline(l[1], { color: l[0], weight: 2.5, dashArray: '2 6', lineCap: 'round', interactive: false }).addTo(lines); });
+  (D.resightLines || []).forEach(function (l) { L.polyline(l[1], { color: l[0], weight: D.style.reW, dashArray: D.style.reDash, lineCap: 'round', interactive: false }).addTo(lines); });
   var overlays = { 'Track': track, 'Sightings': markers(D.sightings), 'Sighting lines': lines, 'Events': markers(D.events) };
   Object.keys(overlays).forEach(function (k) { overlays[k].addTo(map); });
   L.control.scale({ imperial: false }).addTo(map);

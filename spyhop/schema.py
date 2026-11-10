@@ -37,7 +37,7 @@ FIXED_LISTS = {
     # group, PHOTO a directed photo-ID approach); ERROR: a trackline break (GPS jump or loss)
     "effort": ["Start", "ON", "LINE", "FOLLOW", "PHOTO", "OFF", "End", "ERROR"],
     "images": ["None", "Photo", "Video", "Photo + Video", "Drone"],
-    "brgref": ["M", "T", "R"],
+    "brgref": ["M", "T", "R", "C"],              # C: clock bearing (1–12) relative to the heading
     "distunit": ["m", "km", "nm", "mi", "yd", "reticle"],
     "shapes": ["Circle", "Diamond", "Square", "Triangle", "Star"],
     "colors": ["red", "orange", "gold", "yellow", "green", "darkgreen", "teal", "cyan", "blue", "navy",
@@ -91,9 +91,9 @@ TABS = {
                 help="Behaviors seen. Press Enter or double-click, then ↑/↓ and Space to tick several (each one’s definition is shown). List: behaviors.csv."),
             col("Observer", "choice", "Obs", list="observers", width=60, help="Who made the sighting. List: observers.csv."),
             col("Bearing", "float", "Bearing", width=65,
-                help="Bearing from the vessel to the animals, 0–360°; negative counts back from 360 (−10 = 350, e.g. 10° to port for a relative bearing). Its reference is in Ref."),
+                help="Bearing from the vessel to the animals, 0–360°; negative counts back from 360 (−10 = 350, e.g. 10° to port for a relative bearing). With Ref C, a clock bearing 1–12 (picked from a list; 3 = 90° to starboard, 12 = dead ahead). Its reference is in Ref."),
             col("BrgRef", "choice", "Ref", list="brgref", width=45,
-                help="Bearing reference: M = magnetic (compass), T = true, R = relative to the bow (000 = dead ahead)."),
+                help="Bearing reference: M = magnetic (compass), T = true, R = relative to the bow (000 = dead ahead), C = clock bearing relative to the bow (each hour 30°: 12 = dead ahead, 3 = starboard beam, 6 = astern, 9 = port beam)."),
             col("Distance", "float", "Dist", width=55,
                 help="Distance from the platform to the animals, in Unit. With Unit = reticle: the reading (reticles below the horizon, a calibrated mark, or degrees below the horizontal; Settings → General → Reticles)."),
             col("DistUnit", "choice", "Unit", list="distunit", width=60,

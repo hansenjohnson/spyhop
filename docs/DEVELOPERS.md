@@ -51,6 +51,7 @@ spyhop/
     js/app.js            the application: tabs, panes, dialogs, websocket handling
     js/grid.js           the data tables
     js/resights.js       resights: first sighting, groups, nested order, summary counts
+    js/resight_tool.js   Tools → Resights: swim speeds and dive times
     js/map.js            the Leaflet map, markers, track, tools
     js/depth.js          the water depth at the cursor, read from Seascape's depth tiles
     js/planning.js       Tools → Routes: the route editor, activation, and the saved routes (/api/routes*)

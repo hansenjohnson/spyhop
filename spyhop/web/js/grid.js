@@ -4,6 +4,9 @@ import { shapeSvg } from './map.js';
 import { Resights } from './resights.js';
 
 const PRINTABLE = /^.$/u;
+// clock bearings (Ref C): each hour is 30° from the bow
+const CLOCK_ITEMS = Array.from({ length: 12 }, (_, i) => i + 1).map((h) => ({ name: String(h),
+  extra: `${h} o’clock · ${h * 30 % 360}° ${h === 12 ? '(dead ahead)' : h === 3 ? '(starboard beam)' : h === 6 ? '(astern)' : h === 9 ? '(port beam)' : h < 6 ? 'to starboard' : 'to port'}` }));
 
 export class Grid {
   constructor(app, tab, container) {
@@ -357,6 +360,8 @@ export class Grid {
     input.focus();
     if (initial === undefined) input.select();
     if (col.type === 'choice') this.openDropdown(col, input.value, initial === undefined);
+    // a clock bearing (Ref C): pick 1–12 o'clock from a list (or type it)
+    else if (this.tab === 'sightings' && col.key === 'Bearing' && r.BrgRef === 'C') this.openDropdown(col, input.value, initial === undefined, CLOCK_ITEMS);
     input.addEventListener('keydown', (e) => this.onEditKey(e));
     input.addEventListener('input', () => { if (this.dropdown) this.filterDropdown(input.value); });
     input.addEventListener('blur', () => setTimeout(() => {
@@ -398,9 +403,9 @@ export class Grid {
     }
   }
 
-  openDropdown(col, text, showAll) {
+  openDropdown(col, text, showAll, list = null) {
     this.closeDropdown();
-    const items = this.listInfo(col.list);
+    const items = list || this.listInfo(col.list);
     const box = el('div', { class: 'dropdown' });
     box.addEventListener('mousedown', (e) => {
       e.preventDefault();

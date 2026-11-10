@@ -2,6 +2,7 @@
 import { $, $$, el, esc, api, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, isTrackBreak, trackStates, isPlaceholderObs, LINE_STYLES, isOn, ON_EFFORT } from './util.js';
 import { Grid } from './grid.js';
 import { Resights, groupCounts } from './resights.js';
+import { ResightTool } from './resight_tool.js';
 
 // what each Effort value means (the Effort column's help, the Summary)
 const EFFORT_LABEL = { ON: 'ON (on effort)', LINE: 'LINE (line transect)', FOLLOW: 'FOLLOW (focal follow)', PHOTO: 'PHOTO (photo-ID approach)' };
@@ -29,6 +30,7 @@ class App {
     this.map = new MapView(this, $('#map'));
     this.planner = new Planner(this);
     this.reportsTool = new ReportsTool(this);
+    this.resightTool = new ResightTool(this);
     this.online = new OnlineOverlays(this);
     this.applyDisplay();
     this.renderAll();
@@ -137,7 +139,8 @@ class App {
     if (this.pendingFit) { this.pendingFit = false; this.map.fitSurvey(); }
   }
 
-  unit() { return this.S.config.settings.distance_unit || 'nm'; }
+  // distances on the map, in popups, routes and the Summary (Settings → General: never reticles)
+  unit() { const u = this.S.config.settings.map_distance_unit || 'nm'; return u === 'reticle' ? 'nm' : u; }
   // the platform of the open survey (else of the last survey details): Shipboard, Aerial, Stationary, Other or ''
   platformType() { return this.S.survey?.meta?.platform_type || this.S.config.settings.last_meta?.platform_type || ''; }
   // an optional column (schema optional=…) is shown or not: Settings → General → Altitude column
@@ -170,7 +173,7 @@ class App {
   topTabs() { return ['sightings', 'effort', 'events']; }
   tabGroups() {
     return [
-      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Routes'], ['nmea', 'Instruments'], ['qc', 'Quality Control'], ['summary', 'Summary'], ['reports', 'Reports']]],
+      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Routes'], ['nmea', 'Instruments'], ['qc', 'Quality Control'], ['summary', 'Summary'], ['resights', 'Resights'], ['reports', 'Reports']]],
       ['config', 'Settings', [['settings', 'General'], ['basemap', 'Basemap'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'],
         ['templates', 'Templates'], ['about', 'About']]]];
   }
@@ -404,7 +407,7 @@ class App {
   renderPane(tab) {
     const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, dropdowns: this.renderDropdowns, nmea: this.renderNmea,
       inputs: this.renderInputs, templates: this.renderTemplates, overlays: this.renderOverlays, basemap: this.renderBasemap,
-      qc: this.renderQc, summary: this.renderSummaryPane, reports: () => this.reportsTool.render(), about: this.renderAbout,
+      qc: this.renderQc, summary: this.renderSummaryPane, resights: () => this.resightTool.render(), reports: () => this.reportsTool.render(), about: this.renderAbout,
       route: () => this.planner.render() }[tab];
     if (f) f.call(this);
   }
@@ -454,25 +457,33 @@ class App {
       radio('ins-method', 'average', 'Average of the rows before and after', true),
       radio('ins-method', 'previous', 'Copied from the row before'),
       radio('ins-method', 'next', 'Copied from the row after'),
+      radio('ins-method', 'time', 'At a time I type: the position is the vessel’s then, from the trackline'),
+      el('label', { class: 'row', id: 'ins-time-row' }, 'Time ', el('input', { type: 'text', id: 'ins-time', placeholder: 'e.g. 14:05 or 14:05:30', size: 14,
+        onfocus: () => { body.querySelector('input[name=ins-method][value=time]').checked = true; between(); } })),
       el('p', { class: 'hint', id: 'ins-between' }),
       el('p', { class: 'hint' }, 'A note in Notes says how the time and position were filled in. Correct them afterwards if you know better.'));
     const between = () => {
       const where = body.querySelector('input[name=ins-where]:checked').value;
+      const timed = body.querySelector('input[name=ins-method]:checked').value === 'time';
       const at = where === 'after' ? i + 1 : i;
-      body.querySelector('#ins-between').textContent = `Between ${label(rows[at - 1])} and ${label(rows[at])}.`;
+      body.querySelectorAll('input[name=ins-where]').forEach((x) => { x.disabled = timed; });
+      body.querySelector('#ins-between').textContent = timed ? 'A row at a typed time goes in time order (Where doesn’t apply); the day is the selected row’s.'
+        : `Between ${label(rows[at - 1])} and ${label(rows[at])}.`;
     };
     body.addEventListener('change', between);
     between();
     const got = await modal({ title: `Insert a row: ${this.S.schema.tabs[tab].title}`, body,
       buttons: [{ label: 'Cancel', value: null }, { label: 'Insert', primary: true,
-        value: () => ({ where: body.querySelector('input[name=ins-where]:checked').value, method: body.querySelector('input[name=ins-method]:checked').value }) }] });
+        value: () => ({ where: body.querySelector('input[name=ins-where]:checked').value, method: body.querySelector('input[name=ins-method]:checked').value,
+          time: body.querySelector('#ins-time').value }) }] });
     if (!got) return;
     let res;
     try { res = await api(`/api/tab/${tab}/insert`, { id, ...got }); } catch { return; }
     (res.warnings || []).forEach((w) => toast(w, 'warn'));
     const t = this.S.tables[tab];
     if (!t.rows.some((x) => x.RowID === res.row.RowID)) {
-      const at = got.where === 'after' ? i + 1 : i;
+      let at = got.where === 'after' ? i + 1 : i;
+      if (got.method === 'time') { at = t.rows.findIndex((x) => new Date(x.DateTime) > new Date(res.row.DateTime)); if (at < 0) at = t.rows.length; }
       t.rows.splice(at, 0, res.row); t.can_undo = true; this.renderTab(tab); this.map.drawMarkers?.(tab);
     }
     this.grids[tab].select(res.row.RowID, 'DateTime');
@@ -481,14 +492,16 @@ class App {
   async addResight() {
     const r = this.selectedSighting();
     if (!r) { toast('Select a sighting first: the resight is linked to it.', 'warn'); this.showTab('sightings'); return; }
+    const key = this.grids.sightings.sel?.key || 'DateTime';
     let res;
     try { res = await api('/api/sightings/resight', { id: r.RowID }); } catch { return; }
     const t = this.S.tables.sightings;
     if (!t.rows.some((x) => x.RowID === res.row.RowID)) { t.rows.push(res.row); t.can_undo = true; this.renderTab('sightings'); this.map.drawMarkers('sightings'); }
     if (this.logSize === 'min') this.setLogSize('normal');
     this.showTab('sightings');
+    // the new row, in the column that was selected (the cursor doesn't jump to another column)
     const g = this.grids.sightings;
-    g.select(res.row.RowID, g.cols.find((c) => c.key === 'Behaviors') ? 'Behaviors' : g.firstEmptyEditable(res.row));
+    g.select(res.row.RowID, key);
   }
 
   showTab(tab) {
@@ -562,6 +575,7 @@ class App {
         this.map.drawMarkers(m.tab);
         if (m.tab === 'effort') this.map.drawTrack();        // ERROR rows break the line
         if (this.tab === 'summary') this.renderSummary();
+        if (this.tab === 'resights' && m.tab === 'sightings') this.resightTool.render();
         this.reportsTool.onData(m.tab);
         this.updateStatus();
         break;
@@ -595,6 +609,7 @@ class App {
         this.map.updateVessel(this.S.vessel);
         this.grids.sightings?.render();          // resights nested or in time order
         if (this.tab === 'settings') this.renderSettings();
+        if (this.tab === 'resights') this.resightTool.render();
         break;
       case 'notice': toast(m.text, m.level || 'info', m.level === 'error' ? 12000 : 5000); break;
       case 'awake':
@@ -1909,7 +1924,13 @@ class App {
       el('p', { class: 'hint' }, 'Automatic shows the Alt column for aerial surveys and hides it for shipboard and stationary ones (Survey tab → Platform type). It is always kept in the file.'),
       el('div', { class: 'grid2' },
         el('label', { class: 'row' }, 'Altitude column in Sightings', sel('altitude_column', [['auto', 'Automatic'], ['show', 'Always shown'], ['hide', 'Hidden']])),
-        el('label', { class: 'row' }, 'Reticle readings are', sel('reticle_method', Object.entries(R.methods)))),
+        // the choice changes what's shown below it, so Settings redraws at once (a settings broadcast
+        // doesn't redraw while the pane has the focus)
+        el('label', { class: 'row' }, 'Reticle readings are', el('select', { id: 'reticle-method', onchange: async (e) => {
+          await this.saveSettings({ reticle_method: e.target.value });
+          this.renderSettings();
+          $('#reticle-method')?.focus();
+        } }, Object.entries(R.methods).map(([v, l]) => el('option', { value: v, selected: method === v }, l))))),
     ];
     if (method === 'binoculars') {
       const per = el('input', { type: 'number', id: 'reticle-per', min: 0.001, max: 10, step: 0.001, value: st.reticle_deg_per_division,
@@ -1974,7 +1995,6 @@ class App {
         el('label', { class: 'row' }, 'Resight marker fill', dsel('resight_marker_fill', [['hollow', 'Outline'], ['filled', 'Filled'], ['faded', 'Faded']], 'resight-fill')),
         dnum('resight_marker_size', 'Resight marker size (%)', 30, 150, 5)),
       el('div', { class: 'grid2 checks' },
-        dchk('resight_lines', 'Dotted line from each sighting through its resights (oldest → newest)'),
         dchk('resight_labels', 'Label resight markers on the map')));
   }
 
@@ -2024,13 +2044,14 @@ class App {
         el('p', { class: 'hint' }, '“During a survey” means from Start until End (or until the survey is closed); “Always” means whenever Spyhop is open. A computer that sleeps stops recording the trackline and NMEA data. This stops it sleeping when it is left alone; closing a laptop’s lid still puts most laptops to sleep, and a laptop on battery runs down faster. When Spyhop quits, the computer’s own sleep settings apply again.')),
       sec('Bearings, distances and time',
         el('div', { class: 'grid2' },
-          el('label', { class: 'row' }, 'Default bearing reference', sel('bearing_reference', [['M', 'Magnetic (compass)'], ['T', 'True'], ['R', 'Relative to bow']])),
-          el('label', { class: 'row' }, 'Default distance unit', sel('distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards'], ['reticle', 'Reticle (a reading: see Reticles)']])),
+          el('label', { class: 'row' }, 'Default bearing reference', sel('bearing_reference', [['M', 'Magnetic (compass)'], ['T', 'True'], ['R', 'Relative to bow'], ['C', 'Clock (1–12, relative to bow)']])),
+          el('label', { class: 'row' }, 'Default distance unit (Sightings)', sel('distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards'], ['reticle', 'Reticle (a reading: see Reticles)']])),
+          el('label', { class: 'row' }, 'Map distance unit', sel('map_distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards']])),
           el('label', { class: 'row' }, 'Magnetic variation (° E+/W−, or auto)', variation,
             el('span', { class: 'hint' }, ` now ${this.variation() === null ? '—' : this.variation().toFixed(1) + '°'}`)),
           el('label', { class: 'row' }, 'Lat/lon format', sel('latlon_format', [['DDM', 'Deg + decimal min'], ['DD', 'Decimal degrees'], ['DMS', 'Deg min sec']])),
           el('label', { class: 'row' }, 'Clock', sel('timezone', this.clockOptions()), this.clockHint())),
-        el('p', { class: 'hint' }, 'Each sighting row stores its own bearing reference and distance unit, so changing these defaults never changes old rows. “auto” variation uses the World Magnetic Model if installed, otherwise the GPS. The clock setting changes how all times are shown; the files always store the UTC offset with each time.')),
+        el('p', { class: 'hint' }, 'The map distance unit is used for the measuring tool, popups, routes and the Summary’s distances; the Sightings default is the Unit of new sightings. A clock bearing (Ref C) is picked from 1 to 12 o’clock, each hour 30° from the bow (3 = starboard beam). Each sighting row stores its own bearing reference and distance unit, so changing these defaults never changes old rows. “auto” variation uses the World Magnetic Model if installed, otherwise the GPS. The clock setting changes how all times are shown; the files always store the UTC offset with each time.')),
       this.reticleSection(sec, sel),
       sec('GPS / NMEA inputs', el('p', {}, 'GPS and instrument inputs are in ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('inputs'); } }, 'Settings → Inputs'),
@@ -2066,13 +2087,25 @@ class App {
               el('td', {}, el('select', { onchange: (e) => this.saveDisplay({ [style]: e.target.value }) },
                 LINE_STYLES.map(([v, l]) => el('option', { value: v, selected: (d[style] || 'solid') === v }, l)))))))),
         el('h4', {}, 'Lines and vectors'),
+        // the lines' show / width / line style; their color is the sighting's
+        el('table', { class: 'track-style', id: 'line-styles' },
+          el('thead', {}, el('tr', {}, ['', 'Show', 'Width (px)', 'Line'].map((h) => el('th', {}, h)))),
+          el('tbody', {}, [['Vessel to each sighting', 'sighting_lines', '1', 1.5, 'dashed'],
+            ['Joining sightings with the same FieldID (oldest → newest)', 'fieldid_lines', '0', 2.5, 'dotted'],
+            ['From each sighting through its resights (oldest → newest)', 'resight_lines', '1', 2.5, 'dotted']].map(([label, key, on, dw, ds]) =>
+            el('tr', { 'data-line': key },
+              el('th', {}, label),
+              el('td', {}, el('input', { type: 'checkbox', checked: (d[key] ?? on) === '1', 'aria-label': `Show lines: ${label}`, onchange: (e) => this.saveDisplay({ [key]: e.target.checked ? '1' : '0' }) })),
+              el('td', {}, el('input', { type: 'number', min: 0.5, max: 10, step: 0.5, value: d[`${key}_width`] || dw, style: 'width:4.5em', 'aria-label': `Width: ${label}`,
+                onchange: (e) => { const v = +e.target.value; if (v >= 0.5 && v <= 10) this.saveDisplay({ [`${key}_width`]: String(v) }); else { toast('Must be 0.5–10', 'warn'); e.target.value = d[`${key}_width`] || dw; } } })),
+              el('td', {}, el('select', { 'aria-label': `Line: ${label}`, onchange: (e) => this.saveDisplay({ [`${key}_style`]: e.target.value }) },
+                LINE_STYLES.map(([v, l]) => el('option', { value: v, selected: (d[`${key}_style`] || ds) === v }, l)))))))),
         el('div', { class: 'grid2' }, dnum('heading_vector_min', 'Heading vector (minutes ahead)', 1, 120)),
         el('div', { class: 'grid2 checks' },
           dchk('heading_vector', 'Vessel heading vector'),
-          dchk('sighting_lines', 'Lines from the vessel to each sighting'),
-          dchk('fieldid_lines', 'Dotted line joining sightings with the same FieldID (oldest → newest)')),
+          dchk('focus_selected', 'Move the map to a sighting, event or waypoint selected in its table')),
         el('h4', {}, 'Fading'),
-        el('div', { class: 'grid2' }, dnum('fade_hours', 'Fade after (hours)', 0.25, 72, 0.25)),
+        el('div', { class: 'grid2' }, dnum('fade_min', 'Fade after (minutes)', 1, 1440, 1)),
         el('div', { class: 'grid2 checks' }, dchk('fade_enabled', 'Fade the trackline, sightings and events older than this (waypoints never fade)'))),
       this.tablesSection(sec, sel),
       this.resightSection(sec, dnum, dchk),

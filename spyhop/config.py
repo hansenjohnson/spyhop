@@ -116,6 +116,7 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
         ["Tail slap / lobtail", "TS", "Raising the flukes and slapping them on the water."],
         ["Fluke-up dive", "FU", "Diving with the flukes raised clear of the water, usually a deep or long dive."],
         ["Fluke-down dive", "FD", "Diving without showing the flukes, usually a shallow or short dive."],
+        ["First surfacing", "SU", "The first time the animals are seen at the surface after a dive (the start of a surfacing). With a dive, it gives the dive time in Tools → Resights."],
         ["Nursing", "NU", "A calf positioned under or beside its mother's belly, apparently nursing."],
         ["Bow riding", "BO", "Riding the pressure wave at a vessel's bow or in its wake."],
         ["Avoidance", "AV", "Moving away from the vessel, changing heading or diving as the vessel approaches."],
@@ -209,8 +210,17 @@ DEFAULT_DISPLAY = {
     "heading_vector": "1",          # draw the vessel heading vector
     "heading_vector_min": "6",      # its length: minutes ahead at the current speed
     "sighting_lines": "1",          # vectors from the vessel to each sighting
+    "sighting_lines_style": "dashed",   # solid | dashed | dotted | dashdot (util.LINE_STYLES)
+    "sighting_lines_width": "1.5",
+    "fieldid_lines_style": "dotted",
+    "fieldid_lines_width": "2.5",
+    "resight_lines_style": "dotted",
+    "resight_lines_width": "2.5",
+    "focus_selected": "1",          # pan the map to a sighting, event or waypoint selected in its table
     "fieldid_lines": "0",           # dotted line joining sightings with the same FieldID
     "sightings_row_colors": "resights",  # Sightings rows: none | alternate | resights (tint resights) | groups (a tint per sighting and its resights)
+    "resight_dive_behaviors": "Fluke-up dive|Fluke-down dive",   # Tools → Resights: behaviors that mean a dive (| between)
+    "resight_surface_behavior": "First surfacing",              # … and the one that ends it
     "resight_order": "time",        # Sightings table: time (as recorded) | nested (resights under their first sighting)
     "resight_lines": "1",           # dotted line from a sighting through its resights, in time order
     "resight_marker_shape": "same", # resights' marker: same (as the sighting) | a shape | hidden
@@ -219,8 +229,8 @@ DEFAULT_DISPLAY = {
     "resight_labels": "0",          # label resight markers too
     "show_track_on": "1",
     "show_track_off": "1",
-    "fade_enabled": "0",            # fade the track, sightings and events older than fade_hours (not waypoints)
-    "fade_hours": "2",
+    "fade_enabled": "0",            # fade the track, sightings and events older than fade_min (not waypoints)
+    "fade_min": "30",
     "overlay_colors": "{}",         # colors chosen in Tools → Overlays: JSON {file: "#rrggbb"}
 }
 
@@ -230,6 +240,7 @@ DEFAULT_SETTINGS = {
     "timezone": "local",            # local | UTC | auto (from the position) | UTC±hh:mm
     "bearing_reference": "M",
     "distance_unit": "nm",
+    "map_distance_unit": "nm",      # distances on the map, in popups, routes and the Summary (no reticles)
     "mag_variation": "auto",
     "tracking_interval": 10,
     "track_break_kn": 30,           # break the trackline where it moves faster than this (0 = never)
@@ -280,6 +291,7 @@ SHARED_SETTINGS = {
     "timezone": "Clock",
     "bearing_reference": "Bearing reference",
     "distance_unit": "Distance unit",
+    "map_distance_unit": "Map distance unit",
     "mag_variation": "Magnetic variation",
     "tracking_interval": "Track point every (s)",
     "track_break_kn": "Break the track above (kn)",

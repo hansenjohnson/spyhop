@@ -422,7 +422,8 @@ class App:
             raise ValueErrorMsg("Unknown table.")
         body = await request.json()
         return json_ok(self.rec.insert_row(tab, str(body.get("id") or ""), str(body.get("method") or ""),
-                                           "before" if body.get("where") == "before" else "after"))
+                                           "before" if body.get("where") == "before" else "after",
+                                           str(body.get("time") or "")))
 
     async def add_resight(self, request):
         body = await request.json()
@@ -557,6 +558,10 @@ class App:
                 raise ValueError("Unknown binocular magnification.")
             if updates.get("altitude_column") not in (None, "auto", "show", "hide"):
                 raise ValueError("The Altitude column is auto, show or hide.")
+            if updates.get("map_distance_unit") not in (None, "nm", "km", "m", "mi", "yd"):
+                raise ValueError("The map distance unit is nm, km, m, mi or yd.")
+            if updates.get("bearing_reference") not in (None, *schema.FIXED_LISTS["brgref"]):
+                raise ValueError("The bearing reference is M, T, R or C.")
             if updates.get("segment_column") not in (None, "show", "hide"):
                 raise ValueError("The effort segment column is show or hide.")
             if "column_layout" in updates:

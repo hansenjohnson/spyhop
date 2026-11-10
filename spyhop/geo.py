@@ -76,7 +76,8 @@ def to_true_bearing(bearing: float, reference: str, heading: float | None,
                     variation: float | None) -> float | None:
     """Convert an observed bearing to true.
 
-    reference: 'T' true, 'M' magnetic, 'R' relative to the vessel's heading.
+    reference: 'T' true, 'M' magnetic, 'R' relative to the vessel's heading, 'C' a clock bearing
+    relative to the heading (1–12, each hour 30°: 3 = 90° to starboard, 12 = dead ahead).
     """
     reference = (reference or "M").upper()[:1]
     if reference == "T":
@@ -89,6 +90,10 @@ def to_true_bearing(bearing: float, reference: str, heading: float | None,
         if heading is None:
             return None
         return (bearing + heading) % 360.0
+    if reference == "C":
+        if heading is None or not 0 <= bearing <= 12:
+            return None
+        return (bearing * 30.0 + heading) % 360.0
     return None
 
 

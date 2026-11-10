@@ -571,7 +571,7 @@ export class MapView {
     const d = this.app.S.config.display;
     if (d.fade_enabled !== '1' || !iso) return false;
     const t = new Date(iso).getTime();
-    return !isNaN(t) && Date.now() - t > (+d.fade_hours || 2) * 3600000;
+    return !isNaN(t) && Date.now() - t > (+d.fade_min || 30) * 60000;
   }
 
   redrawData() {
@@ -718,7 +718,8 @@ export class MapView {
       m.on('popupclose', () => { if (this.openRowPopup?.m === m) this.openRowPopup = null; });
       this.markerIndex[`${tab}:${r.RowID}`] = m;
       if (tab === 'sightings' && disp.sighting_lines !== '0' && r.SigLat && r.Lat) {
-        L.polyline([[+r.Lat, +r.Lon], pos], { color, weight: 1.5, dashArray: '4 4', interactive: false,
+        const w = +disp.sighting_lines_width || 1.5;
+        L.polyline([[+r.Lat, +r.Lon], pos], { color, weight: w, dashArray: dashFor(disp.sighting_lines_style || 'dashed', w), interactive: false,
           opacity: old ? 0.3 : 1 }).addTo(this.layers.lines);
       }
       if (tab === 'sightings' && r.FieldID) (byFid[r.FieldID] = byFid[r.FieldID] || []).push({ r, pos, color });
@@ -730,7 +731,8 @@ export class MapView {
           .map((r) => this.rowPos(tab, r)).filter(Boolean);
         if (pts.length < 2) continue;
         const last = g.at(-1);
-        L.polyline(pts, { color: this.markerColor(tab, g[0]), weight: 2.5, dashArray: '2 6', lineCap: 'round',
+        const w = +disp.resight_lines_width || 2.5;
+        L.polyline(pts, { color: this.markerColor(tab, g[0]), weight: w, dashArray: dashFor(disp.resight_lines_style || 'dotted', w), lineCap: 'round',
           opacity: this.isOld(last.DateTime) ? 0.35 : 0.9 })
           .bindTooltip(`Sighting ${esc(g[0].SightNo)}: ${g.length - 1} resight${g.length === 2 ? '' : 's'}`, { sticky: true })
           .addTo(this.layers.relines);
@@ -742,7 +744,8 @@ export class MapView {
         if (list.length < 2) continue;
         list.sort((a, b) => new Date(a.r.DateTime) - new Date(b.r.DateTime));
         const last = list.at(-1);
-        L.polyline(list.map((x) => x.pos), { color: last.color, weight: 2.5, dashArray: '1 7', lineCap: 'round',
+        const w = +disp.fieldid_lines_width || 2.5;
+        L.polyline(list.map((x) => x.pos), { color: last.color, weight: w, dashArray: dashFor(disp.fieldid_lines_style || 'dotted', w), lineCap: 'round',
           opacity: this.isOld(last.r.DateTime) ? 0.35 : 0.9 })
           .bindTooltip(`${esc(fid)}: ${list.length} sightings`, { sticky: true })
           .addTo(this.layers.fidlines);
@@ -808,7 +811,8 @@ export class MapView {
   focusRow(tab, id) {
     const m = this.markerIndex?.[`${tab}:${id}`];
     if (m && this.map.hasLayer(m)) {
-      if (!this.map.getBounds().pad(-0.1).contains(m.getLatLng())) this.map.panTo(m.getLatLng());
+      // Settings → General → Map display: "Move the map to a row selected in its table"
+      if (this.app.S.config.display.focus_selected !== '0' && !this.map.getBounds().pad(-0.1).contains(m.getLatLng())) this.map.panTo(m.getLatLng());
       const elx = m.getElement();
       if (elx) { elx.classList.remove('pulse'); void elx.offsetWidth; elx.classList.add('pulse'); }
     }

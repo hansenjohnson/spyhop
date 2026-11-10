@@ -531,7 +531,9 @@ def run_qc(rec) -> dict:
             elif n is not None and calves == n and n > 0:
                 add("warning", "Plausible numbers", "Every animal is a calf — is Num missing the adults?", "sightings", r, "Calves", name)
         b, d = _num(r.get("Bearing")), _num(r.get("Distance"))
-        if b is not None and not 0 <= b <= 360:
+        if b is not None and r.get("BrgRef") == "C" and not 0 <= b <= 12:
+            add("error", "Plausible bearings and distances", "A clock bearing (Ref C) must be between 1 and 12.", "sightings", r, "Bearing", name)
+        elif b is not None and not 0 <= b <= 360:
             add("error", "Plausible bearings and distances", "Bearing must be between 0 and 360°.", "sightings", r, "Bearing", name)
         if d is not None and d < 0:
             add("error", "Plausible bearings and distances", "Distance can't be negative.", "sightings", r, "Distance", name)
@@ -540,12 +542,12 @@ def run_qc(rec) -> dict:
                 f"{'Bearing' if b is not None else 'Dist'} is given without {'Dist' if b is not None else 'Bearing'}, so the animals' position is the vessel's.",
                 "sightings", r, "Distance" if b is not None else "Bearing", name)
         if b is not None and not r.get("BrgRef"):
-            add("warning", "Plausible bearings and distances", "Bearing has no Ref (M, T or R).", "sightings", r, "BrgRef", name)
+            add("warning", "Plausible bearings and distances", "Bearing has no Ref (M, T, R or C).", "sightings", r, "BrgRef", name)
         if d is not None and not r.get("DistUnit"):
             add("warning", "Plausible bearings and distances", "Dist has no Unit.", "sightings", r, "DistUnit", name)
-        if r.get("BrgRef") == "R" and b is not None and _num(r.get("VesHdg")) is None:
+        if r.get("BrgRef") in ("R", "C") and b is not None and _num(r.get("VesHdg")) is None:
             add("error", "Plausible bearings and distances",
-                "A relative (R) bearing needs the vessel heading, which wasn't recorded, so the position can't be worked out.",
+                f"A {'relative (R)' if r.get('BrgRef') == 'R' else 'clock (C)'} bearing needs the vessel heading, which wasn't recorded, so the position can't be worked out.",
                 "sightings", r, "BrgRef", name)
         vp, sp = _pos(r, "Lat", "Lon"), _pos(r, "SigLat", "SigLon")
         if vp and sp:

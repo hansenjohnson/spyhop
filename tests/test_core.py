@@ -2407,3 +2407,39 @@ def test_survey_notes_and_column_layout(rec):
     rec.cfg.save_settings({"column_layout": got})
     import json
     assert "column_layout" in rec.cfg.local_path.read_text() and "column_layout" not in rec.cfg.config_path.read_text()
+
+
+def test_clock_bearings_and_insert_at_time(rec):
+    """0.32: Ref C clock bearings (each hour 30° from the heading); Insert row at a typed time takes the
+    position from the trackline; First surfacing in the default behaviors; fade in minutes."""
+    from spyhop import geo, qc
+    from spyhop.config import DEFAULT_DISPLAY, DEFAULT_LISTS
+    from datetime import timedelta
+    assert geo.to_true_bearing(3, "C", 45.0, None) == 135.0 and geo.to_true_bearing(12, "C", 45.0, None) == 45.0
+    assert geo.to_true_bearing(13, "C", 45.0, None) is None
+    s = rec.new_row("sightings", {"Species": "Fin whale", "Count": "1", "Bearing": "3", "BrgRef": "C",
+                                  "Distance": "1", "DistUnit": "nm"})["row"]
+    assert s["VesHdg"] == "45"
+    want = geo.destination(float(s["Lat"]), float(s["Lon"]), 135.0, 1852.0)
+    assert abs(float(s["SigLat"]) - want[0]) < 1e-5 and abs(float(s["SigLon"]) - want[1]) < 1e-5
+    w = rec.edit("sightings", s["RowID"], {"Bearing": "20"})["warnings"]
+    assert any("clock bearing" in x for x in w)
+    assert any(i["check"] == "Plausible bearings and distances" and "clock bearing" in i["message"] for i in qc.run_qc(rec)["issues"])
+    # a map-picked position back to the nearest hour
+    row = {"Lat": s["Lat"], "Lon": s["Lon"], "SigLat": f"{want[0]:.6f}", "SigLon": f"{want[1]:.6f}", "BrgRef": "C", "VesHdg": "45", "DistUnit": "nm"}
+    rec._fill_bearing_distance(row)
+    assert row["Bearing"] == "3" and row["BrgRef"] == "C"
+    # insert at a typed time: the trackline position then
+    from spyhop.recorder import parse_time
+    t0 = parse_time(s["DateTime"])
+    rec.track.points[:] = [{"DateTime": (t0 - timedelta(minutes=10)).isoformat(), "Lat": "41.0", "Lon": "-70.0", "SOG": "", "COG": "", "Effort": "ON"},
+                           {"DateTime": (t0 + timedelta(minutes=10)).isoformat(), "Lat": "41.2", "Lon": "-70.4", "SOG": "", "COG": "", "Effort": "ON"}]
+    hhmm = (t0 - timedelta(minutes=5)).astimezone(rec.tz()).strftime("%H:%M:%S")
+    r = rec.insert_row("sightings", s["RowID"], "time", time_text=hhmm)["row"]
+    assert abs(float(r["Lat"]) - 41.05) < 1e-6 and abs(float(r["Lon"]) + 70.1) < 1e-6
+    assert rec.tables["sightings"].rows[0]["RowID"] == r["RowID"]           # in time order, before the sighting
+    assert r["Notes"].startswith("Inserted: time typed in") and "trackline" in r["Notes"]
+    with pytest.raises(ValueErrorMsg, match="Type the time"):
+        rec.insert_row("sightings", s["RowID"], "time", time_text="")
+    assert any(b[0] == "First surfacing" for b in DEFAULT_LISTS["behaviors"][1])
+    assert DEFAULT_DISPLAY["fade_min"] == "30" and "fade_hours" not in DEFAULT_DISPLAY

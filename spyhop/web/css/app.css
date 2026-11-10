@@ -94,6 +94,9 @@ a { color: var(--accent); }
 #tabs button { border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; background: transparent; padding: 0.35em 0.9em; color: var(--muted); white-space: nowrap; }
 #tabs button.active { background: var(--panel); border-color: var(--line); color: var(--text); font-weight: 600; margin-bottom: -1px; }
 #tabs button.overdue { color: var(--alert); }
+/* the Survey tab stands apart from the data tabs: a tinted, outlined tab with a gap before it */
+#tabs button[data-tab="survey"] { margin-left: 0.6em; background: #e3eff7; border-color: #9cc3dc; color: #0b5f86; font-weight: 600; }
+#tabs button[data-tab="survey"].active { background: var(--panel); border-color: #0b5f86; border-bottom-color: transparent; color: #0b5f86; box-shadow: inset 0 3px 0 #0b5f86; }
 /* second row of tabs inside Survey */
 #subtabs { display: none; flex-wrap: wrap; gap: 0.25em; padding: 0.35em 0.5em; border-bottom: 1px solid var(--line); background: var(--panel); flex: none; }
 #log-pane.survey-group #subtabs { display: flex; }
@@ -150,7 +153,7 @@ ol.col-list li .col-name { flex: 1; }
 ol.col-list li button { min-width: 2.2em; padding: 2px 6px; }
 .survey-notes { white-space: pre-line; }
 textarea.meta-notes { width: 100%; min-height: 5em; font: inherit; box-sizing: border-box; resize: vertical; }
-table.grid tr.nested td[data-key="SightNo"] { padding-left: 1.6em; }
+table.grid tr.resight td[data-key="SightNo"] { padding-left: 1.6em; }   /* resights, in either order */
 table.grid td[data-key="ResightOf"] { white-space: nowrap; color: #6b4700; }
 table.grid td[data-key="ResightOf"].dangling { color: var(--alert); text-decoration: line-through; }
 table.grid tr.selrow td { background: var(--sel); }
@@ -525,3 +528,4 @@ table.overlay-table td { vertical-align: middle; }
 .uninstall-plan .mono { font-size: 0.85em; word-break: break-all; }
 .modal-back.closing { z-index: 6000; }
 .toolbar .tb-right { margin-left: auto; }
+.rs-dives { columns: 14em auto; column-gap: 2em; } .rs-dives label.check { break-inside: avoid; display: flex; }

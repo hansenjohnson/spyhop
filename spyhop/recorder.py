@@ -814,6 +814,10 @@ class Recorder:
                     pass
                 ref = row.get("BrgRef") or self.cfg.settings.get("bearing_reference", "M")
                 var = self.variation_at(lat, lon) if ref == "M" else None
+                if ref == "C" and not 0 <= float(b) <= 12:
+                    warnings.append("With Ref C the bearing is a clock bearing, 1 to 12 (3 = 90° to starboard, 12 = dead ahead). "
+                                    "The animal's position wasn't calculated.")
+                    return warnings
                 true_b = geo.to_true_bearing(float(b), ref, hdg, var)
                 if true_b is None:
                     warnings.append("Can't convert the bearing to true: " + (
@@ -853,11 +857,13 @@ class Recorder:
                 ref, b = "T", true_b
             else:
                 b = true_b - var
-        elif ref == "R":
+        elif ref in ("R", "C"):
             try:
                 b = true_b - float(row.get("VesHdg") or "x")
             except ValueError:
                 ref, b = "T", true_b
+            if ref == "C":                          # to the nearest hour, 1–12
+                b = (round((b % 360) / 30) % 12) or 12
         else:
             b = true_b
         unit = row.get("DistUnit") or "nm"
@@ -875,7 +881,7 @@ class Recorder:
         else:
             d = dm / geo.UNIT_TO_M.get(unit, 1852.0)
         row["BrgRef"] = ref
-        row["Bearing"] = f"{b % 360:.0f}"
+        row["Bearing"] = f"{b:.0f}" if ref == "C" else f"{b % 360:.0f}"
         row["Distance"] = f"{d:.3g}" if d < 100 else f"{d:.0f}"
 
     # -- row operations --------------------------------------------------------------
@@ -997,19 +1003,79 @@ class Recorder:
             self._write(t.save)
 
     INSERT_METHODS = {"average": "averaged from the rows before and after",
-                      "previous": "copied from the row before", "next": "copied from the row after"}
+                      "previous": "copied from the row before", "next": "copied from the row after",
+                      "time": "at a time typed in"}
 
-    def insert_row(self, tab: str, row_id: str, method: str, where: str = "after") -> dict:
+    def track_position_at(self, when: datetime) -> tuple[float, float] | None:
+        """The platform's position at a time, from the trackline: between the two track points either side
+        of it (in proportion), or the nearest point when it's before the first or after the last."""
+        pts = []
+        for p in self.track.points if self.track else []:
+            pt = parse_time(p.get("DateTime", ""))
+            try:
+                pts.append((pt, float(p["Lat"]), float(p["Lon"])))
+            except (TypeError, ValueError, KeyError):
+                continue
+        pts = sorted((x for x in pts if x[0] is not None), key=lambda x: x[0])
+        if not pts:
+            return None
+        if when <= pts[0][0]:
+            return pts[0][1], pts[0][2]
+        for (t0, a0, b0), (t1, a1, b1) in zip(pts, pts[1:]):
+            if t0 <= when <= t1:
+                f = 0.0 if t1 == t0 else (when - t0) / (t1 - t0)
+                return a0 + (a1 - a0) * f, b0 + (b1 - b0) * f
+        return pts[-1][1], pts[-1][2]
+
+    def _insert_at_time(self, tab: str, t, row_id: str, text: str) -> dict:
+        """Insert a row at a time typed in, in time order, at the platform's position then (trackline)."""
+        ref = t.get(row_id)
+        if not str(text or "").strip():
+            raise ValueErrorMsg("Type the time for the new row (e.g. 14:05 or 14:05:30).")
+        when = parse_time(self.parse_datetime(str(text), ref.get("DateTime", "")))
+        if when is None:
+            raise ValueErrorMsg("That time couldn't be read: type it as 14:05 or 14:05:30.")
+        at = len(t.rows)
+        for k, r in enumerate(t.rows):
+            rt = parse_time(r.get("DateTime", ""))
+            if rt is not None and rt > when:
+                at = k
+                break
+        if tab == "effort":
+            if at == 0:
+                raise ValueErrorMsg("That time is before the Start row: nothing can go before it.")
+            if t.rows and t.rows[-1].get("Effort") == "End" and at >= len(t.rows):
+                raise ValueErrorMsg("That time is after the End row: nothing can go after it.")
+        tz = self.tz()
+        hms = when.astimezone(tz).strftime("%H:%M:%S")
+        prefill = {"DateTime": when.replace(microsecond=0).isoformat()}
+        pos = self.track_position_at(when)
+        warn = None
+        if pos:
+            prefill["Lat"], prefill["Lon"] = f"{pos[0]:.6f}", f"{pos[1]:.6f}"
+            prefill["Notes"] = f"Inserted: time typed in ({hms}), position from the trackline at that time."
+        else:
+            prefill["Notes"] = f"Inserted: time typed in ({hms}); no trackline, so no position."
+            warn = "There's no trackline to take the position from, so the position is blank."
+        res = self.new_row(tab, prefill, _index=at)
+        if warn:
+            res["warnings"] = [warn, *res.get("warnings", [])]
+        return res
+
+    def insert_row(self, tab: str, row_id: str, method: str, where: str = "after", time_text: str = "") -> dict:
         """Insert a row before or after row_id, its time and position averaged from the rows either side
-        of the gap, or copied from the row before or after it; a note says how."""
+        of the gap, or copied from the row before or after it; or at a time typed in, in time order, at the
+        platform's position then. A note says how."""
         self._require_survey(tab)
         t = self.table(tab)
         if method not in self.INSERT_METHODS:
-            raise ValueErrorMsg("Choose how to fill in the time and position: average, previous or next.")
+            raise ValueErrorMsg("Choose how to fill in the time and position: average, previous, next or a time.")
         try:
             i = t.index_of(row_id)
         except KeyError:
             raise ValueErrorMsg("That row no longer exists.")
+        if method == "time":
+            return self._insert_at_time(tab, t, row_id, time_text)
         at = i + 1 if where == "after" else i
         before = t.rows[at - 1] if at > 0 else None
         after = t.rows[at] if at < len(t.rows) else None
