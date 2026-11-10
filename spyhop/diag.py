@@ -251,12 +251,17 @@ def folder_report(root: Path, data_dir: Path) -> str:
         lines.append(f"  {name}/  — {what}")
         lines += _tree(data_dir / name, names=False)
     other = [p for p in sorted(data_dir.glob("*")) if p.name not in {n for n, _ in DATA_FOLDERS}] if data_dir.is_dir() else []
-    nfiles = sum(1 for p in other if p.is_file())
-    size = sum(p.stat().st_size for p in other if p.is_file())
-    lines.append(f"  survey files and waypoints: {nfiles} files, {_size(size)} (names not listed)")
+    files = [p for p in other if p.is_file()]
+    lines.append(f"  files at the top (waypoints…): {len(files)}, {_size(sum(p.stat().st_size for p in files))} (names not listed)")
     dirs = [p for p in other if p.is_dir()]
-    if dirs:
-        lines.append(f"  other folders: {len(dirs)}")
+    if dirs:                     # one folder per survey (0.36): counted, not named
+        n = sz = 0
+        for d in dirs:
+            for f in d.rglob("*"):
+                if f.is_file():
+                    n += 1
+                    sz += f.stat().st_size
+        lines.append(f"  survey folders: {len(dirs)}, {n} files, {_size(sz)} (names not listed)")
     return "\n".join(lines) + "\n"
 
 

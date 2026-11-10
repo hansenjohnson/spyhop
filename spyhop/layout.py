@@ -1,4 +1,5 @@
-"""The one-time move from the 0.27 folder layout to the 0.28 one. Delete this module (and its call in
+"""One-time moves from older folder layouts: 0.27 → 0.28 (move_old_layout) and, in 0.36, survey files into a
+folder per survey (move_surveys_into_folders). Delete this module (and its calls in
 Config.__init__) before 1.0.0.
 
 0.27 kept the lists, shortcuts.csv and display.csv at the top of Spyhop's folder, the settings,
@@ -10,6 +11,7 @@ in spyhop-local.json. See config.Config.
 from __future__ import annotations
 
 import csv
+import re
 import json
 import shutil
 from pathlib import Path
@@ -160,3 +162,61 @@ def tidy_data_folder(cfg) -> None:
     if left:
         cfg.notices.append("The data folder still has a templates folder with files Spyhop doesn't know what to do with: "
                            + ", ".join(left[:4]) + (" …" if len(left) > 4 else "") + ". Move or delete them yourself.")
+
+
+# ------------------------------------------------------------------ 0.36: one folder per survey
+SURVEY_FILE_RE = re.compile(r"^(?P<prefix>.+)_(?P<kind>sightings|effort|events|track|metadata|instruments)\.csv(?P<bak>\.bak-.+)?$")
+
+
+def move_surveys_into_folders(cfg) -> int:
+    """Before 0.36 a survey's files sat at the top of the data folder, named <survey>_<table>.csv, with its
+    raw NMEA logs in nmea_logs/ and its exports in exports/. Move each survey's files into its own
+    <survey>/ folder (logs into <survey>/nmea_logs, exports into <survey>/exports). Nothing is overwritten:
+    a file whose place is taken stays where it is, with a notice. Runs whenever the data folder is
+    opened (a data folder from an older Spyhop can be plugged in later). Returns the surveys moved.
+    Delete before 1.0.0, with move_old_layout."""
+    data = Path(cfg.data_dir)
+    try:
+        top = [p for p in data.iterdir() if p.is_file()]
+    except OSError:
+        return 0
+    by_prefix: dict[str, list[Path]] = {}
+    for p in top:
+        m = SURVEY_FILE_RE.match(p.name)
+        if m:
+            by_prefix.setdefault(m.group("prefix"), []).append(p)
+    # a survey has at least one of its tables; a lone metadata or instruments file belongs to one of those
+    surveys = {k: v for k, v in by_prefix.items()
+               if any(SURVEY_FILE_RE.match(p.name).group("kind") in ("sightings", "effort", "events", "track") for p in v)}
+    if not surveys:
+        return 0
+    moved, left = 0, []
+    for prefix in sorted(surveys, key=len, reverse=True):
+        dest = data / prefix
+        if prefix.lower() in cfg.RESERVED_NAMES or (dest.exists() and not dest.is_dir()):
+            left += [str(p) for p in surveys[prefix]]
+            continue
+        for p in surveys[prefix]:
+            if not _move(p, dest / p.name):
+                left.append(str(p))
+        moved += 1
+    # logs and exports named after a survey (the longest matching name wins: "A_B" before "A")
+    names = sorted(surveys, key=len, reverse=True)
+    for sub in ("nmea_logs", "exports"):
+        d = data / sub
+        if not d.is_dir():
+            continue
+        for p in sorted(d.iterdir()):
+            if not p.is_file():
+                continue
+            owner = next((n for n in names if p.name.startswith(n + "_") or p.name.startswith(n + ".")), None)
+            if owner and (data / owner).is_dir() and not _move(p, data / owner / sub / p.name):
+                left.append(str(p))
+        _rmdir_if_empty(d)
+    if moved:
+        cfg.notices.append(f"Spyhop now keeps each survey in a folder of its own: moved {moved} survey"
+                           f"{'s' if moved > 1 else ''} (with their raw NMEA logs and exports) into folders in {data}.")
+    if left:
+        cfg.notices.append("Some survey files couldn't be moved into their survey's folder (the name was taken): "
+                           + ", ".join(left[:4]) + (" …" if len(left) > 4 else "") + ". Move them yourself.")
+    return moved

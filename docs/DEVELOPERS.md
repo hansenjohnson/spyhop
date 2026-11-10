@@ -25,11 +25,11 @@ The server listens on <http://127.0.0.1:8765/>.
 spyhop/
   __main__.py     command line and start-up
   server.py       aiohttp routes, websocket push (vessel state every second, table changes as they happen)
-  recorder.py     every edit goes through here: validation, computed fields, surveys, tracker, export
+  recorder.py     every edit goes through here: validation, computed fields, surveys (a folder each, with their template copy), survey packages, tracker, export
   store.py        CSV tables with atomic writes and undo/redo; the track file
   schema.py       the columns of each table, and the fixed lists
   config.py       Spyhop's folder; the current template (templates/current) and this computer's settings (spyhop-local.json)
-  layout.py       the one-time move from the 0.27 folder layout (remove before 1.0)
+  layout.py       one-time moves from older folder layouts: 0.27 → 0.28, and survey files into a folder each (0.36); remove before 1.0
   nmea.py         NMEA 0183 parser, vessel state, instrument readings, raw log
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
   qc.py           the error check (thresholds in LIMITS)

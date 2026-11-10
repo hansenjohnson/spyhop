@@ -166,12 +166,16 @@ class Recorder:
                 "started": datetime.now().astimezone().isoformat(timespec="seconds"),
                 "auto_tracking_done": True}
 
+    def _file(self, prefix: str, kind: str, ext: str = "csv") -> Path:
+        """A survey's file: <data folder>/<survey>/<survey>_<kind>.<ext> (one folder per survey, 0.36)."""
+        return self.cfg.survey_dir(prefix) / f"{prefix}_{kind}.{ext}"
+
     def _path(self, tab: str) -> Path | None:
         if tab == "marks":
             return self.cfg.data_dir / "waypoints.csv"
         if self.survey is None:
             return None
-        return self.cfg.data_dir / f"{self.survey['prefix']}_{tab}.csv"
+        return self._file(self.survey["prefix"], tab)
 
 
     # -- raw NMEA log --------------------------------------------------------
@@ -211,7 +215,7 @@ class Recorder:
         """(Re)start the raw log so it goes to the current data folder, named after the open survey."""
         on = bool(self.cfg.settings.get("nmea_log_enabled"))
         stem = self.survey["prefix"] if self.survey else "no-survey"
-        folder = self.cfg.data_dir / "nmea_logs"
+        folder = self.cfg.nmea_log_dir
         ts = bool(self.cfg.settings.get("nmea_log_timestamps", True))
         cur = self.rawlog
         if cur and on and not force and cur.path.parent == folder and cur.path.name.startswith(stem + "_nmea_"):
@@ -222,7 +226,7 @@ class Recorder:
         self.decoder.raw_logger = self.rawlog.write if self.rawlog else None
 
     def raw_log_status(self) -> dict:
-        st = {"on": False, "folder": str(self.cfg.data_dir / "nmea_logs"),
+        st = {"on": False, "folder": str(self.cfg.nmea_log_dir),
               "timestamps": bool(self.cfg.settings.get("nmea_log_timestamps", True))}
         if self.rawlog:
             st.update(self.rawlog.status())
@@ -235,7 +239,9 @@ class Recorder:
             if t.notice:
                 self.notices.append(t.notice)
             self.tables[tab] = t
-        self.track = Track(self.cfg.data_dir / f"{self.survey['prefix']}_track.csv" if self.survey else None)
+        if self.survey:
+            self.cfg.survey_dir(self.survey["prefix"]).mkdir(parents=True, exist_ok=True)
+        self.track = Track(self._file(self.survey["prefix"], "track") if self.survey else None)
         if self.survey:
             self._number_segments()
         self._raw_log_follow()
@@ -243,7 +249,7 @@ class Recorder:
 
     def _survey_exists(self, prefix: str) -> bool:
         # explicit paths, not glob(): survey names may contain [ ] * etc.
-        return any((self.cfg.data_dir / f"{prefix}_{t}.csv").exists() for t in self.SURVEY_FILES)
+        return any(self._file(prefix, t).exists() for t in self.SURVEY_FILES)
 
     # state of the open survey, from its Effort table
     def survey_ended(self) -> bool:
@@ -266,7 +272,7 @@ class Recorder:
     # -- survey details (platform, organization, …) ------------------------------------
     def _meta_path(self, prefix: str | None = None) -> Path | None:
         prefix = prefix or (self.survey["prefix"] if self.survey else None)
-        return self.cfg.data_dir / f"{prefix}_metadata.csv" if prefix else None
+        return self._file(prefix, "metadata") if prefix else None
 
     def read_meta(self, prefix: str | None = None) -> dict:
         import csv as _csv
@@ -370,7 +376,7 @@ class Recorder:
         end = rows[-1]["DateTime"] if self.survey_ended() else ""
         return {**self.survey, "active": self.survey_active(), "ended": self.survey_ended(),
                 "start_time": start, "end_time": end, "tracking": self.tracking_on(),
-                "meta": self.read_meta()}
+                "meta": self.read_meta(), "template": self.template_status()}
 
     def _activate(self, prefix: str, meta: dict | None = None):
         """Make an existing survey on disk the open survey (tracking is left off)."""
@@ -398,7 +404,9 @@ class Recorder:
         base.update({k: v for k, v in (self.cfg.settings.get("last_meta") or {}).items() if k in base})
         meta = self._clean_meta(meta or {}, base)        # check the details before creating anything
         survey = self._make_survey(name)
-        if self._survey_exists(survey["prefix"]):
+        if survey["prefix"].lower() in self.cfg.RESERVED_NAMES:
+            raise ValueErrorMsg(f"“{survey['prefix']}” is the name of one of Spyhop's own folders: choose another name.")
+        if self._survey_exists(survey["prefix"]) or self.cfg.survey_dir(survey["prefix"]).exists():
             raise ValueErrorMsg(f"A survey called “{survey['prefix']}” already exists. "
                                 "Choose another name, or open it from the list in the Survey tab.")
         self.close_survey()                           # an ended survey may still be open
@@ -409,10 +417,188 @@ class Recorder:
         self.new_row("effort", {"Effort": "Start"}, _allow_start=True)
         self.tables["effort"].undo_stack.clear()        # the Start row can't be undone
         self._write_meta(meta, system={"spyhop_version_created": __version__, **self._template_meta()})
+        self._save_template_copy()
         self.cfg.save_settings({"last_meta": {k: v for k, v in meta.items() if k != "survey_notes"}})
         self._set_tracking(True)
         self._record_point("Start")                   # the track's first point is marked Start
         self.emit({"type": "reload"})
+
+    # -- the template a survey was recorded with (0.36) ---------------------------------
+    def template_copy_path(self, prefix: str | None = None) -> Path | None:
+        prefix = prefix or (self.survey["prefix"] if self.survey else None)
+        return self._file(prefix, "template", "zip") if prefix else None
+
+    def _save_template_copy(self):
+        """Keep a copy of the current template (lists, shortcuts, map display, reports, shared settings)
+        in the new survey's folder, so the survey always travels with the template it was recorded with.
+        Lists can't change during an active survey, so the copy stays exact."""
+        from . import templates
+        p = self.template_copy_path()
+        try:
+            data = templates.make_zip(self.cfg, note=f"The template in use when the survey {self.survey['prefix']} started.")
+            tmp = p.with_name(p.name + ".tmp")
+            tmp.write_bytes(data)
+            os.replace(tmp, p)
+        except Exception as e:  # noqa: BLE001 — never stops a survey starting
+            log.warning("couldn't save the template with the survey: %s", e)
+            self.notices.append(f"Couldn't save a copy of the template with this survey ({e}).")
+
+    def template_status(self, prefix: str | None = None) -> dict:
+        """The survey's template copy against the current template: {saved, name, differs: [parts]}."""
+        from . import templates
+        prefix = prefix or (self.survey["prefix"] if self.survey else None)
+        p = self.template_copy_path(prefix)
+        meta = self.read_meta_system(prefix)
+        out = {"saved": bool(p and p.is_file()), "name": meta.get("template_created", ""), "differs": []}
+        if out["saved"]:
+            try:
+                t = templates.read_template(templates.unzip(p.read_bytes(), ""))
+                out["differs"] = [r["file"] for r in templates.compare(self.cfg, t) if r["status"] not in ("same", "kept")]
+            except Exception as e:  # noqa: BLE001
+                out["error"] = str(e)
+        return out
+
+    def read_meta_system(self, prefix: str | None = None) -> dict:
+        """The SYSTEM_META values recorded in a survey's details file."""
+        import csv as _csv
+        out = {}
+        p = self._meta_path(prefix)
+        if p and p.exists():
+            with open(p, newline="", encoding="utf-8-sig") as fh:
+                for r in _csv.DictReader(fh):
+                    if r.get("field") in {k for k, _ in self.SYSTEM_META}:
+                        out[r["field"]] = r.get("value", "") or ""
+        return out
+
+    # -- survey packages (0.36): <survey>.spyhop-survey.zip ----------------------------------
+    PACKAGE_EXT = ".spyhop-survey.zip"
+    PACKAGE_MANIFEST = "spyhop-survey.json"
+    PACKAGE_FORMAT = 1
+    PACKAGE_MIN = "0.36.0"            # the oldest Spyhop that can open a package of this format
+
+    def _package_files(self, prefix: str, logs: bool) -> list[Path]:
+        """The files of a survey's folder that go in its package: its data, details, instruments and
+        template copy (and its raw NMEA logs if asked); not its exports, backups or temporary files."""
+        folder = self.cfg.survey_dir(prefix)
+        out = []
+        for p in sorted(folder.rglob("*")):
+            rel = p.relative_to(folder)
+            if not p.is_file() or any(x.startswith(".") for x in rel.parts) or rel.parts[0] == "exports":
+                continue
+            if rel.parts[0] == "nmea_logs" and not logs:
+                continue
+            if ".bak-" in p.name or p.name.endswith(".tmp") or p.name == self.PACKAGE_MANIFEST:
+                continue
+            out.append(p)
+        return out
+
+    def save_package(self, logs: bool = False) -> Path:
+        """Save the open survey as <survey>.spyhop-survey.zip in its exports folder: a top folder named after
+        the survey holding its files as Spyhop keeps them (RowID included, so it opens for editing), the
+        copy of its template, and spyhop-survey.json (what it is, and a checksum of every file)."""
+        import hashlib
+        if self.survey is None:
+            raise ValueErrorMsg(self.NO_SURVEY)
+        for t in self.tables.values():
+            if t.dirty:
+                t.save()
+        prefix = self.survey["prefix"]
+        folder = self.cfg.survey_dir(prefix)
+        files = self._package_files(prefix, logs)
+        start = self.tables["effort"].rows[0]["DateTime"] if self.tables["effort"].rows else ""
+        manifest = {
+            "spyhop_survey": self.PACKAGE_FORMAT, "min_spyhop": self.PACKAGE_MIN, "made_with": __version__,
+            "made": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "survey": prefix, "name": self.survey.get("name") or prefix,
+            "status": "active" if self.survey_active() else "ended",
+            "start_time": start, "end_time": self.tables["effort"].rows[-1]["DateTime"] if self.survey_ended() else "",
+            "template": self.read_meta_system(prefix).get("template_created", ""),
+            "has_template": self.template_copy_path(prefix).is_file(),
+            "nmea_logs": bool(logs),
+            "files": {p.relative_to(folder).as_posix(): {"bytes": p.stat().st_size,
+                                                        "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in files},
+        }
+        dest = self.cfg.export_dir / f"{prefix}{self.PACKAGE_EXT}"
+        tmp = dest.with_name(dest.name + ".tmp")
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr(f"{prefix}/{self.PACKAGE_MANIFEST}", json.dumps(manifest, indent=2, ensure_ascii=False))
+            for p in files:
+                z.write(p, f"{prefix}/{p.relative_to(folder).as_posix()}")
+        os.replace(tmp, dest)
+        return dest
+
+    def read_package(self, data: bytes) -> tuple[dict, dict[str, bytes]]:
+        """Check a survey package: (manifest, {path inside the survey folder: bytes}). Raises ValueErrorMsg."""
+        import hashlib
+        from . import templates
+        try:
+            z = zipfile.ZipFile(io.BytesIO(data))
+        except zipfile.BadZipFile:
+            raise ValueErrorMsg("That isn't a zip file, so it can't be a Spyhop survey package.")
+        names = [n for n in z.namelist() if not n.endswith("/")]
+        mans = sorted((n for n in names if n.rsplit("/", 1)[-1] == self.PACKAGE_MANIFEST), key=lambda n: n.count("/"))
+        if not mans:
+            raise ValueErrorMsg(f"That isn't a Spyhop survey package: it has no {self.PACKAGE_MANIFEST}. "
+                                "(A template, or an Export Data zip, can't be opened as a survey.)")
+        root = mans[0][: -len(self.PACKAGE_MANIFEST)]
+        try:
+            man = json.loads(z.read(mans[0]).decode("utf-8-sig"))
+        except ValueError:
+            raise ValueErrorMsg(f"The package's {self.PACKAGE_MANIFEST} can't be read.")
+        if man.get("spyhop_survey") != self.PACKAGE_FORMAT or not isinstance(man.get("files"), dict) or not man.get("survey"):
+            raise ValueErrorMsg("That survey package is in a format this Spyhop doesn't know.")
+        need = templates.version_tuple(man.get("min_spyhop")) or (0,)
+        if need > (templates.version_tuple(__version__) or (0,)):
+            raise ValueErrorMsg(f"That survey package needs Spyhop {man['min_spyhop']} or newer (this is {__version__}). Update Spyhop first.")
+        files = {}
+        for rel, info in man["files"].items():
+            parts = rel.split("/")
+            if not rel or rel.startswith("/") or "\\" in rel or any(x in ("", ".", "..") for x in parts):
+                raise ValueErrorMsg(f"The package names a file in an unsafe place ({rel}); nothing was opened.")
+            try:
+                b = z.read(root + rel)
+            except KeyError:
+                raise ValueErrorMsg(f"The package is incomplete: {rel} is missing.")
+            if hashlib.sha256(b).hexdigest() != (info or {}).get("sha256"):
+                raise ValueErrorMsg(f"The package is damaged: {rel} doesn't match its checksum.")
+            files[rel] = b
+        if not any(rel == f"{man['survey']}_{k}.csv" for rel in files for k in self.SURVEY_FILES):
+            raise ValueErrorMsg("The package has no survey tables in it.")
+        return man, files
+
+    def open_package(self, data: bytes, name: str = "") -> dict:
+        """Open a survey package: unpack it into <data folder>/<survey>/ (or a new name when that's taken:
+        the files are renamed to match) and open the survey (tracking stays off). Nothing is overwritten:
+        if the name is taken, returns {exists, suggest} instead."""
+        import shutil
+        man, files = self.read_package(data)
+        old = man["survey"]
+        new = safe_name((name or "").strip()) if name else old
+        if not new:
+            raise ValueErrorMsg("Please give the survey a name.")
+        if new.lower() in self.cfg.RESERVED_NAMES:
+            raise ValueErrorMsg(f"“{new}” is the name of one of Spyhop's own folders: choose another name.")
+        if self.cfg.survey_dir(new).exists():
+            n = 2
+            while self.cfg.survey_dir(f"{new} ({n})").exists():
+                n += 1
+            return {"exists": True, "survey": new, "suggest": f"{new} ({n})", "manifest": man}
+        tmp = self.cfg.data_dir / f".{new}.opening-{uuid.uuid4().hex[:6]}"
+        try:
+            for rel, b in files.items():
+                parts = rel.split("/")
+                if new != old and parts[-1].startswith(old + "_"):
+                    parts[-1] = new + parts[-1][len(old):]        # Old_sightings.csv → New_sightings.csv
+                dest = tmp.joinpath(*parts)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(b)
+            os.replace(tmp, self.cfg.survey_dir(new))
+        finally:
+            if tmp.exists():
+                shutil.rmtree(tmp, ignore_errors=True)
+        self.open_survey(new)
+        return {"opened": new, "renamed_from": old if new != old else "", "manifest": man,
+                "template": self.template_status(new)}
 
     def end_survey(self):
         if self.survey is None:
@@ -482,24 +668,28 @@ class Recorder:
         return rows[0].get("DateTime", ""), end
 
     def list_surveys(self) -> list[dict]:
-        """Surveys in the data folder, most recently changed first."""
+        """Surveys in the data folder (a folder each), most recently changed first."""
         found: dict[str, dict] = {}
         try:
-            files = list(self.cfg.data_dir.iterdir())
+            folders = [d for d in self.cfg.data_dir.iterdir() if d.is_dir() and d.name not in self.cfg.RESERVED_NAMES]
         except OSError:
-            files = []
-        for p in files:
-            m = re.match(r"^(.*)_(sightings|effort|events|track)\.csv$", p.name)
-            if not m:
-                continue
-            s = found.setdefault(m.group(1), {"prefix": m.group(1), "modified": 0.0, "sightings": 0,
+            folders = []
+        for d in folders:
+            prefix = d.name
+            for kind in self.SURVEY_FILES:
+                p = self._file(prefix, kind)
+                if not p.is_file():
+                    continue
+                s = found.setdefault(prefix, {"prefix": prefix, "modified": 0.0, "sightings": 0,
                                               "start_time": "", "end_time": ""})
-            s["modified"] = max(s["modified"], p.stat().st_mtime)
-            if m.group(2) == "sightings":
-                with open(p, encoding="utf-8-sig") as fh:
-                    s["sightings"] = max(0, sum(1 for line in fh if line.strip()) - 1)
-            elif m.group(2) == "effort":
-                s["start_time"], s["end_time"] = self._read_effort_bounds(p)
+                s["modified"] = max(s["modified"], p.stat().st_mtime)
+                if kind == "sightings":
+                    with open(p, encoding="utf-8-sig") as fh:
+                        s["sightings"] = max(0, sum(1 for line in fh if line.strip()) - 1)
+                elif kind == "effort":
+                    s["start_time"], s["end_time"] = self._read_effort_bounds(p)
+            if prefix in found:
+                found[prefix]["has_template"] = self._file(prefix, "template", "zip").is_file()
         cur = self.survey["prefix"] if self.survey else None
         for s in found.values():
             s["current"] = s["prefix"] == cur
@@ -521,7 +711,12 @@ class Recorder:
         mp = self._meta_path()
         if mp and mp.exists():
             mp.unlink()
+        folder = self.cfg.survey_dir(self.survey["prefix"])
         self.close_survey()
+        # the rest of its folder too: the template copy, its raw NMEA logs and exports (asked twice in the UI)
+        import shutil
+        if folder.is_dir() and folder.parent == self.cfg.data_dir:
+            shutil.rmtree(folder, ignore_errors=True)
 
     # -- instrument history (Tools → Instruments plots) ---------------------------------
     INST_SAMPLE_S = 5            # one value per reading every this many seconds
@@ -529,7 +724,7 @@ class Recorder:
 
     def _inst_path(self, prefix: str | None = None) -> Path | None:
         prefix = prefix or (self.survey["prefix"] if self.survey else None)
-        return self.cfg.data_dir / f"{prefix}_instruments.csv" if prefix else None
+        return self._file(prefix, "instruments") if prefix else None
 
     def _load_instruments(self):
         """history: key -> {"label", "unit", "points": [(epoch seconds, value)]}, from the survey's file."""
@@ -1570,7 +1765,7 @@ class Recorder:
             raise ValueError(f"There's no survey called “{prefix}” in the data folder.")
 
         def rows(kind):
-            p = self.cfg.data_dir / f"{prefix}_{kind}.csv"
+            p = self._file(prefix, kind)
             if not p.exists():
                 return []
             try:

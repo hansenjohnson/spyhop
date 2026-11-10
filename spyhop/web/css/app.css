@@ -366,6 +366,7 @@ table.kv td button { margin-left: 0.6em; }
 .report-table td.nowrap { white-space: nowrap; }
 .report-table tfoot td { font-weight: 600; border-top: 2px solid var(--line); }
 .warn-text { color: #b03a2e; }
+span.ok { color: var(--ok); }
 @media print { .report-tabs { display: none !important; } }
 
 .tutorial { max-width: 60em; line-height: 1.5; }

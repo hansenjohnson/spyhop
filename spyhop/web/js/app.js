@@ -944,7 +944,7 @@ class App {
     if (!sv) return;
     const name = sv.prefix;
     if (!await confirmBox('Delete survey data?',
-      `This permanently deletes every sighting, effort, event and track record of the survey “${name}” from disk, and closes it. Export first if you need a copy.`, 'Continue…', true)) return;
+      `This permanently deletes the survey “${name}” from disk: its folder, with every sighting, effort, event and track record, its template copy, raw NMEA logs and exports. It is closed first. Save a survey package or export first if you need a copy.`, 'Continue…', true)) return;
     const typed = await promptBox('Really delete?', `Type the survey name “${name}” to confirm.`, '', 'Delete everything');
     if (typed === null) return;
     if (typed.trim() !== name) { toast('Name did not match — nothing was deleted.', 'warn'); return; }
@@ -1017,13 +1017,17 @@ class App {
           el('tr', {}, el('th', {}, 'Trackline'), el('td', {}, sv.active ? (S.config.settings.tracking_enabled ? '● recording' : '○ not recording ') : 'stopped',
             sv.active && !S.config.settings.tracking_enabled
               ? el('button', { onclick: () => this.saveSettings({ tracking_enabled: true }).then(() => toast('Tracking resumed')) }, 'Resume tracking') : null)),
-          el('tr', {}, el('th', {}, 'Files'), el('td', { class: 'hint' }, `${sv.prefix}_sightings.csv, _effort.csv, _events.csv, _track.csv`)))),
+          el('tr', {}, el('th', {}, 'Folder'), el('td', {}, el('span', { class: 'mono' }, sv.prefix), ' in the data folder · ',
+            el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('survey'); } }, 'Open folder'))),
+          el('tr', { id: 'survey-template-row' }, el('th', {}, 'Template'), el('td', {}, this.surveyTemplateLine(sv))))),
+        this.surveyTemplateNote(sv),
         this.metaForm(sv),
         el('div', { class: 'btnrow' },
           sv.active ? el('button', { class: 'primary', onclick: () => this.endSurvey() }, 'End Survey…') : null,
           el('button', { onclick: () => this.closeSurvey() }, 'Close Survey…'),
           el('button', { onclick: () => this.newSurvey() }, 'Start New Survey…'),
           el('button', { onclick: () => this.exportData() }, 'Export Data…'),
+          el('button', { id: 'btn-save-package', title: 'Save this survey and the template it was recorded with in one file, to open it in Spyhop on another computer', onclick: () => this.savePackage() }, 'Save Survey Package…'),
           el('button', { class: 'danger-outline', onclick: () => this.clearSurvey() }, 'Delete Survey Data…')),
         sv.ended ? el('p', { class: 'hint' }, 'This survey has ended, so no new rows can be added. You can still correct its data. To continue it, delete its End row in the Effort tab.') : null);
     }
@@ -1037,8 +1041,11 @@ class App {
           el('td', {}, when(r.start_time)), el('td', {}, when(r.end_time)), el('td', {}, String(r.sightings)),
           el('td', {}, r.current ? el('b', {}, 'open now') : el('button', { onclick: () => this.openSurvey(r) }, 'Open'))))))
         : el('p', { class: 'hint' }, 'No surveys in this folder yet.'),
-      el('div', { class: 'btnrow' }, el('button', { id: 'btn-surveys-refresh', title: 'Read the survey data folder again (e.g. after copying surveys into it)',
-        onclick: () => this.refreshFolders() }, 'Refresh')));
+      el('div', { class: 'btnrow' },
+        el('button', { id: 'btn-open-package', title: 'Open a survey saved with Save Survey Package (a .spyhop-survey.zip file): it is added to this data folder with its template', onclick: () => this.openPackage() }, 'Open Survey Package…'),
+        el('button', { id: 'btn-surveys-refresh', title: 'Read the survey data folder again (e.g. after copying survey folders into it)',
+          onclick: () => this.refreshFolders() }, 'Refresh')),
+      el('p', { class: 'hint' }, 'Each survey is a folder in the data folder, holding its tables, survey details, instrument readings, a copy of the template it was started with, its raw NMEA logs and its exports.'));
     const folder = sec('Folders',
       el('p', { id: 'survey-folder-link' }, 'Surveys are saved in ', el('span', { class: 'mono' }, S.config.data_dir), '. ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('datafolder'); } }, 'Open folder'), ' · ',
@@ -1056,7 +1063,7 @@ class App {
       onkeydown: (e) => { if (e.key === 'Enter') this.chooseDataFolder(e.target.value); } });
     return el('section', { class: 'settings-sec', id: 'settings-folders' }, el('h3', {}, 'Folders'),
       el('h4', {}, 'Survey data folder'),
-      el('p', {}, 'Survey files, waypoints and exports are saved in ', el('span', { class: 'mono' }, dd),
+      el('p', {}, 'Surveys (a folder each, with their exports and raw NMEA logs) and waypoints are saved in ', el('span', { class: 'mono' }, dd),
         isDefault ? el('span', { class: 'hint' }, ' (the default, inside Spyhop’s own folder)') : null, '. ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('datafolder'); } }, 'Open folder')),
       el('div', { class: 'btnrow' }, el('button', { onclick: () => this.pickDataFolder() }, 'Choose folder…'),
@@ -1068,6 +1075,81 @@ class App {
       el('p', {}, 'Spyhop’s own files are in ', el('span', { class: 'mono' }, S.config.root), '. ',
         el('a', { href: '#', id: 'open-app-folder', onclick: (e) => { e.preventDefault(); this.open('app'); } }, 'Open folder')),
       el('p', { class: 'hint' }, 'It holds templates/ (current: the current template, i.e. the lists, shortcuts and spyhop-config.json with the shared settings, map display and saved reports; saved: your saved templates; backups), spyhop-local.json (this computer’s own settings), offline charts, map overlays, routes, map feeds, the tile cache and logs. Spyhop always uses this folder.'));
+  }
+
+  // the template a survey was recorded with (a copy is kept in its folder since 0.36)
+  surveyTemplateLine(sv) {
+    const t = sv.template || {};
+    if (!t.saved) return el('span', { class: 'hint' }, 'No copy kept (the survey was started before Spyhop 0.36)', t.name ? `; it was started with “${t.name}”` : '', '.');
+    return el('span', {}, t.name ? `“${t.name}”` : 'unnamed (not saved as a template)', el('span', { class: 'hint' }, ' — a copy is kept with the survey. '),
+      t.differs?.length ? el('span', { class: 'warn-text' }, 'Differs from the current template.') : el('span', { class: 'ok' }, 'Same as the current template.'));
+  }
+
+  surveyTemplateNote(sv) {
+    const t = sv.template || {};
+    if (!t.saved || !t.differs?.length) return null;
+    return el('div', { class: 'warnbox', id: 'survey-template-note' },
+      el('p', {}, el('b', {}, 'This survey was recorded with a different template. '),
+        `It differs from the current template in: ${t.differs.join(', ')}. The data aren’t changed either way, but the drop-downs, colors and the Error check use the current template, so values that aren’t in its lists are flagged.`),
+      el('div', { class: 'btnrow' },
+        el('button', { id: 'btn-use-survey-template', onclick: () => this.useSurveyTemplate(sv) }, 'Compare and use the survey’s template…')));
+  }
+
+  async useSurveyTemplate(sv) {
+    this.showTab('templates');
+    await this.loadTemplates?.();
+    await this.checkTemplate({ survey: sv.prefix });
+  }
+
+  async savePackage() {
+    const sv = this.S.survey;
+    if (!sv) return;
+    const logs = el('input', { type: 'checkbox', id: 'pkg-logs' });
+    const ok = await modal({ title: 'Save survey package', body: el('div', {},
+      el('p', {}, `Saves “${sv.prefix}” as `, el('span', { class: 'mono' }, `${sv.prefix}.spyhop-survey.zip`),
+        ': its tables, survey details, instrument readings and the template it was recorded with, ready to open in Spyhop on another computer (Survey → Open Survey Package…). ',
+        sv.active ? 'The survey is still active: the package holds it as it is now.' : ''),
+      el('label', { class: 'check' }, logs, el('span', {}, 'Include the raw NMEA logs (they can be large)')),
+      el('p', { class: 'hint' }, 'Exports aren’t included. For analysis, use Export Data instead.')),
+    buttons: [{ label: 'Cancel', value: false }, { label: 'Save', value: true, primary: true }] });
+    if (!ok) return;
+    let r;
+    try { r = await api('/api/survey/package/save', { logs: logs.checked }); } catch { return; }
+    const a = el('a', { href: r.url, download: r.name }); document.body.append(a); a.click(); a.remove();
+    const mb = r.size > 1e6 ? `${(r.size / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(r.size / 1024))} KB`;
+    await modal({ title: 'Survey package saved', body: el('p', {}, `Saved ${r.name} (${mb}) in the survey’s exports folder, and downloaded a copy.`),
+      buttons: [{ label: 'Open exports folder', value: () => this.open('exports') }, { label: 'Done', primary: true, value: true }] });
+  }
+
+  openPackage() {
+    const input = el('input', { type: 'file', accept: '.zip' });
+    input.onchange = async () => {
+      const f = input.files[0];
+      if (!f) return;
+      const cur = this.S.survey;
+      if (cur && !await confirmBox('Open survey package?', `Open the survey in ${f.name}? “${cur.prefix}” will be closed first (its data is saved${cur.active ? ' and it stays active' : ''}).`, 'Open')) return;
+      let name = '';
+      for (;;) {
+        const fd = new FormData();
+        fd.append('file', f, f.name);
+        if (name) fd.append('name', name);
+        let r;
+        try { r = await fetch('/api/survey/package/open', { method: 'POST', body: fd }).then((x) => x.json()); } catch { toast('Couldn’t reach Spyhop', 'error'); return; }
+        if (!r.ok) { toast(r.error, 'error', 8000); return; }
+        if (r.exists) {
+          const v = await promptBox('That name is taken', `There’s already a survey called “${r.survey}” in this data folder, and it isn’t overwritten. Open the package under another name:`, r.suggest, 'Open');
+          if (v === null || !v.trim()) return;
+          name = v.trim();
+          continue;
+        }
+        this.pendingFit = true;
+        const m = r.manifest || {};
+        toast(`Opened “${r.opened}”${r.renamed_from ? ` (saved as “${r.renamed_from}” in the package)` : ''}${m.made_with ? ` — packaged with Spyhop ${m.made_with}` : ''}`, 'info', 6000);
+        this.showTab('survey');
+        return;
+      }
+    };
+    input.click();
   }
 
   async exportData() {
@@ -1796,7 +1878,8 @@ class App {
     const label = { new: 'New — will be added', changed: 'Changed — replaces this computer’s copy', same: 'Same as here',
       removed: r.kind === 'backup' ? 'Will be removed' : 'Not in the template — will be removed', kept: 'Already here — this computer’s is kept' };
     const todo = r.files.filter((f) => f.status !== 'same' && f.status !== 'kept');
-    const title = r.kind === 'backup' ? `Restoring the backup ${r.name}` : r.kind === 'folder' ? `Using the template ${r.name}` : 'The template from the web';
+    const title = r.kind === 'backup' ? `Restoring the backup ${r.name}` : r.kind === 'folder' ? `Using the template ${r.name}`
+      : r.kind === 'survey' ? `The template the survey was recorded with (${r.name})` : 'The template from the web';
     const box = [el('h4', {}, `${title}: what would change`), el('p', { class: 'hint' }, `From ${r.source}`)];
     box.push(el('p', { class: 'warnbox' }, el('b', {}, 'This replaces this computer’s lists, shortcuts, map display, saved reports and shared settings. '),
       'The template’s lists, shortcuts and map display replace the ones here (nothing is merged); its saved reports replace all of this computer’s saved reports; its settings and network GPS / NMEA inputs replace this computer’s. Map feeds, waypoints, routes and overlays are only added: any already here are kept as they are, and none are removed',
@@ -1838,7 +1921,7 @@ class App {
       } else {
         const backup = el('input', { type: 'checkbox', id: 'tpl-backup', checked: tp.backup ?? st.template_backup !== false,
           onchange: (e) => { tp.backup = e.target.checked; } });
-        const verb = r.kind === 'backup' ? 'Restore' : r.kind === 'folder' ? 'Use it' : 'Pull it';
+        const verb = r.kind === 'backup' ? 'Restore' : r.kind === 'folder' || r.kind === 'survey' ? 'Use it' : 'Pull it';
         box.push(
           el('label', { class: 'check' }, backup, el('span', {}, 'Save a backup of the current template first, in templates/backups (it can be restored to undo)')),
           el('div', { class: 'btnrow' }, el('button', { id: 'btn-tpl-use', class: 'primary', onclick: () => this.useTemplate() },
@@ -1926,7 +2009,7 @@ class App {
         el('p', {}, known
           ? ['The current template has changed since it was saved as ', el('span', { class: 'mono' }, st.name), ` (${st.changed.join(', ')}).`]
           : 'The current template (lists, shortcuts, map display, saved reports and settings) hasn’t been saved.'),
-        el('p', {}, 'Saving it first means this survey’s details record exactly which template it was made with, and the team can use the same one.')),
+        el('p', {}, 'A copy of the current template is kept with the survey either way, so its data always go with the lists they were recorded with. Saving it as a template first also gives it a name the survey records, and the team can use the same one.')),
       buttons: [{ label: 'Cancel', value: null }, { label: 'Start without saving', value: 'skip' },
         ...(known ? [{ label: `Update ${st.name.replace(/\.spyhop-template\.zip$|\.zip$/i, '')}…`, value: 'update' }] : []),
         { label: 'Save as a new template…', value: 'save', primary: true }] });
@@ -2550,7 +2633,7 @@ class App {
         el('label', { class: 'check' }, logChk, el('span', {}, el('b', {}, 'Record raw NMEA to a file'), ' — every sentence from every input, as received')),
         el('label', { class: 'check' }, tsChk, el('span', {}, 'Start each line with the UTC time and the input name (untick for plain NMEA)'))),
       el('p', { id: 'rawlog-status', class: 'hint' }),
-      el('p', { class: 'hint' }, 'Logs are saved in the nmea_logs folder inside the survey data folder, one file per survey (a new file starts when you start, open or close a survey). Recording carries on after a restart until you switch it off. A log can be played back as a “file” input (Settings → Inputs). ',
+      el('p', { class: 'hint' }, 'Logs are saved in the open survey’s folder (nmea_logs), or in the data folder’s nmea_logs when no survey is open; a new file starts when you start, open or close a survey. Recording carries on after a restart until you switch it off. A log can be played back as a “file” input (Settings → Inputs). ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('nmealogs'); } }, 'Open the log folder')));
     pane.replaceChildren(inst, raw);
     this.updateInstruments();

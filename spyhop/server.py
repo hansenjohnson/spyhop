@@ -517,6 +517,28 @@ class App:
         self.rec.clear_survey()
         return json_ok()
 
+    # ---- survey packages (0.36): <survey>.spyhop-survey.zip
+    async def survey_package_save(self, request):
+        body = await request.json() if request.can_read_body else {}
+        dest = await asyncio.get_running_loop().run_in_executor(None, self.rec.save_package, bool(body.get("logs")))
+        return json_ok(name=dest.name, path=str(dest), size=dest.stat().st_size, url=f"/api/download/{quote(dest.name)}")
+
+    async def survey_package_open(self, request):
+        """Open a survey package sent as a file upload (multipart: file, and name for a new name)."""
+        reader = await request.multipart()
+        data, name = None, ""
+        async for part in reader:
+            if part.name == "name":
+                name = (await part.text()).strip()
+            elif part.filename:
+                data = await part.read(decode=False)
+        if not data:
+            raise ValueErrorMsg("Choose a survey package (.spyhop-survey.zip) to open.")
+        res = await asyncio.get_running_loop().run_in_executor(None, self.rec.open_package, data, name)
+        if res.get("opened"):
+            self._broadcast_soon({"type": "reload"})
+        return json_ok(**res)
+
     async def data_dir(self, request):
         body = await request.json()
         self.rec.set_data_dir(body.get("path", ""))
@@ -533,7 +555,7 @@ class App:
         """Show the computer's own file chooser (for a FILE input's NMEA log) and return the path (or null)."""
         b = await request.json() if request.can_read_body else {}
         cur = clean_path(str(b.get("current") or ""))
-        start = str(Path(cur).parent) if cur and Path(cur).parent.is_dir() else str(self.rec.cfg.data_dir / "nmea_logs")
+        start = str(Path(cur).parent) if cur and Path(cur).parent.is_dir() else str(self.rec.cfg.nmea_log_dir)
         if not Path(start).is_dir():
             start = str(self.rec.cfg.data_dir)
         path = await asyncio.get_running_loop().run_in_executor(
@@ -638,8 +660,9 @@ class App:
         what = body.get("what", "")
         cfg = self.rec.cfg
         targets = {"data": cfg.root, "app": cfg.root, "exports": cfg.export_dir, "charts": cfg.charts_dir,
-                   "overlays": cfg.overlays_dir, "survey": cfg.data_dir, "datafolder": cfg.data_dir,
-                   "nmealogs": cfg.data_dir / "nmea_logs", "logs": diag.log_dir(cfg.root),
+                   "overlays": cfg.overlays_dir, "datafolder": cfg.data_dir,
+                   "survey": cfg.survey_dir(self.rec.survey["prefix"]) if self.rec.survey else cfg.data_dir,
+                   "nmealogs": cfg.nmea_log_dir, "logs": diag.log_dir(cfg.root),
                    "routes": cfg.routes_dir, "backups": cfg.backups_dir, "templates": cfg.saved_dir,
                    "current": cfg.current_dir}
         if what in targets:
@@ -1179,7 +1202,12 @@ class App:
         folder ({template: file name}) or a backup ({backup: file name})."""
         b = await request.json() if request.can_read_body else {}
         cfg = self.rec.cfg
-        if b.get("template") or b.get("backup"):
+        if b.get("survey"):                # the template copy saved with a survey (0.36)
+            p = self.rec.template_copy_path(Path(str(b["survey"])).name)
+            if not p or not p.is_file():
+                raise ValueErrorMsg("That survey has no copy of its template (it was started before Spyhop 0.36).")
+            url, kind = str(p), "survey"
+        elif b.get("template") or b.get("backup"):
             try:
                 if b.get("template"):
                     url, kind = str(templates._template_file(cfg, b["template"])), "folder"
@@ -1206,6 +1234,10 @@ class App:
             raise ValueErrorMsg(str(e))
         if kind == "web" and templates.resolve(url)[0] == "file":
             kind = "folder" if templates.in_templates_dir(cfg, url) else "file"
+        if kind == "survey":           # name it after the saved template it matched when the survey started
+            rec_name = self.rec.read_meta_system(Path(str(b["survey"])).name).get("template_created", "")
+            t["_current_name"] = rec_name or None
+            name = rec_name or f"the template saved with {Path(str(b['survey'])).name}"
         t["_kind"], t["_name"] = kind, name
         return json_ok(token=templates.remember(url, t), source=source, files=plan, kind=kind, name=name,
                        history=t["history"][:8], ignored=t["ignored"], problems=t["problems"],
@@ -1244,7 +1276,7 @@ class App:
             self.rec.set_raw_logging()
             self.sync_awake()
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        current = copy.name if copy else (Path(url).name if kind == "folder" else None)
+        current = copy.name if copy else (Path(url).name if kind == "folder" else t.get("_current_name") if kind == "survey" else None)
         upd = {"template_fingerprints": {"from": "use", "when": now, "files": templates.fingerprints(cfg)},
                "template_current": {"name": current, "how": "backup" if kind == "backup" else "loaded", "when": now}}
         record = {k: v for k, v in (("waypoints", added_ids), ("routes", done["routes"]),
@@ -1441,7 +1473,7 @@ class App:
         return json_ok()
 
     def build(self) -> web.Application:
-        app = web.Application(middlewares=[timing, errors, no_cache], client_max_size=50 * 1024 ** 2)
+        app = web.Application(middlewares=[timing, errors, no_cache], client_max_size=1024 ** 3)     # survey packages with raw NMEA logs can be large
         r = app.router
         r.add_get("/", self.index)
         r.add_get("/ws", self.ws_handler)
@@ -1482,6 +1514,8 @@ class App:
         r.add_post("/api/survey/open", self.survey_open)
         r.add_post("/api/survey/resume", self.survey_resume)
         r.add_post("/api/survey/clear", self.survey_clear)
+        r.add_post("/api/survey/package/save", self.survey_package_save)
+        r.add_post("/api/survey/package/open", self.survey_package_open)
         r.add_post("/api/data-dir", self.data_dir)
         r.add_post("/api/pick-folder", self.pick_folder)
         r.add_post("/api/pick-file", self.pick_file)

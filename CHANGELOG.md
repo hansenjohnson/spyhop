@@ -6,6 +6,12 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.36.0 — 2026-11-10
+
+- **One folder per survey:** each survey is now a folder in the data folder (`<survey>/`), holding its tables (`<survey>_sightings.csv` …), survey details, instrument readings, raw NMEA logs (`nmea_logs/`) and exports (`exports/`). Waypoints stay at the top. Surveys from older versions are moved into folders automatically the first time a data folder is opened (nothing is overwritten). Survey names that clash with Spyhop's own folders (exports, nmea_logs, templates) are refused. **Delete Survey Data** now removes the survey's whole folder.
+- **The survey keeps its template:** Start New Survey saves a copy of the current template in the survey's folder (`<survey>_template.zip`), so the data always travel with the lists they were recorded with. It still offers to save the current template first if it has changed. The Survey tab shows the survey's template and says when it differs from the current one, with **Compare and use the survey's template…**.
+- **Survey packages:** **Save Survey Package…** saves the open survey as `<survey>.spyhop-survey.zip` (its files with RowIDs, its template copy, optionally its raw NMEA logs, and a manifest with checksums). **Open Survey Package…** adds it to this data folder and opens it; a name already in use is never overwritten (choose another name), and damaged packages, packages from a newer Spyhop or files that aren't packages are refused.
+
 ## 0.35.0 — 2026-11-10
 
 - **Smooth vessel movement:** the vessel icon, its heading vector and the range rings glide from one GPS fix to the next (and turn the short way round) instead of hopping once a second. Only the drawing is smoothed: recorded positions, new rows, popups, measurements and Follow vessel use the real latest fix. The icon is drawn up to about one fix interval behind (about 5 m at 10 kn). It jumps instead after a gap of more than 5 s, a jump of more than 300 m, a lost GPS or while the window is hidden. On by default; switch it off in Settings → General → Map display (kept on this computer only, `smooth_vessel` in `spyhop-local.json`).

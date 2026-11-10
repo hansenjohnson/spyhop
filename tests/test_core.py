@@ -2,6 +2,7 @@ import csv
 import os
 import re
 import shutil
+import io
 import json
 import zipfile
 from pathlib import Path
@@ -201,7 +202,7 @@ def test_schema_mismatch_backs_up(tmp_path):
     p.write_text("Old,Columns\n1,2\n")
     r2 = Recorder(tmp_path)
     assert r2.tables["sightings"].rows == []
-    assert any(x.name.startswith(p.name + ".bak-") for x in tmp_path.joinpath("data").iterdir())
+    assert any(x.name.startswith(p.name + ".bak-") for x in p.parent.iterdir())
     assert r2.notices
 
 
@@ -540,7 +541,7 @@ def test_choose_data_folder(tmp_path):
     assert r.survey is None and r.cfg.data_dir == new               # switching closes the survey
     assert r.tables["marks"].rows == [] and r.list_surveys() == []
     r.start_survey("Leg B")
-    assert (new / "Leg B_effort.csv").exists()
+    assert (new / "Leg B" / "Leg B_effort.csv").exists()
     r2 = Recorder(tmp_path / "app")                                # remembered between sessions
     assert r2.cfg.data_dir == new and r2.survey["prefix"] == "Leg B"
     with pytest.raises(ValueError):
@@ -2003,7 +2004,8 @@ def test_diagnostics_bundle_lists_folders_without_data(tmp_path):
     from spyhop.config import Config
     cfg = Config(tmp_path / "spy")
     (cfg.routes_dir / "Leg A.gpx").write_text("<gpx/>")
-    (cfg.data_dir / "SecretSurvey_sightings.csv").write_text("a,b\n1,2\n")
+    (cfg.data_dir / "SecretSurvey").mkdir()
+    (cfg.data_dir / "SecretSurvey" / "SecretSurvey_sightings.csv").write_text("a,b\n1,2\n")
     (cfg.saved_dir / "Ship.spyhop-template.zip").write_bytes(b"PK")
     cfg.save_settings({"online_feeds": [{"url": "https://x.org/f.json?key=SECRET"}],
                        "last_meta": {"chief_scientist": "Dr Secret"}})
@@ -2014,7 +2016,7 @@ def test_diagnostics_bundle_lists_folders_without_data(tmp_path):
     assert "current/observers.csv" not in names
     f = zz.read("folders.txt").decode()
     assert "Leg A.gpx" in f and "Ship.spyhop-template.zip" in f and "routes/" in f and "current/" in f
-    assert "SecretSurvey" not in f and "1 files" in f
+    assert "SecretSurvey" not in f and "survey folders: 1, 1 files" in f
     s = zz.read("current/spyhop-config.json").decode()
     assert "SECRET" not in s and "https://x.org/f.json?…" in s
     assert "Dr Secret" not in zz.read("spyhop-local.json").decode()
@@ -2145,7 +2147,7 @@ def test_old_layout_moved_once(tmp_path):
     assert cfg.settings["online_feeds"][0]["name"] == "SMAs" and cfg.history[0]["notes"] == "v1"
     assert cfg.current_survey()["prefix"] == "S1"
     assert (cfg.saved_dir / "Team.spyhop-template.zip").is_file() and (cfg.backups_dir / "spyhop-backup-1.spyhop-template.zip").is_file()
-    assert sorted(p.name for p in (root / "data").iterdir()) == ["S1_effort.csv"]
+    assert sorted(p.name for p in (root / "data").iterdir()) == ["S1"] and (root / "data" / "S1" / "S1_effort.csv").is_file()   # 0.36: a folder per survey
     # a second start changes nothing
     again = Config(root)
     assert not again.notices and again.settings["timezone"] == "UTC"
@@ -2160,7 +2162,7 @@ def test_survey_records_template_and_version(tmp_path):
     cfg = rec.cfg
 
     def meta(prefix):
-        with open(cfg.data_dir / f"{prefix}_metadata.csv", newline="", encoding="utf-8-sig") as fh:
+        with open(cfg.data_dir / prefix / f"{prefix}_metadata.csv", newline="", encoding="utf-8-sig") as fh:
             return {r["field"]: r["value"] for r in _csv.DictReader(fh)}
     rec.start_survey("A")
     m = meta("A")
@@ -2492,3 +2494,132 @@ def test_smooth_vessel_is_a_setting_of_this_computer(tmp_path):
     cfg.save_settings({"smooth_vessel": False})
     assert '"smooth_vessel": false' in cfg.local_path.read_text() and "smooth_vessel" not in cfg.config_path.read_text()
     assert Config(tmp_path).settings["smooth_vessel"] is False
+
+
+def _sim_fix(rec):
+    rec.decoder.feed(with_checksum("GPRMC,120000,A,4154.000,N,07020.000,W,10.0,045.0,041126,14.5,W"))
+
+
+def test_one_folder_per_survey_with_its_template(tmp_path):
+    """0.36: each survey has its own folder with its tables, details, the template copy, raw logs and
+    exports; reserved names are refused; Delete Survey Data removes the folder."""
+    rec = Recorder(tmp_path)
+    _sim_fix(rec)
+    rec.cfg.save_settings({"nmea_log_enabled": True})
+    rec.start_survey("Leg 1", meta={"platform_type": "Shipboard"})
+    d = rec.cfg.data_dir / "Leg 1"
+    rec.new_row("sightings", {"Species": "Fin whale", "Count": "1"})
+    _sim_fix(rec)
+    for t in rec.tables.values():
+        t.save()
+    names = {p.name for p in d.iterdir()}
+    assert {"Leg 1_sightings.csv", "Leg 1_effort.csv", "Leg 1_metadata.csv", "Leg 1_template.zip", "Leg 1_track.csv"} <= names
+    assert not any(p.suffix == ".csv" for p in rec.cfg.data_dir.iterdir() if p.is_file() and p.name != "waypoints.csv")
+    assert rec.raw_log_status()["folder"] == str(d / "nmea_logs") and any((d / "nmea_logs").iterdir())
+    assert rec.cfg.export_dir == d / "exports"
+    st = rec.template_status()
+    assert st["saved"] and st["differs"] == []
+    with zipfile.ZipFile(d / "Leg 1_template.zip") as z:
+        assert "spyhop-config.json" in z.namelist() and "species.csv" in z.namelist()
+    assert [s["prefix"] for s in rec.list_surveys()] == ["Leg 1"] and rec.list_surveys()[0]["has_template"]
+    # the survey keeps its template when the computer's lists change later
+    rec.end_survey()
+    rows = rec.cfg.lists["species"] + [{"name": "Spyhop test whale", "color": "pink", "species_code": "SPTW"}]
+    rec.cfg.save_list("species", rows)
+    assert "species.csv" in rec.template_status()["differs"]
+    with pytest.raises(ValueErrorMsg, match="Spyhop's own folders"):
+        rec.start_survey("exports")
+    rec.clear_survey()
+    assert not d.exists() and rec.list_surveys() == []
+    rec.close_survey()
+    assert rec.cfg.export_dir == rec.cfg.data_dir / "exports"
+
+
+def test_old_survey_files_moved_into_folders(tmp_path):
+    """0.36: survey files at the top of the data folder (and their logs and exports) move into a folder each, once."""
+    data = tmp_path / "data"
+    (data / "nmea_logs").mkdir(parents=True)
+    (data / "exports").mkdir()
+    hdr = "RowID,DateTime,Effort\n"
+    for f in ("A_sightings.csv", "A_metadata.csv", "A_B_track.csv", "A_effort.csv.bak-20261101"):
+        (data / f).write_text("x\n")
+    (data / "A_effort.csv").write_text(hdr + "r1,2026-11-01T10:00:00-05:00,Start\n")
+    (data / "A_B_effort.csv").write_text(hdr + "r2,2026-11-02T10:00:00-05:00,Start\n")
+    (data / "waypoints.csv").write_text("RowID,Name\n")
+    for f in ("A_nmea_20261101-1000.nmea", "A_B_nmea_20261102-1000.nmea", "no-survey_nmea_1.nmea"):
+        (data / "nmea_logs" / f).write_text("$GPRMC\n")
+    for f in ("A_export_20261101.zip", "A_B_summary_20261102.html", "plan_1.gpx"):
+        (data / "exports" / f).write_text("x")
+    (data / "Orphan_metadata.csv").write_text("x")              # no tables: not a survey, left alone
+    rec = Recorder(tmp_path)
+    assert sorted((data / "A").iterdir()) == sorted(data / "A" / n for n in
+                                                    ("A_sightings.csv", "A_metadata.csv", "A_effort.csv", "A_effort.csv.bak-20261101", "nmea_logs", "exports"))
+    assert (data / "A" / "nmea_logs" / "A_nmea_20261101-1000.nmea").is_file() and (data / "A" / "exports" / "A_export_20261101.zip").is_file()
+    assert (data / "A_B" / "A_B_effort.csv").is_file() and (data / "A_B" / "nmea_logs" / "A_B_nmea_20261102-1000.nmea").is_file()
+    assert (data / "A_B" / "exports" / "A_B_summary_20261102.html").is_file()
+    assert [p.name for p in (data / "nmea_logs").iterdir()] == ["no-survey_nmea_1.nmea"]
+    assert [p.name for p in (data / "exports").iterdir()] == ["plan_1.gpx"]
+    assert (data / "waypoints.csv").is_file() and (data / "Orphan_metadata.csv").is_file()
+    assert sorted(s["prefix"] for s in rec.list_surveys()) == ["A", "A_B"]
+    assert any("folder of its own" in n for n in rec.notices)
+    Recorder(tmp_path)                                           # nothing left to move the second time
+    rec.open_survey("A")
+    assert rec.tables["effort"].rows[0]["Effort"] == "Start" and not rec.template_status()["saved"]
+
+
+def test_survey_package_save_and_open(tmp_path):
+    """0.36: <survey>.spyhop-survey.zip holds the survey's files (RowIDs kept) and its template copy, with
+    checksums; another computer opens it as it was, under a new name if the name is taken."""
+    rec = Recorder(tmp_path / "a")
+    _sim_fix(rec)
+    rec.start_survey("Leg 2", meta={"platform_type": "Shipboard"})
+    s = rec.new_row("sightings", {"Species": "Humpback whale", "Count": "2"})["row"]
+    rec.cfg.save_settings({"nmea_log_enabled": True})
+    rec.set_raw_logging()
+    _sim_fix(rec)
+    rec.save_package()                                          # makes exports/; it isn't packaged
+    p = rec.save_package()
+    assert p.name == "Leg 2.spyhop-survey.zip" and p.parent == rec.cfg.survey_dir("Leg 2") / "exports"
+    with zipfile.ZipFile(p) as z:
+        names = z.namelist()
+        man = json.loads(z.read("Leg 2/spyhop-survey.json"))
+    assert "Leg 2/Leg 2_sightings.csv" in names and "Leg 2/Leg 2_template.zip" in names
+    assert not any("/exports/" in n or "/nmea_logs/" in n for n in names)
+    assert man["survey"] == "Leg 2" and man["status"] == "active" and man["has_template"] and len(man["files"]["Leg 2_sightings.csv"]["sha256"]) == 64
+    with zipfile.ZipFile(rec.save_package(logs=True)) as z:
+        assert any("/nmea_logs/" in n for n in z.namelist())
+    data = p.read_bytes()
+    # another computer
+    other = Recorder(tmp_path / "b")
+    got = other.open_package(data)
+    assert got["opened"] == "Leg 2" and other.survey["prefix"] == "Leg 2" and not other.tracking_on()
+    assert [r["RowID"] for r in other.tables["sightings"].rows] == [s["RowID"]]
+    assert got["template"]["saved"] and got["template"]["differs"] == []
+    # the name is taken: nothing overwritten, a new name suggested; with it the files are renamed
+    again = other.open_package(data)
+    assert again["exists"] and again["suggest"] == "Leg 2 (2)"
+    got2 = other.open_package(data, "Leg 2 (2)")
+    d2 = other.cfg.survey_dir("Leg 2 (2)")
+    assert got2["opened"] == "Leg 2 (2)" and (d2 / "Leg 2 (2)_sightings.csv").is_file() and (d2 / "Leg 2 (2)_template.zip").is_file()
+    assert other.tables["sightings"].rows[0]["Species"] == "Humpback whale"
+    assert sorted(x["prefix"] for x in other.list_surveys()) == ["Leg 2", "Leg 2 (2)"]
+
+    def repack(edit):
+        src = zipfile.ZipFile(io.BytesIO(data))
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            for n in src.namelist():
+                b = src.read(n)
+                z.writestr(n, edit(n, b))
+        return buf.getvalue()
+    with pytest.raises(ValueErrorMsg, match="checksum"):
+        other.open_package(repack(lambda n, b: b + b"x" if n.endswith("_sightings.csv") else b), "X")
+    with pytest.raises(ValueErrorMsg, match="needs Spyhop 9.0.0"):
+        other.open_package(repack(lambda n, b: json.dumps({**json.loads(b), "min_spyhop": "9.0.0"}).encode() if n.endswith(".json") else b), "X")
+    with pytest.raises(ValueErrorMsg, match="unsafe"):
+        other.open_package(repack(lambda n, b: json.dumps({**json.loads(b), "files": {"../evil.csv": {"sha256": ""}}}).encode() if n.endswith(".json") else b), "X")
+    with pytest.raises(ValueErrorMsg, match="no spyhop-survey.json"):
+        other.open_package(zipfile.ZipFile(p).read("Leg 2/Leg 2_template.zip"), "X")
+    with pytest.raises(ValueErrorMsg, match="isn't a zip"):
+        other.open_package(b"hello", "X")
+    assert not other.cfg.survey_dir("X").exists() and not any(q.name.startswith(".") for q in other.cfg.data_dir.iterdir())

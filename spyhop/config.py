@@ -370,8 +370,9 @@ class Config:
         self.ensure_defaults()
         self.load()
         self._resolve_data_dir()
-        from .layout import tidy_data_folder
+        from .layout import tidy_data_folder, move_surveys_into_folders
         tidy_data_folder(self)
+        move_surveys_into_folders(self)        # the pre-0.36 layout, moved once (removed before 1.0)
         self.reload()
 
     # -- paths -----------------------------------------------------------------
@@ -406,11 +407,31 @@ class Config:
         p.mkdir(parents=True, exist_ok=True)
         self.data_dir = p
 
+    # One folder per survey (0.36): <data folder>/<survey>/ holds <survey>_sightings.csv … _track.csv,
+    # _metadata.csv, _instruments.csv, the copy of the template it was started with (<survey>_template.zip),
+    # its raw NMEA logs (nmea_logs/) and its exports (exports/). Waypoints, and NMEA logs and exports made
+    # with no survey open, stay at the top of the data folder.
+    RESERVED_NAMES = {"exports", "nmea_logs", "templates", "config_packs"}
+
+    def survey_dir(self, prefix: str) -> Path:
+        return self.data_dir / prefix
+
+    def _open_prefix(self) -> str | None:
+        cur = self.current_survey()
+        return cur["prefix"] if cur else None
+
     @property
     def export_dir(self) -> Path:
-        d = self.data_dir / "exports"
+        """Where exports, reports and summaries go: the open survey's exports folder, else the data folder's."""
+        pre = self._open_prefix()
+        d = (self.survey_dir(pre) if pre else self.data_dir) / "exports"
         d.mkdir(parents=True, exist_ok=True)
         return d
+
+    @property
+    def nmea_log_dir(self) -> Path:
+        pre = self._open_prefix()
+        return (self.survey_dir(pre) if pre else self.data_dir) / "nmea_logs"
 
     def set_data_dir(self, path: str) -> Path:
         raw = (path or "").strip()
@@ -429,8 +450,9 @@ class Config:
             raise ValueError(f"Can't use {p} as the data folder: {e}")
         self.data_dir = p
         self.save_settings({"data_dir": "" if p == self.default_data_dir else str(p)})
-        from .layout import tidy_data_folder
+        from .layout import tidy_data_folder, move_surveys_into_folders
         tidy_data_folder(self)
+        move_surveys_into_folders(self)
         return p
 
     # -- the current template: templates/current -----------------------------------

@@ -142,10 +142,10 @@ In **Survey**, press **Export Data…** and choose any of:
 - the summary, as HTML, PDF or both
 - your saved reports, as CSV
 
-Several files are saved together as one zip. Everything goes in the `exports` folder inside the survey data folder, and a copy downloads.
+Several files are saved together as one zip. Everything goes in the `exports` folder inside the survey's own folder, and a copy downloads.
 
 ## Keep Spyhop up to date
 
 In **Settings → About → Updates**, press **Check for updates**. If there's a newer version, **Install** it and restart Spyhop. Your data and settings aren't touched, and the old version is kept as a backup. It's best to do this between surveys, with internet.
 
-Your data are also always on disk as plain CSV files, in the survey data folder (**Survey** shows where), saved as you type.
+Your data are also always on disk as plain CSV files, in the survey's folder in the data folder (**Survey** shows where), saved as you type, with a copy of the template the survey was started with. To move a survey to another computer, use **Save Survey Package…**, and **Open Survey Package…** there.
