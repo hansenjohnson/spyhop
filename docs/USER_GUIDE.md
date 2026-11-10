@@ -123,6 +123,7 @@ The window has **three panes** under the status bar: the **map** (top left), **S
 - **Map:**
   - zoom and pan
   - the vessel with a heading vector (on/off and length in Settings → General → Map display)
+  - **Smooth vessel movement** (Settings → General → Map display, on by default, this computer only): the vessel glides between GPS fixes instead of hopping once a second. Only the map drawing is smoothed, so the icon can be up to about a second behind the latest fix; the data always use the real fixes. It jumps straight to the new position after a gap of more than 5 s or a jump of more than 300 m.
   - default marker shape and color for sightings and events are in Settings → General → Map display (species and event-type colors from your lists take priority); waypoints have their own shape and color on each row
   - the track: green on effort, and a thinner gray line off effort. Set each one's color, width and line style (solid, dashed, dotted, dash-dot), or hide it, in **Settings → General → Map display → Trackline**.
   - **Settings → General → Map display** has everything that changes the map's look: markers, the trackline, lines and vectors, and fading. Fading dims the trackline, sightings and events older than the chosen number of **minutes** (30 by default); waypoints never fade. **Move the map to a sighting, event or waypoint selected in its table** (on by default) can be switched off there too.

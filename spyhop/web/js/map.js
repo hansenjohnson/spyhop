@@ -34,6 +34,10 @@ const VESSEL_SVG = (color) => `<svg width="26" height="26" viewBox="-13 -13 26 2
   <path d="M0,-12 L6,2 L6,10 L-6,10 L-6,2 Z" fill="${color}" stroke="#fff" stroke-width="1.6"/>
   <circle r="2" fill="#fff"/></svg>`;
 // the platform's marker by its type (Survey details): ship, aircraft, tower (it doesn't turn) or a dot
+// Smooth vessel movement: glide over the time between fixes (within these limits), redraw at most
+// about 30 times a second, and jump instead after a longer gap or a bigger jump than these.
+const SMOOTH = { minMs: 250, maxMs: 2500, maxGapMs: 5000, maxJumpM: 300, frameMs: 33 };
+
 const PLATFORM_SVG = {
   Shipboard: VESSEL_SVG,
   Aerial: (c) => `<svg width="28" height="28" viewBox="-14 -14 28 28">
@@ -501,6 +505,10 @@ export class MapView {
   }
 
   // ---------------------------------------------------------------- vessel
+  // A new position from the server (about once a second). With Smooth vessel movement on (Settings →
+  // General → Map display; this computer only) the icon, heading vector and range rings glide from where
+  // they're drawn to the new fix instead of hopping. Only the drawing is smoothed: the data, popups,
+  // measurements and Follow vessel all use the real latest fix.
   updateVessel(v) {
     const disp = this.app.S.config.display;
     if (!v || v.lat === null || v.lat === undefined) return;
@@ -510,34 +518,80 @@ export class MapView {
     const kind = PLATFORM_SVG[this.app.platformType()] ? this.app.platformType() : 'Shipboard';
     const turns = kind === 'Shipboard' || kind === 'Aerial';          // a tower or a dot isn't rotated
     if (!this.vessel) {
-      this.vesselIcon = (c, h, k) => L.divIcon({ className: `vessel-icon platform-${k.toLowerCase()}`, iconSize: [28, 28], iconAnchor: [14, 14],
-        html: `<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;${k === 'Shipboard' || k === 'Aerial' ? `transform:rotate(${h}deg)` : ''}">${PLATFORM_SVG[k](c)}</div>` });
-      this.vessel = L.marker(ll, { icon: this.vesselIcon(color, hdg, kind), pane: 'vessel', keyboard: false })
+      this.vesselIcon = (c, k) => L.divIcon({ className: `vessel-icon platform-${k.toLowerCase()}`, iconSize: [28, 28], iconAnchor: [14, 14],
+        html: `<div class="vessel-rot" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center">${PLATFORM_SVG[k](c)}</div>` });
+      this.vessel = L.marker(ll, { icon: this.vesselIcon(color, kind), pane: 'vessel', keyboard: false })
         .addTo(this.layers.vessel).bindPopup(() => this.vesselPopup());
       this.predictor = L.polyline([ll, ll], { color, weight: 2, dashArray: '6 4', pane: 'vessel', interactive: false }).addTo(this.layers.vessel);
+      this._lastIcon = `${color}${kind}`;
       if (this.app.S.config.settings.follow_vessel) this.map.setView(ll, Math.max(this.map.getZoom(), 11));
-    } else {
-      this.vessel.setLatLng(ll);
-      if (this._lastIcon !== `${color}${Math.round(hdg)}${kind}`) this.vessel.setIcon(this.vesselIcon(color, hdg, kind));
-    }
-    this._lastIcon = `${color}${Math.round(hdg)}${kind}`;
-    // heading vector: length = distance covered in N minutes at the current speed
-    if (disp.heading_vector === '0' || !turns) this.predictor.setLatLngs([]);
-    else {
-      const mins = Math.max(0, +disp.heading_vector_min || 6);
-      const ahead = (v.sog || 0) * 1852 * mins / 60;
-      this.predictor.setLatLngs([ll, destination(ll, hdg, ahead)]);
+    } else if (this._lastIcon !== `${color}${kind}`) {
+      this.vessel.setIcon(this.vesselIcon(color, kind));
+      this._lastIcon = `${color}${kind}`;
+      this._drawnHdg = null;                                           // the new icon needs its rotation set
     }
     this.predictor.setStyle({ color });
+    this.glideVessel({ ll, hdg, sog: v.sog || 0, turns, lost: !!v.lost });
     if (this.app.S.config.settings.follow_vessel && Date.now() - this.userMoved > 1500) {
       const pt = this.map.latLngToContainerPoint(ll), sz = this.map.getSize();
       if (pt.x < sz.x * 0.25 || pt.x > sz.x * 0.75 || pt.y < sz.y * 0.25 || pt.y > sz.y * 0.75) this.map.panTo(ll);
     }
-    if (this.map.hasLayer(this.layers.rings)) this.drawRings();
     if (this.vessel.isPopupOpen()) this.vessel.setPopupContent(this.vesselPopup());
     const op = this.openRowPopup;
     if (op && op.m.isPopupOpen()) op.m.setPopupContent(this.rowPopup(op.tab, op.id));     // live distance
   }
+
+  smoothVessel() { return this.app.S.config.settings.smooth_vessel !== false; }
+
+  // Move the drawn vessel to the fix `to` {ll, hdg, sog, turns, lost}: at once, or gliding over about
+  // the time since the previous fix. It jumps instead after a gap, a big jump (another input, a GPS
+  // glitch), a lost GPS or while the window is hidden.
+  glideVessel(to) {
+    const now = performance.now();
+    const gap = this._lastFixAt ? now - this._lastFixAt : Infinity;
+    this._lastFixAt = now;
+    cancelAnimationFrame(this._glideRaf);
+    this._glideRaf = null;
+    const from = this._drawn;
+    const jump = !from || !this.smoothVessel() || to.lost || document.hidden || gap > SMOOTH.maxGapMs
+      || distM(from.ll, to.ll) > SMOOTH.maxJumpM;
+    if (jump) { this.placeVessel(to.ll, to.hdg, to); return; }
+    const dur = Math.min(SMOOTH.maxMs, Math.max(SMOOTH.minMs, gap));
+    const t0 = now, dh = ((to.hdg - from.hdg + 540) % 360) - 180;     // the short way round
+    let lastDraw = 0;
+    const step = (t) => {
+      const f = Math.min(1, (t - t0) / dur);
+      if (f >= 1 || t - lastDraw >= SMOOTH.frameMs) {
+        lastDraw = t;
+        this.placeVessel([from.ll[0] + (to.ll[0] - from.ll[0]) * f, from.ll[1] + (to.ll[1] - from.ll[1]) * f],
+          (from.hdg + dh * f + 360) % 360, to);
+      }
+      this._glideRaf = f < 1 ? requestAnimationFrame(step) : null;
+    };
+    this._glideRaf = requestAnimationFrame(step);
+  }
+
+  // Draw the vessel, its heading vector and the range rings at ll, pointing hdg.
+  placeVessel(ll, hdg, fix) {
+    this._drawn = { ll, hdg };
+    this.vessel.setLatLng(ll);
+    const rot = fix.turns ? Math.round(hdg * 10) / 10 : 0;
+    if (this._drawnHdg !== rot) {
+      const inner = this.vessel.getElement()?.querySelector('.vessel-rot');
+      if (inner) { inner.style.transform = rot ? `rotate(${rot}deg)` : ''; this._drawnHdg = rot; }
+    }
+    // heading vector: length = distance covered in N minutes at the current speed
+    const disp = this.app.S.config.display;
+    if (disp.heading_vector === '0' || !fix.turns) this.predictor.setLatLngs([]);
+    else {
+      const mins = Math.max(0, +disp.heading_vector_min || 6);
+      this.predictor.setLatLngs([ll, destination(ll, hdg, fix.sog * 1852 * mins / 60)]);
+    }
+    if (this.map.hasLayer(this.layers.rings)) this.placeRings(ll);
+  }
+
+  // where the vessel is drawn (mid-glide, between fixes), or null before the first fix
+  drawnVessel() { return this._drawn ? [...this._drawn.ll] : null; }
 
   vesselPopup() {
     const v = this.app.S.vessel, fmt = this.app.S.config.settings.latlon_format;
@@ -551,18 +605,26 @@ export class MapView {
       <tr><th>Fix age</th><td>${v.age ?? '—'} s ${v.lost ? '(LOST)' : ''}</td></tr></table>`;
   }
 
+  // Range rings round the vessel (drawn where the vessel icon is). Rebuilt when switched on or the
+  // map unit changes; while the vessel moves only their centers move (placeRings).
   drawRings() {
-    const v = this.app.S.vessel;
     this.layers.rings.clearLayers();
-    if (!v || v.lat === null) return;
-    const unit = this.app.unit();
+    this._rings = null;
+    const ll = this._drawn?.ll || (this.app.S.vessel?.lat != null ? [this.app.S.vessel.lat, this.app.S.vessel.lon] : null);
+    if (!ll) return;
+    const unit = this._ringUnit = this.app.unit();
     const steps = unit === 'km' ? [0.5, 1, 2, 3] : unit === 'm' || unit === 'yd' ? [250, 500, 1000, 2000] : [0.25, 0.5, 1, 2];
-    for (const s of steps) {
+    this._rings = steps.map((s) => {
       const r = s * ({ nm: 1852, km: 1000, m: 1, mi: 1609.344, yd: 0.9144 }[unit] || 1852);
-      L.circle([v.lat, v.lon], { radius: r, color: '#c00', weight: 1, fill: false, dashArray: '3 4', interactive: false }).addTo(this.layers.rings);
-      const lbl = destination([v.lat, v.lon], 0, r);
-      L.marker(lbl, { interactive: false, icon: L.divIcon({ className: 'ring-label', html: `${s} ${unit}`, iconSize: null }) }).addTo(this.layers.rings);
-    }
+      const circle = L.circle(ll, { radius: r, color: '#c00', weight: 1, fill: false, dashArray: '3 4', interactive: false }).addTo(this.layers.rings);
+      const label = L.marker(destination(ll, 0, r), { interactive: false, icon: L.divIcon({ className: 'ring-label', html: `${s} ${unit}`, iconSize: null }) }).addTo(this.layers.rings);
+      return { r, circle, label };
+    });
+  }
+
+  placeRings(ll) {
+    if (!this._rings || this._ringUnit !== this.app.unit()) { this._drawn = { ...this._drawn, ll }; this.drawRings(); return; }
+    for (const g of this._rings) { g.circle.setLatLng(ll); g.label.setLatLng(destination(ll, 0, g.r)); }
   }
 
   // ---------------------------------------------------------------- track

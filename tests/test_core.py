@@ -2482,3 +2482,13 @@ def test_resight_swim_speed_check_and_default_lists(tmp_path):
     assert species["Vessel sighted"] == "VESL" and species["Fishing gear - reported"] == "GRPT" and "Marine debris" in species
     assert {"Mooring deployed", "Mooring recovered"} <= events
     assert not events & {"Vessel sighted", "Marine debris", "Gear Reported", "Photo-ID session start", "Fishing gear sighted", "Acoustic recorder deployed"}
+
+
+def test_smooth_vessel_is_a_setting_of_this_computer(tmp_path):
+    """0.35: Smooth vessel movement (drawing only) is on by default and kept in spyhop-local.json."""
+    from spyhop.config import Config, DEFAULT_SETTINGS, SHARED_SETTINGS
+    assert DEFAULT_SETTINGS["smooth_vessel"] is True and "smooth_vessel" not in SHARED_SETTINGS
+    cfg = Config(tmp_path)
+    cfg.save_settings({"smooth_vessel": False})
+    assert '"smooth_vessel": false' in cfg.local_path.read_text() and "smooth_vessel" not in cfg.config_path.read_text()
+    assert Config(tmp_path).settings["smooth_vessel"] is False

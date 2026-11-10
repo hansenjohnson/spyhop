@@ -582,6 +582,8 @@ class App:
                 raise ValueError("The effort segment column is show or hide.")
             if "column_layout" in updates:
                 updates["column_layout"] = clean_column_layout(updates["column_layout"])
+            if "smooth_vessel" in updates and not isinstance(updates["smooth_vessel"], bool):
+                raise ValueError("Smooth vessel movement is on or off (true or false).")
             if "pane_layout" in updates:
                 updates["pane_layout"] = clean_pane_layout(updates["pane_layout"])
         except (TypeError, ValueError) as e:

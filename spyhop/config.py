@@ -269,6 +269,7 @@ DEFAULT_SETTINGS = {
     "check_updates_on_start": False,  # look on GitHub for a newer Spyhop when it starts (needs internet)
     "pane_layout": {},              # this computer's panes: {fx, fy, min: {map, util, data}, max} (app.js)
     "follow_vessel": True,
+    "smooth_vessel": True,          # glide the vessel icon between fixes on the map (drawing only; map.js)
     "tile_cache_enabled": True,
     "last_version": "",             # the Spyhop version that last ran (to say when it was updated)
     "template_url": "",             # web address of the team's template (templates.py)

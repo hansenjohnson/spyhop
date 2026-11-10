@@ -6,6 +6,11 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.35.0 — 2026-11-10
+
+- **Smooth vessel movement:** the vessel icon, its heading vector and the range rings glide from one GPS fix to the next (and turn the short way round) instead of hopping once a second. Only the drawing is smoothed: recorded positions, new rows, popups, measurements and Follow vessel use the real latest fix. The icon is drawn up to about one fix interval behind (about 5 m at 10 kn). It jumps instead after a gap of more than 5 s, a jump of more than 300 m, a lost GPS or while the window is hidden. On by default; switch it off in Settings → General → Map display (kept on this computer only, `smooth_vessel` in `spyhop-local.json`).
+- The vessel icon is now rotated in place instead of being rebuilt at every change of heading.
+
 ## 0.34.0 — 2026-11-10
 
 - **Markers are colored by species (and event type) again.** Since 0.25 a second `markerColor` in map.js (for overlay colors) had replaced the one for sightings and events, so every marker was the same color.
