@@ -1870,6 +1870,7 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
         names = set(z.namelist())
         doc = json.loads(z.read("spyhop-config.json"))
     assert names == {"spyhop-config.json", "species.csv", "event_types.csv", "observers.csv", "behaviors.csv", "shortcuts.csv",
+                     "visibility.csv", "weather.csv", "reticles.csv",
                      "waypoints.csv", "routes/Line 1.gpx", "overlays/zones.geojson"}      # no feed data, no display.csv
     assert doc["min_spyhop"] == "0.28.0" and doc["includes"] == ["waypoints", "routes", "overlays"] and doc["made_with"] == __version__
     assert doc["nmea_inputs"] == [{"type": "udp", "port": 2000}] and "data_dir" not in doc["settings"]
@@ -2217,14 +2218,13 @@ def test_reticle_sighting_altitude_and_platforms(tmp_path):
     from spyhop import reticle as rt, geo
     rec = Recorder(tmp_path)
     rec.decoder.feed(with_checksum("GPRMC,120000,A,4154.000,N,07020.000,W,10.0,045.0,041126,14.5,W"))
-    rec.cfg.save_settings({"reticle_method": "binoculars", "reticle_deg_per_division": 0.573, "distance_unit": "reticle",
-                           "tracking_interval": 1})
+    rec.cfg.save_settings({"distance_unit": "reticles-binos", "tracking_interval": 1})      # 0.37: the reticles list
     rec.start_survey("R", meta={"platform_type": "Shipboard", "platform_altitude_ft": "33"})
     r = rec.new_row("sightings", {"Bearing": "90", "BrgRef": "T", "Distance": "1"}, lat=41.0, lon=-70.0)["row"]
     row = next(x for x in rec.tables["sightings"].rows if x["RowID"] == r["RowID"])
-    assert row["Altitude"] == "33" and row["DistUnit"] == "reticle"
+    assert row["Altitude"] == "33" and row["DistUnit"] == "reticles-binos"
     got = geo.haversine_m(41.0, -70.0, float(row["SigLat"]), float(row["SigLon"]))
-    assert abs(got - rt.distance_m(1, 33, rec.cfg.settings)) < 2
+    assert abs(got - rt.distance_m(1, 33, {"reticle_method": "binoculars", "reticle_deg_per_division": 0.573})) < 2
     rec.edit("sightings", r["RowID"], {"Altitude": "66"})                      # a higher eye: further away
     row = next(x for x in rec.tables["sightings"].rows if x["RowID"] == r["RowID"])
     assert geo.haversine_m(41.0, -70.0, float(row["SigLat"]), float(row["SigLon"])) > got * 1.2
@@ -2623,3 +2623,98 @@ def test_survey_package_save_and_open(tmp_path):
     with pytest.raises(ValueErrorMsg, match="isn't a zip"):
         other.open_package(b"hello", "X")
     assert not other.cfg.survey_dir("X").exists() and not any(q.name.startswith(".") for q in other.cfg.data_dir.iterdir())
+
+
+def test_reticles_visibility_weather_lists_and_glare(tmp_path):
+    """0.37: reticles, visibility and weather are drop-down lists in the template; each reticle is a Unit
+    reticles-<name>; glare start/end/ref in Effort are checked; no UNK observer by default."""
+    from spyhop import reticle as rt, geo, qc
+    from spyhop.config import DEFAULT_LISTS
+    rec = Recorder(tmp_path)
+    cfg = rec.cfg
+    assert {"visibility", "weather", "reticles"} <= set(cfg.lists) and (cfg.current_dir / "reticles.csv").is_file()
+    assert "UNK" not in [r[0] for r in DEFAULT_LISTS["observers"][1]]
+    assert rec.list_values("distunit") == ["m", "km", "nm", "mi", "yd", "reticles-binos", "reticles-big-eyes", "reticles-incl"]
+    assert "reticle_method" not in cfg.settings
+    # checked when saved
+    for bad, msg in [({"name": "big eyes", "method": "binoculars", "deg_per_division": "0.1"}, "no spaces"),
+                     ({"name": "x", "method": "laser"}, "how readings are taken"),
+                     ({"name": "x", "method": "binoculars", "deg_per_division": ""}, "degrees per reticle division"),
+                     ({"name": "x", "method": "marks", "marks": ""}, "calibrated marks"),
+                     ({"name": "x", "method": "marks", "marks": "1=95"}, "at most 90")]:
+        with pytest.raises(ValueError, match=msg):
+            cfg.save_list("reticles", [bad])
+    cfg.save_list("reticles", [{"name": "big-eyes", "method": "Binoculars", "magnification": "25", "deg_per_division": "0.0771"},
+                               {"name": "strut", "method": "marks", "marks": "1 = 10; 2=20 ;3=35", "deg_per_division": "9"},
+                               {"name": "incl", "method": "inclinometer", "magnification": "7"}])
+    by = {r["name"]: r for r in cfg.lists["reticles"]}
+    assert by["strut"]["marks"] == "1=10; 2=20; 3=35" and by["strut"]["deg_per_division"] == "" and by["incl"]["magnification"] == ""
+    assert by["big-eyes"]["method"] == "binoculars"
+    _sim_fix(rec)
+    rec.start_survey("R", meta={"platform_type": "Aerial", "platform_altitude_ft": "750"})
+    def place(unit, dist):
+        r = rec.new_row("sightings", {"Bearing": "90", "BrgRef": "T", "Distance": dist, "DistUnit": unit}, lat=41.0, lon=-70.0)
+        row = next(x for x in rec.tables["sightings"].rows if x["RowID"] == r["row"]["RowID"])
+        return row, r.get("warnings", [])
+    row, _ = place("reticles-strut", "2")
+    got = geo.haversine_m(41.0, -70.0, float(row["SigLat"]), float(row["SigLon"]))
+    assert abs(got - rt.distance_m(2, 750, rt.settings_for(by["strut"]))) < 2 and 600 < got < 700   # 20° down from 750 ft
+    row, _ = place("reticles-incl", "20")
+    assert abs(geo.haversine_m(41.0, -70.0, float(row["SigLat"]), float(row["SigLon"])) - got) < 2   # the same angle, read directly
+    row, w = place("reticles-strut", "4")
+    assert row["SigLat"] in ("", "41.000000") and any("isn't in the calibration table" in x for x in w)
+    with pytest.raises(ValueErrorMsg, match="choose one of"):
+        place("reticles-nope", "1")
+    # glare
+    e = rec.new_row("effort", {"Effort": "ON", "Glare": "Moderate", "GlareStart": "100", "GlareEnd": "140", "GlareRef": "T"})["row"]
+    assert rec.list_values("visibility")[0] == "<0.5 nm" and rec.list_values("weather")[0] == "Clear"
+    rec.new_row("effort", {"Effort": "ON", "GlareStart": "2", "GlareEnd": "", "GlareRef": "C"})     # GlareEnd would be copied forward
+    rec.new_row("effort", {"Effort": "ON", "GlareStart": "13", "GlareEnd": "3", "GlareRef": "C"})
+    issues = [i for i in qc.run_qc(rec)["issues"] if i["check"] == "Glare bearings"]
+    msgs = " | ".join(i["message"] for i in issues)
+    assert "both Glare start and Glare end" in msgs and "Glare start 13 is outside 1–12" in msgs
+    assert not any(i["row_id"] == e["RowID"] for i in issues)
+    head, merged = rec.merged_rows()
+    assert {"GlareStart", "GlareEnd", "GlareRef"} <= set(head)
+
+
+def test_data_settings_are_locked_during_a_survey(tmp_path):
+    """0.37: during an active survey the lists (reticles, visibility and weather too), magnetic variation and
+    the tracking settings can't change, by Settings, by reading the files again, or by using a template."""
+    import asyncio
+    from spyhop.server import App
+    from spyhop import templates
+    app = App(tmp_path)
+    cfg = app.rec.cfg
+    _run(app.templates_save(_Req({"by": "HJ", "notes": "first", "name": "Team"})))
+    cfg.save_list("weather", [{"name": "Sunny"}, {"name": "Murky"}])            # differs from the saved template now
+    other_shortcuts = (cfg.current_dir / "shortcuts.csv").read_text()
+    _sim_fix(app.rec)
+    app.rec.start_survey("L", meta={"platform_type": "Shipboard"})
+    for list_name in ("weather", "reticles", "visibility"):
+        with pytest.raises(ValueErrorMsg, match="survey is under way"):
+            asyncio.run(app.save_list(_Req({"list": list_name, "rows": [{"name": "x", "method": "inclinometer"}]})))
+    with pytest.raises(ValueErrorMsg, match="Magnetic variation can't be changed"):
+        asyncio.run(app.settings(_Req({"updates": {"mag_variation": "-14"}})))
+    with pytest.raises(ValueErrorMsg, match="Track point every"):
+        asyncio.run(app.settings(_Req({"updates": {"tracking_interval": 99}})))
+    _run(app.settings(_Req({"updates": {"latlon_format": "DD", "tracking_interval": cfg.settings["tracking_interval"]}})))  # display: fine
+    # reading the files again puts a hand-edited locked list back, but takes the shortcuts
+    (cfg.current_dir / "weather.csv").write_text("name\nHail\n")
+    (cfg.current_dir / "shortcuts.csv").write_text(other_shortcuts.replace("Mod+Shift+K", "Mod+Shift+J"))
+    r = _run(app.reload_config(_Req()))
+    assert r["kept"] == ["weather.csv"] and [x["name"] for x in cfg.lists["weather"]] == ["Sunny", "Murky"]
+    assert "Sunny" in (cfg.current_dir / "weather.csv").read_text()
+    assert any(s["combo"] == "Mod+Shift+J" for s in cfg.shortcuts)
+    # a template that would change a locked list is refused; one that only changes shortcuts is used
+    chk = _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))
+    with pytest.raises(ValueErrorMsg, match="weather.csv"):
+        asyncio.run(app.templates_use(_Req({"token": chk["token"]})))
+    app.rec.end_survey()
+    _run(app.templates_use(_Req({"token": _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))["token"]})))
+    assert [x["name"] for x in cfg.lists["weather"]][0] == "Clear"
+    app.rec.start_survey("M", meta={"platform_type": "Shipboard"})
+    cfg.save_shortcuts([{"combo": "Alt+9", "action": "undo", "prefill": ""}])           # an interface part
+    chk = _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))
+    _run(app.templates_use(_Req({"token": chk["token"]})))
+    assert not any(s["combo"] == "Alt+9" for s in cfg.shortcuts) and any(s["combo"] == "Mod+Shift+K" for s in cfg.shortcuts)

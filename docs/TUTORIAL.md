@@ -11,7 +11,7 @@ Spyhop records a vessel-based whale survey: sightings, effort and conditions, ev
 - **Tabs** (right):
   - **Sightings**, **Effort** and **Events** are the data tables.
   - **Survey** starts, ends, opens and exports surveys.
-  - **Tools** holds Waypoints, Overlays, Routes, Instruments, Error check, Summary and Reports.
+  - **Tools** holds Waypoints, Overlays, Routes, Instruments, Resights, Error check, Summary and Reports.
   - **Settings** holds General, Basemap, Inputs, Shortcuts, Dropdowns, Templates and About.
 - **Status bar** (top): time, position, speed, survey name, tracking and effort state.
   - If the GPS fix is lost, it says **NO GPS** or **GPS LOST**.

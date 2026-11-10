@@ -180,7 +180,7 @@ class App {
   topTabs() { return ['sightings', 'effort', 'events']; }
   tabGroups() {
     return [
-      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Routes'], ['nmea', 'Instruments'], ['qc', 'Error check'], ['summary', 'Summary'], ['resights', 'Resights'], ['reports', 'Reports']]],
+      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Routes'], ['nmea', 'Instruments'], ['resights', 'Resights'], ['qc', 'Error check'], ['summary', 'Summary'], ['reports', 'Reports']]],
       ['config', 'Settings', [['settings', 'General'], ['basemap', 'Basemap'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'],
         ['templates', 'Templates'], ['guide', 'Guide'], ['about', 'About']]]];
   }
@@ -2046,7 +2046,7 @@ class App {
       let text = over.length ? `${over.length === 1 ? 'This' : 'These'} will be replaced or removed on this computer: ${over.map((f) => f.file).join(', ')}.` : '';
       if (adds.length) text += `${text ? ' ' : ''}Added: ${adds.map((f) => f.unit === 'waypoints' ? `${f.add} waypoint${f.add > 1 ? 's' : ''}` : f.file).join(', ')}.`;
       text += backup ? ' A backup is saved first.' : ' No backup will be saved, so changes made here to these will be lost.';
-      if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and the Error check will flag values that are no longer in a list. Changing the template during a survey is unusual: are you sure?';
+      if (r.survey_active) text += '\n\nA survey is active, so only parts that don’t change the data can be used now (shortcuts, map display, reports, overlays and display settings). If the template would change a drop-down list, the reticles, or the tracking or magnetic variation settings, Spyhop refuses until the survey ends.';
       if (!await confirmBox('Use this template?', text, r.kind === 'backup' ? 'Restore' : 'Use it', true)) return;
     }
     tp.busy = 'use'; this.renderTemplates();
@@ -2070,55 +2070,16 @@ class App {
 
   // Settings → General → Altitude and reticles: the Sightings Alt column, and how Unit = reticle
   // readings become distances (spyhop/reticle.py)
-  reticleSection(sec, sel) {
-    const st = this.S.config.settings, R = this.S.schema.reticle || { methods: {}, presets: {} };
-    const method = st.reticle_method || 'binoculars';
-    const kids = [
-      el('p', { class: 'hint' }, 'Automatic shows the Alt column for aerial surveys and hides it for shipboard and stationary ones (Survey tab → Platform type). It is always kept in the file.'),
+  // Settings → General: the Alt column (the reticles themselves are a list: Settings → Dropdowns → Reticles)
+  altitudeSection(sec, sel) {
+    return sec('Altitude and reticles',
       el('div', { class: 'grid2' },
-        el('label', { class: 'row' }, 'Altitude column in Sightings', sel('altitude_column', [['auto', 'Automatic'], ['show', 'Always shown'], ['hide', 'Hidden']])),
-        // the choice changes what's shown below it, so Settings redraws at once (a settings broadcast
-        // doesn't redraw while the pane has the focus)
-        el('label', { class: 'row' }, 'Reticle readings are', el('select', { id: 'reticle-method', onchange: async (e) => {
-          await this.saveSettings({ reticle_method: e.target.value });
-          this.renderSettings();
-          $('#reticle-method')?.focus();
-        } }, Object.entries(R.methods).map(([v, l]) => el('option', { value: v, selected: method === v }, l))))),
-    ];
-    if (method === 'binoculars') {
-      const per = el('input', { type: 'number', id: 'reticle-per', min: 0.001, max: 10, step: 0.001, value: st.reticle_deg_per_division,
-        onchange: (e) => this.saveSettings({ reticle_deg_per_division: +e.target.value }) });
-      kids.push(el('div', { class: 'grid2' },
-        el('label', { class: 'row' }, 'Binocular magnification', el('select', { id: 'reticle-mag', onchange: (e) => {
-          const p = R.presets[e.target.value];
-          this.saveSettings({ reticle_magnification: e.target.value, ...(p && p[1] ? { reticle_deg_per_division: p[1] } : {}) });
-        } }, Object.entries(R.presets).map(([k, [label]]) => el('option', { value: k, selected: String(st.reticle_magnification) === k }, label)))),
-        el('label', { class: 'row' }, 'Degrees per reticle division', per)),
-        el('p', { class: 'hint' }, 'Count the reticles down from the horizon to the animals and type that number in Dist (Unit = reticle). The angle of one division depends on the binoculars: the magnification suggests a value, but check the manual or calibrate them. Many 7×50 and 10× marine binoculars have a 10-mil scale (0.573° per division; some count 5-mil half divisions, 0.286°); Fujinon 25×150 big-eyes are 0.0771° per division (Kinzey & Gerrodette 2001).'));
-    } else if (method === 'marks') {
-      const draft = (this.marksDraft ||= (st.reticle_marks || []).map((m) => ({ ...m })));
-      if (!draft.length) draft.push({ mark: '', angle: '' });
-      const rows = draft.map((m, i) => el('tr', {},
-        el('td', {}, el('input', { type: 'text', size: 6, value: m.mark, class: 'mark-mark', oninput: (e) => { m.mark = e.target.value; } })),
-        el('td', {}, el('input', { type: 'text', size: 7, value: m.angle, class: 'mark-angle', oninput: (e) => { m.angle = e.target.value; } })),
-        el('td', {}, el('button', { class: 'icon', title: 'Remove', onclick: () => { draft.splice(i, 1); this.renderSettings(); } }, '✕'))));
-      kids.push(el('table', { class: 'edit-table', id: 'reticle-marks' },
-        el('thead', {}, el('tr', {}, el('th', {}, 'Mark'), el('th', {}, 'Degrees below the horizontal'), el('th', {}))), el('tbody', {}, rows)),
-        el('div', { class: 'btnrow' },
-          el('button', { onclick: () => { draft.push({ mark: '', angle: '' }); this.renderSettings(); } }, 'Add mark'),
-          el('button', { class: 'primary', id: 'reticle-marks-save', onclick: async () => {
-            try {
-              const r = await api('/api/settings', { updates: { reticle_marks: draft.filter((m) => String(m.mark).trim() || String(m.angle).trim()) } });
-              this.S.config.settings = r.settings; this.marksDraft = null; toast('Calibration table saved'); this.renderSettings();
-            } catch {}
-          } }, 'Save table')),
-        el('p', { class: 'hint' }, 'Each mark (numbered, e.g. on an aircraft’s window or wing strut, or a calibrated scale) and the angle below the horizontal it stands for. Type the mark in Dist (Unit = reticle).'));
-    } else {
-      kids.push(el('p', { class: 'hint' }, 'Type the angle below the horizontal, in degrees, in Dist (Unit = reticle), as the inclinometer reads it (90° is straight down).'));
-    }
-    kids.push(el('p', { class: 'hint' }, 'With Unit = reticle, the animals’ position comes from the bearing, the reading and the platform altitude (the row’s Alt, filled in from the survey’s Platform altitude), allowing for the curvature of the earth (Lerczak & Hobbs 1998). A reading at or above the horizon gives no distance.'));
-    return sec('Altitude and reticles', ...kids);
+        el('label', { class: 'row' }, 'Altitude column in Sightings', sel('altitude_column', [['auto', 'Automatic'], ['show', 'Always shown'], ['hide', 'Hidden']]))),
+      el('p', { class: 'hint' }, 'Automatic shows the Alt column for aerial surveys and hides it for shipboard and stationary ones (Survey tab → Platform type). It is always kept in the file. How reticle readings become distances (binoculars, calibrated marks, an inclinometer) is set up in ',
+        el('a', { href: '#', id: 'link-reticles', onclick: (e) => { e.preventDefault(); this.ddTab = 'reticles'; this.showTab('dropdowns'); } }, 'Settings → Dropdowns → Reticles'),
+        ': each entry becomes a Unit, reticles-<name>, in Sightings.'));
   }
+
 
   // Settings → General → Tables: Sightings row colors, the effort segment column, column layout
   tablesSection(sec, sel) {
@@ -2179,16 +2140,21 @@ class App {
       onchange: (e) => this.saveDisplay({ [key]: e.target.checked ? '1' : '0' }) }), el('span', {}, label));
     const sec = (title, ...kids) => el('section', { class: 'settings-sec' }, el('h3', {}, title), ...kids);
 
-    const variation = el('input', { type: 'text', value: st.mag_variation, size: 8,
+    // settings that change how the data are recorded or worked out can't change during an active survey
+    const lockedNow = !!this.S.survey?.active;
+    const lockNum = (k, a, b) => { const x = num(k, a, b); if (lockedNow) { x.disabled = true; x.title = 'Locked while a survey is active'; } return x; };
+    const lockNote = lockedNow ? el('p', { class: 'hint locked-note' }, '🔒 Settings that change how the data are recorded or worked out (track point interval, trackline breaks, magnetic variation) are locked while a survey is active, like the drop-down lists.') : null;
+    const variation = el('input', { type: 'text', value: st.mag_variation, size: 8, disabled: lockedNow, title: lockedNow ? 'Locked while a survey is active' : '',
       onchange: (e) => { const v = e.target.value.trim(); if (v === '' || v === 'auto' || !isNaN(+v)) this.saveSettings({ mag_variation: v || 'auto' }); else toast('Use “auto” or a number of degrees (east +, west −)', 'warn'); } });
     pane.replaceChildren(
       sec('Tracking and reminders',
         el('div', { class: 'grid2' },
           chk('tracking_enabled', 'Record internal trackline (switches on at Start, off at End)'),
-          el('label', { class: 'row' }, 'Track point every (s)', num('tracking_interval', 1, 300)),
+          el('label', { class: 'row' }, 'Track point every (s)', lockNum('tracking_interval', 1, 300)),
           el('label', { class: 'row' }, 'Conditions reminder (min)', num('effort_reminder_min', 1, 600)),
-          el('label', { class: 'row' }, 'Break the trackline above (kn)', num('track_break_kn', 0, 2000)),
-          el('label', { class: 'row' }, '… or after no GPS for (s)', num('track_break_gap_s', 0, 86400))),
+          el('label', { class: 'row' }, 'Break the trackline above (kn)', lockNum('track_break_kn', 0, 2000)),
+          el('label', { class: 'row' }, '… or after no GPS for (s)', lockNum('track_break_gap_s', 0, 86400))),
+        lockNote,
         el('p', { class: 'hint' }, 'The trackline on the map, and the distances in the summary, are broken where the platform would have moved faster than this between two points (a GPS jump; 30 kn suits a vessel, use about 200 for aerial surveys), or where no position came in for that long. 0 turns either off. Tools → Error check lists each jump or gap, and its Fix button marks it in the Effort table with an ERROR row.')),
       sec('Sleep',
         el('div', { class: 'grid2' },
@@ -2199,14 +2165,15 @@ class App {
       sec('Bearings, distances and time',
         el('div', { class: 'grid2' },
           el('label', { class: 'row' }, 'Default bearing reference', sel('bearing_reference', [['M', 'Magnetic (compass)'], ['T', 'True'], ['R', 'Relative to bow'], ['C', 'Clock (1–12, relative to bow)']])),
-          el('label', { class: 'row' }, 'Default distance unit (Sightings)', sel('distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards'], ['reticle', 'Reticle (a reading: see Reticles)']])),
+          el('label', { class: 'row' }, 'Default distance unit (Sightings)', sel('distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards'],
+            ...(this.S.config.lists.reticles || []).map((r) => [`reticles-${r.name}`, `reticles-${r.name} (a reading: Dropdowns → Reticles)`])])),
           el('label', { class: 'row' }, 'Map distance unit', sel('map_distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards']])),
           el('label', { class: 'row' }, 'Magnetic variation (° E+/W−, or auto)', variation,
             el('span', { class: 'hint' }, ` now ${this.variation() === null ? '—' : this.variation().toFixed(1) + '°'}`)),
           el('label', { class: 'row' }, 'Lat/lon format', sel('latlon_format', [['DDM', 'Deg + decimal min'], ['DD', 'Decimal degrees'], ['DMS', 'Deg min sec']])),
           el('label', { class: 'row' }, 'Clock', sel('timezone', this.clockOptions()), this.clockHint())),
         el('p', { class: 'hint' }, 'The map distance unit is used for the measuring tool, popups, routes and the Summary’s distances; the Sightings default is the Unit of new sightings. A clock bearing (Ref C) is picked from 1 to 12 o’clock, each hour 30° from the bow (3 = starboard beam). Each sighting row stores its own bearing reference and distance unit, so changing these defaults never changes old rows. “auto” variation uses the World Magnetic Model if installed, otherwise the GPS. The clock setting changes how all times are shown; the files always store the UTC offset with each time.')),
-      this.reticleSection(sec, sel),
+      this.altitudeSection(sec, sel),
       sec('GPS / NMEA inputs', el('p', {}, 'GPS and instrument inputs are in ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('inputs'); } }, 'Settings → Inputs'),
         '; live readings and raw NMEA logging in ',
@@ -2399,7 +2366,7 @@ class App {
     return el('div', { class: 'filebox' },
       el('div', {}, el('b', {}, 'Many changes at once? '), 'Edit ', el('span', { class: 'mono' }, file),
         ' in a spreadsheet or text editor, save it, then press Reload. Keep the first (header) row as it is.',
-        el('div', { class: 'hint mono' }, `${this.S.config.root}${this.S.config.root.includes('\\') ? '\\' : '/'}${file}`)),
+        el('div', { class: 'hint mono' }, (() => { const d = this.S.config.current_dir || this.S.config.root; return `${d}${d.includes('\\') ? '\\' : '/'}${file}`; })())),
       el('div', { class: 'btnrow' },
         el('button', { onclick: () => this.open(what) }, `Open ${file}`),
         el('button', { disabled: locked, onclick: async () => {
@@ -2424,7 +2391,8 @@ class App {
   }
 
   // ---------------------------------------------------------------- Settings → Dropdowns: the drop-down lists
-  dropdownLists() { return [['species', 'Species'], ['event_types', 'Events'], ['behaviors', 'Behaviors'], ['observers', 'Observers']]; }
+  dropdownLists() { return [['species', 'Species'], ['event_types', 'Events'], ['behaviors', 'Behaviors'], ['observers', 'Observers'],
+    ['visibility', 'Visibility'], ['weather', 'Weather'], ['reticles', 'Reticles']]; }
 
   renderDropdowns() {
     const pane = $('#pane-dropdowns');
@@ -2449,7 +2417,28 @@ class App {
     rows.forEach((r) => uniq.forEach((c) => { const v = (r[c] || '').trim().toLowerCase(); if (v) counts[c][v] = (counts[c][v] || 0) + 1; }));
     const okColor = (v) => !v || (typeof CSS !== 'undefined' && CSS.supports ? CSS.supports('color', v) : true);
     const toHex = (v) => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = '#000'; c.fillStyle = v || '#000'; return c.fillStyle.startsWith('#') ? c.fillStyle : '#000000'; };
+    const R = S.schema.reticle || { methods: {}, presets: {} };
     const cell = (r, i, c) => {
+      if (cur === 'reticles' && c === 'method') {
+        return el('td', {}, el('select', { disabled: locked, 'data-col': c, onchange: (e) => { edit()[i].method = e.target.value; this.renderDropdowns(); } },
+          el('option', { value: '', selected: !r.method }, '—'),
+          Object.entries(R.methods).map(([v, l]) => el('option', { value: v, selected: r.method === v }, l))));
+      }
+      if (cur === 'reticles' && c === 'magnification') {
+        return el('td', {}, el('select', { disabled: locked || r.method !== 'binoculars', 'data-col': c, onchange: (e) => {
+          const d = edit()[i], p = R.presets[e.target.value];
+          d.magnification = e.target.value;
+          if (p && p[1]) d.deg_per_division = String(p[1]);
+          this.renderDropdowns();
+        } }, el('option', { value: '', selected: !r.magnification }, '—'),
+        Object.entries(R.presets).map(([k, [label]]) => el('option', { value: k, selected: String(r.magnification) === k }, label))));
+      }
+      if (cur === 'reticles' && (c === 'deg_per_division' || c === 'marks')) {
+        const on = c === 'marks' ? r.method === 'marks' : r.method === 'binoculars';
+        return el('td', {}, el('input', { type: 'text', value: on ? r[c] ?? '' : '', disabled: locked || !on, 'data-col': c,
+          size: c === 'marks' ? 36 : 8, placeholder: on ? (c === 'marks' ? '1=2.5; 2=5; 3=10' : '0.573') : '',
+          oninput: (e) => { edit()[i][c] = e.target.value; markDirty(); } }));
+      }
       if (c === 'color') {
         const sw = el('span', { class: 'swatch', style: { background: okColor(r.color) ? r.color || 'transparent' : 'transparent' } });
         const txt = el('input', { type: 'text', value: r.color, disabled: locked, class: okColor(r.color) ? null : 'invalid', size: 12,
@@ -2477,7 +2466,10 @@ class App {
     const what = { species: 'The Species drop-down in Sightings. The code labels sightings on the map and is used by reports; the color is the marker color when “color by species” is on.',
       event_types: 'The Event drop-down in Events. The code labels events on the map and is used by reports.',
       behaviors: 'The Behaviors drop-down in Sightings (several can be chosen).',
-      observers: 'The observer drop-downs (Obs in Sightings; Port, Recorder and Stbd in Effort). The initials are what’s recorded; NA means nobody in that position.' }[cur];
+      observers: 'The observer drop-downs (Obs in Sightings; Port, Recorder and Stbd in Effort). The initials are what’s recorded; NA means nobody in that position.',
+      visibility: 'The Vis drop-down in Effort. The Error check reads distances from the names (e.g. “1-2 nm” is at most 2 nm, “<0.5 nm” at most 0.5; km, m and mi are understood) to flag sightings beyond the visibility.',
+      weather: 'The Weather drop-down in Effort.',
+      reticles: 'How reticle readings are turned into distances. Each entry is a Unit in Sightings, reticles-<name> (e.g. reticles-binos): type the reading in Dist and the animals’ position comes from the bearing, the reading and the platform altitude (the row’s Alt), allowing for the curvature of the earth (Lerczak & Hobbs 1998). Binocular reticles: divisions counted down from the horizon, each a fixed angle (the magnification suggests one, but check the binoculars’ manual or calibrate them: many 7×50 and 10× marine binoculars have a 10-mil scale, 0.573° per division; Fujinon 25×150 big-eyes are 0.0771°, Kinzey & Gerrodette 2001). Calibrated marks: each mark (e.g. on an aircraft’s window or strut) and the degrees below the horizontal it stands for, written mark=degrees; …. Inclinometer degrees: the reading is the angle below the horizontal (90 = straight down). Names may use letters, digits, - _ and . (no spaces).' }[cur];
     pane.replaceChildren(pills, el('section', { class: `settings-sec dd-sec${locked ? ' dd-locked' : ''}` },
       locked ? el('p', { class: 'warnbox', id: 'dd-locked' }, el('b', {}, 'A survey is under way, so the drop-down lists can’t be changed. '),
         'End the survey (in Survey) to edit them.') : null,
@@ -2486,7 +2478,7 @@ class App {
         el('thead', {}, el('tr', {}, ...cols.map((c) => el('th', {}, labels[c] || c)), el('th', {}, ''))),
         el('tbody', {}, body)),
       el('div', { class: 'btnrow' },
-        el('button', { disabled: locked, onclick: () => { edit().push(Object.fromEntries(cols.map((c) => [c, '']))); this.renderDropdowns();
+        el('button', { disabled: locked, onclick: () => { edit().push({ ...Object.fromEntries(cols.map((c) => [c, ''])), ...(cur === 'reticles' ? { method: 'binoculars' } : {}) }); this.renderDropdowns();
           const ins = $$('#pane-dropdowns tbody tr:last-child input[type=text]'); ins[0]?.focus(); } }, 'Add entry'),
         el('button', { disabled: locked, onclick: () => { edit().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })); this.renderDropdowns(); } }, 'Sort A–Z')),
       el('div', { id: 'dd-errors' }),

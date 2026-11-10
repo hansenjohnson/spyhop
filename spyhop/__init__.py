@@ -4,5 +4,5 @@
 # MAJOR.MINOR.PATCH: MINOR for new features, PATCH for fixes only. MAJOR goes to 1 for
 # the first release used on real surveys; after that, MAJOR changes only when data
 # files change in a way older versions can't read. See CHANGELOG.md.
-__version__ = "0.36.0"
+__version__ = "0.37.0"
 VERSION_DATE = "2026-11-09"

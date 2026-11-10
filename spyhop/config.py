@@ -95,8 +95,18 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
         ["OBS2", "Observer 2"],
         ["OBS3", "Observer 3"],
         ["OBS4", "Observer 4"],
-        ["UNK", "Unknown"],
         ["NA", "None"],             # an empty watch position: may fill several positions at once
+    ]),
+    "visibility": (["name"], [["<0.5 nm"], ["0.5-1 nm"], ["1-2 nm"], ["2-5 nm"], ["5-10 nm"], [">10 nm"]]),
+    "weather": (["name"], [["Clear"], ["Partly cloudy"], ["Overcast"], ["Haze"], ["Fog"], ["Mist"],
+                           ["Drizzle"], ["Rain"], ["Showers"], ["Snow"]]),
+    # how reticle distances are worked out (reticle.py): Unit = reticles-<name> on a sighting.
+    # binoculars: magnification (a key of reticle.PRESETS, a suggestion) and degrees per division;
+    # marks: "mark=degrees below the horizontal; …"; inclinometer: the reading is the angle itself.
+    "reticles": (["name", "method", "magnification", "deg_per_division", "marks"], [
+        ["binos", "binoculars", "7", "0.573", ""],
+        ["big-eyes", "binoculars", "25", "0.0771", ""],
+        ["incl", "inclinometer", "", "", ""],
     ]),
     "behaviors": (["name", "behavior_code", "definition"], [
         ["Travel", "TR", "Moving steadily in one direction, with regular surfacings and dives."],
@@ -154,13 +164,50 @@ LIST_COLUMNS = {
     "event_types": {"name": "Name", "event_code": "Code", "color": "Color"},
     "behaviors": {"name": "Name", "behavior_code": "Code", "definition": "Definition"},
     "observers": {"name": "Initials", "full_name": "Full name"},
+    "visibility": {"name": "Visibility"},
+    "weather": {"name": "Weather"},
+    "reticles": {"name": "Name", "method": "How readings are taken", "magnification": "Magnification",
+                 "deg_per_division": "Degrees per division", "marks": "Calibrated marks"},
 }
+# lists that define what recorded values mean: none can change during an active survey
+LOCKED_LISTS = ("species", "event_types", "observers", "behaviors", "visibility", "weather", "reticles")
+# settings that change recorded or calculated data: locked during an active survey too
+LOCKED_SETTINGS = {"mag_variation": "Magnetic variation", "tracking_interval": "Track point every (s)",
+                   "track_break_kn": "Break the track above (kn)", "track_break_gap_s": "Break the track after a gap of (s)"}
 UNIQUE_COLUMNS = {"name", "species_code", "event_code", "behavior_code"}
 SHORTCUT_VERBS = {"add", "tab"}            # verbs that take ":<argument>"
 SHORTCUT_ACTIONS = {"add-current", "add-resight", "toggle-effort", "undo", "redo", "next-tab", "prev-tab",
                     "center-vessel", "toggle-log", "max-log", "measure"}
 _COLOR = re.compile(r"^(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6}|[a-zA-Z]{3,30})$")
 _MODS = {"mod": "Mod", "cmd": "Mod", "ctrl": "Mod", "shift": "Shift", "alt": "Alt", "option": "Alt"}
+
+
+def _clean_reticle(row: dict) -> dict:
+    """Check a reticles list entry; returns its cleaned columns. Raises ValueError saying what's wrong."""
+    from . import reticle
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", row["name"]):
+        raise ValueError("the name may use letters, digits, - _ and . only (no spaces): it becomes the Unit reticles-<name>.")
+    method = row.get("method", "").strip().lower()
+    if method not in reticle.METHODS:
+        raise ValueError("choose how readings are taken: " + ", ".join(reticle.METHODS) + ".")
+    out = {"method": method, "magnification": "", "deg_per_division": "", "marks": ""}
+    if method == "binoculars":
+        mag = row.get("magnification", "").strip()
+        if mag and mag not in reticle.PRESETS:
+            raise ValueError("the magnification is one of " + ", ".join(reticle.PRESETS) + " (or blank).")
+        try:
+            per = float(row.get("deg_per_division", "") or "x")
+        except ValueError:
+            raise ValueError("give the degrees per reticle division (e.g. 0.573).")
+        if not 0 < per <= 10:
+            raise ValueError("one reticle division must be more than 0° and at most 10°.")
+        out.update(magnification=mag, deg_per_division=f"{per:g}")
+    elif method == "marks":
+        marks = reticle.check_marks(reticle.parse_marks(row.get("marks", "")))
+        if not marks:
+            raise ValueError("give the calibrated marks, e.g. 1=2.5; 2=5; 3=10 (mark = degrees below the horizontal).")
+        out["marks"] = reticle.marks_text(marks)
+    return out
 
 
 def clean_combo(combo: str) -> str:
@@ -250,10 +297,6 @@ DEFAULT_SETTINGS = {
     "altitude_column": "auto",      # Sightings' Alt column: auto (shown for aerial surveys) | show | hide
     "segment_column": "show",       # Effort's Seg (effort segment) column: show | hide
     "column_layout": {},            # this computer's column order and widths: {tab: {order: [keys], widths: {key: px}}}
-    "reticle_method": "binoculars", # how Unit = reticle readings are taken: binoculars | marks | inclinometer (reticle.py)
-    "reticle_magnification": "7",   # binoculars: a key of reticle.PRESETS, which suggests the angle below
-    "reticle_deg_per_division": 0.573,   # binoculars: degrees per reticle division
-    "reticle_marks": [],            # calibrated marks: [{mark, angle (degrees below the horizontal)}]
     # --- also in spyhop-config.json, under their own keys (see CONFIG_KEYS)
     "online_feeds": [],             # map feeds (Tools → Overlays → Online overlays; feeds.py) → map_feeds
     "online_display": {},           # online overlays to show, set by a template: {ais, radar_us, radar_world,
@@ -300,10 +343,6 @@ SHARED_SETTINGS = {
     "nmea_log_timestamps": "Raw NMEA log time stamps",
     "altitude_column": "Altitude column",
     "segment_column": "Effort segment column",
-    "reticle_method": "Reticle readings",
-    "reticle_magnification": "Binocular magnification",
-    "reticle_deg_per_division": "Degrees per reticle division",
-    "reticle_marks": "Calibrated marks",
 }
 NETWORK_INPUTS = ("udp", "tcp", "gpsd")       # the GPS / NMEA inputs a template carries
 
@@ -482,6 +521,27 @@ class Config:
                 "Free NOAA nautical charts for US waters (updated weekly):\n"
                 "  https://distribution.charts.noaa.gov/ncds/  -> click a region -> download the MBTiles file.\n")
 
+    # -- what can't change during an active survey (0.37) ------------------------------
+    def locked_snapshot(self) -> dict:
+        return {"lists": {n: [dict(r) for r in self.lists.get(n, [])] for n in LOCKED_LISTS},
+                "settings": {k: self.settings.get(k) for k in LOCKED_SETTINGS}}
+
+    def restore_locked(self, snap: dict) -> list[str]:
+        """Put back the locked lists and settings from a snapshot (files too) if they changed; returns what was put back."""
+        back = []
+        for n, rows in snap["lists"].items():
+            if self.lists.get(n) != rows:
+                hdr = list(dict.fromkeys([*DEFAULT_LISTS[n][0], *(k for r in rows for k in r)]))
+                _write_csv(self.list_path(n), hdr, [[r.get(c, "") for c in hdr] for r in rows])
+                self.lists[n] = rows
+                back.append(f"{n}.csv")
+        changed = {k: v for k, v in snap["settings"].items() if self.settings.get(k) != v}
+        if changed:
+            self.settings.update(changed)
+            self.save()
+            back += [LOCKED_SETTINGS[k] for k in changed]
+        return back
+
     def list_header(self, name: str) -> list[str]:
         """The columns of a list file as they are now (known ones first)."""
         known = DEFAULT_LISTS[name][0]
@@ -505,6 +565,11 @@ class Config:
                 continue                                    # a blank row is simply dropped
             if not row["name"]:
                 problems.append(f"Row {i}: {cols['name']} is empty.")
+            if name == "reticles" and row["name"]:
+                try:
+                    row.update(_clean_reticle(row))
+                except ValueError as e:
+                    problems.append(f"Row {i} ({row['name']}): {e}")
             if row.get("color") and not _COLOR.match(row["color"]):
                 problems.append(f"Row {i}: “{row['color']}” isn't a color (use a name like red, or #rrggbb).")
             for c, prev in seen.items():

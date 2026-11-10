@@ -583,17 +583,11 @@ class App:
         updates = body.get("updates", {})
         restart = "nmea_sources" in updates
         try:
-            if "reticle_marks" in updates:
-                updates["reticle_marks"] = reticle.check_marks(updates["reticle_marks"])
-            if "reticle_deg_per_division" in updates:
-                v = float(updates["reticle_deg_per_division"])
-                if not 0 < v <= 10:
-                    raise ValueError("One reticle division must be more than 0° and at most 10°.")
-                updates["reticle_deg_per_division"] = v
-            if updates.get("reticle_method") not in (None, *reticle.METHODS):
-                raise ValueError("Unknown way of taking reticle readings.")
-            if updates.get("reticle_magnification") not in (None, *reticle.PRESETS):
-                raise ValueError("Unknown binocular magnification.")
+            from .config import LOCKED_SETTINGS
+            locked = [LOCKED_SETTINGS[k] for k in updates if k in LOCKED_SETTINGS and updates[k] != self.rec.cfg.settings.get(k)]
+            if locked and self.rec.survey_active():
+                raise ValueErrorMsg(f"A survey is under way, so {', '.join(locked)} can't be changed until it ends "
+                                    "(it changes how the data are recorded or worked out).")
             if updates.get("altitude_column") not in (None, "auto", "show", "hide"):
                 raise ValueError("The Altitude column is auto, show or hide.")
             if updates.get("map_distance_unit") not in (None, "nm", "km", "m", "mi", "yd"):
@@ -650,10 +644,12 @@ class App:
     async def reload_config(self, request):
         """Read templates/current (lists, shortcuts, spyhop-config.json) and spyhop-local.json again,
         e.g. after editing them by hand."""
+        snap = self.rec.cfg.locked_snapshot() if self.rec.survey_active() else None
         self.rec.cfg.load()
         self.rec.cfg.reload()
+        back = self.rec.cfg.restore_locked(snap) if snap else []
         self._broadcast_soon({"type": "reload"})
-        return json_ok()
+        return json_ok(kept=back, message=(f"A survey is under way, so these weren't changed (the files were put back): {', '.join(back)}." if back else ""))
 
     async def open(self, request):
         body = await request.json()
@@ -1251,6 +1247,15 @@ class App:
             raise ValueErrorMsg("That check is too old. Check the template again.")
         url, t = got
         cfg = self.rec.cfg
+        if self.rec.survey_active():           # nothing that defines or works out the data may change (0.37)
+            from .config import LOCKED_LISTS, LOCKED_SETTINGS
+            plan = {r["file"]: r["status"] for r in templates.compare(cfg, t)}
+            locked = [f"{n}.csv" for n in LOCKED_LISTS if plan.get(f"{n}.csv") not in (None, "same", "kept")]
+            st = (t.get("settings") or {}).get("settings") or {}
+            locked += [label for k, label in LOCKED_SETTINGS.items() if k in st and st[k] != cfg.settings.get(k)]
+            if locked:
+                raise ValueErrorMsg("A survey is under way, so this template can't be used until it ends: it would change "
+                                    + ", ".join(locked) + ", which define or work out the survey's data. End the survey first.")
         backup = bool(b.get("backup"))
         cfg.save_settings({"template_backup": backup})
         kind = t.get("_kind", "web")

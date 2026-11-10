@@ -6,6 +6,17 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.37.0 — 2026-11-10
+
+- **Reticles are a list** (Settings → Dropdowns → Reticles), replacing General → Reticles. Each entry has a name and says how readings are taken: binocular reticles (magnification and degrees per division), calibrated marks (`mark=degrees; …`) or inclinometer degrees. Each is a Unit in Sightings, `reticles-<name>` (the default list has `reticles-binos`, `reticles-big-eyes` and `reticles-incl`), so several can be used in one survey and every sighting records which. The single `reticle` unit and the `reticle_*` settings are gone.
+- **Visibility and Weather are lists** in Settings → Dropdowns.
+- The reticles, visibility and weather lists are in the template (`reticles.csv`, `visibility.csv`, `weather.csv`).
+- **Effort: Glare start, Glare end and Glare ref** (M, T, R or C; a clock reference offers 1–12), after Glare, in the merged CSV, and checked by the Error check (both ends, a reference, the range).
+- **Nothing that affects the data can change during a survey:** besides the lists (now including reticles, visibility and weather), the track point interval, the trackline-break settings and the magnetic variation are locked from Start to End (greyed out in Settings, refused by the server); editing a locked list's file by hand is put back when the files are read again; and a template that would change any of them is refused until the survey ends (one that only changes shortcuts, display or reports can still be used). So the template copy kept with each survey is exact.
+- **UNK** (Unknown) is no longer in the default observers list.
+- **Tools → Resights** comes after Instruments, before Error check.
+- The "Many changes at once?" box in Dropdowns and Shortcuts showed the old place of the list files; it now shows templates/current.
+
 ## 0.36.0 — 2026-11-10
 
 - **One folder per survey:** each survey is now a folder in the data folder (`<survey>/`), holding its tables (`<survey>_sightings.csv` …), survey details, instrument readings, raw NMEA logs (`nmea_logs/`) and exports (`exports/`). Waypoints stay at the top. Surveys from older versions are moved into folders automatically the first time a data folder is opened (nothing is overwritten). Survey names that clash with Spyhop's own folders (exports, nmea_logs, templates) are refused. **Delete Survey Data** now removes the survey's whole folder.

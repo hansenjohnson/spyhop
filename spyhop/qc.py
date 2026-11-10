@@ -38,7 +38,7 @@ LIMITS = {
 # columns that may be left blank (everything else visible in the table is required)
 OPTIONAL = {
     "sightings": {"Behaviors", "Bearing", "BrgRef", "Distance", "DistUnit", "Altitude", "ResightOf", "FieldID", "Notes"},
-    "effort": {"Notes"},
+    "effort": {"Notes", "GlareStart", "GlareEnd", "GlareRef"},
     "events": {"ID", "Notes"},
 }
 # survey details that may be blank (platform altitude matters only for reticle distances: checked there)
@@ -316,6 +316,23 @@ def run_qc(rec) -> dict:
             add("info", "Unique numbers", f"{word} numbers skip {', '.join(map(str, missing[:10]))}{'…' if len(missing) > 10 else ''} "
                 "(fine if rows were deleted on purpose).", tab, label=f"{word}s")
 
+    # ---- glare: where it starts and ends, and their reference (0.37)
+    for i, r in enumerate(E):
+        gs, ge, gref = (str(r.get(k) or "").strip() for k in ("GlareStart", "GlareEnd", "GlareRef"))
+        if not (gs or ge or gref):
+            continue
+        name = lab("effort", r, i)
+        if bool(gs) != bool(ge):
+            add("warning", "Glare bearings", "Give both Glare start and Glare end (or neither).", "effort", r, "GlareEnd" if gs else "GlareStart", name)
+        if (gs or ge) and not gref:
+            add("warning", "Glare bearings", "Glare start / end have no Glare ref (M, T, R or C).", "effort", r, "GlareRef", name)
+        lo, hi = (1, 12) if gref == "C" else (0, 360)
+        for key, v in (("GlareStart", gs), ("GlareEnd", ge)):
+            n = _num(v)
+            if v and n is not None and not lo <= n <= hi:
+                add("error", "Glare bearings", f"{schema.column('effort', key)['label']} {v} is outside {lo}–{hi}"
+                    + (" (a clock bearing)." if gref == "C" else "°."), "effort", r, key, name)
+
     # ---- effort, conditions and observers
     eff = []                                    # (t0, t1, row) in time order
     rows_t = sorted(((_t(r.get("DateTime")), i, r) for i, r in enumerate(E)), key=lambda x: (x[0] is None, x[0] or now, x[1]))
@@ -360,7 +377,8 @@ def run_qc(rec) -> dict:
             if ss is not None and ss > L["max_seastate_on"]:
                 add("info", "Survey conditions", f"On effort in sea state {r.get('SeaState')} — check this is within your protocol.",
                     "effort", r, "SeaState", name)
-            if r.get("Visibility") == "<0.5 nm":
+            vis = visibility_nm(r.get("Visibility"))
+            if vis is not None and vis <= 0.5:
                 add("info", "Survey conditions", "On effort with visibility under 0.5 nm — check this is within your protocol.",
                     "effort", r, "Visibility", name)
             on_names = set(names)
@@ -563,7 +581,7 @@ def run_qc(rec) -> dict:
             if not schema.is_on(effort) and not resight:                 # resights off effort (an approach) are normal
                 add("info", "Sightings on effort", f"Recorded {'off effort' if effort else 'before any Effort row'} — fine if intended.",
                     "sightings", r, "DateTime", name)
-            elif r.get("Observer") and r.get("Observer") not in ("UNK",) and not resight:
+            elif r.get("Observer") and not resight:
                 on = {stt.get(k) for k in ("Port", "Recorder", "Starboard")}
                 if r["Observer"] not in on:
                     add("warning", "Sighting observer on watch",
@@ -571,7 +589,7 @@ def run_qc(rec) -> dict:
             # sighted further away than the visibility recorded at the time
             vis_nm = visibility_nm((stt or {}).get("Visibility"))
             far_nm = None
-            if r.get("DistUnit") == "reticle":
+            if schema.reticle_name(r.get("DistUnit")) is not None:
                 if not (r.get("Altitude") or meta.get("platform_altitude_ft")):
                     add("warning", "Plausible bearings and distances",
                         "Dist is a reticle reading, but there's no altitude (this row's Alt or the survey's Platform altitude), "
@@ -671,6 +689,7 @@ CHECKS = [
     ("Observer rest", f"Observers on watch over {LIMITS['max_watch_h']:g} h without a break (information only)."),
     ("Distance within visibility", "A sighting's distance (Dist and Unit, or the vessel-to-animal distance) isn't beyond the visibility on the Effort row in force at the time."),
     ("Resights linked", "Each ResNo names an existing sighting, timed before the resight and of the same species."),
+    ("Glare bearings", "Glare start and end come together, with a Glare ref, and are 0–360° (1–12 for clock bearings)."),
     ("Resight swim speeds", f"The animals don’t swim faster than {LIMITS['max_resight_kn']:g} kn from one sighting of them to the next (warning; positions from SigLat/SigLon, else the platform’s)."),
     ("No duplicate records", "A sighting with the same time, species, number and position as another (entered twice), or the same event and ID within 30 s."),
 ]

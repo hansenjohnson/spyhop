@@ -819,7 +819,14 @@ class Recorder:
         return v
 
     # -- parsing ----------------------------------------------------------------
+    def reticle_entry(self, unit: str) -> dict | None:
+        """The reticles list entry for a Unit reticles-<name> (case-insensitive), or None."""
+        name = (schema.reticle_name(unit) or "").lower()
+        return next((r for r in self.cfg.lists.get("reticles", []) if r["name"].lower() == name), None) if name else None
+
     def list_values(self, name: str) -> list[str] | None:
+        if name == "distunit":            # the units, then one per entry of the reticles list
+            return schema.FIXED_LISTS["distunit"] + [schema.RETICLE_UNIT + r["name"] for r in self.cfg.lists.get("reticles", [])]
         if name in schema.FIXED_LISTS:
             return schema.FIXED_LISTS[name]
         if name in self.cfg.lists:
@@ -1020,13 +1027,17 @@ class Recorder:
                         else "no vessel heading on this row"))
                     return warnings
                 unit = row.get("DistUnit") or self.cfg.settings.get("distance_unit", "nm")
-                if unit == "reticle":
+                if schema.reticle_name(unit) is not None:
+                    entry = self.reticle_entry(unit)
+                    if entry is None:
+                        warnings.append(f"There's no reticle “{schema.reticle_name(unit)}” in Settings → Dropdowns → Reticles, so the animal's position wasn't calculated.")
+                        return warnings
                     alt = row.get("Altitude") or self.platform()[1]
                     if not alt:
                         warnings.append("Set the platform altitude (Survey tab, or this row's Alt) to turn the reticle reading into a distance.")
                         return warnings
                     try:
-                        dist_m = reticle.distance_m(float(d), float(alt), self.cfg.settings)
+                        dist_m = reticle.distance_m(float(d), float(alt), reticle.settings_for(entry))
                     except reticle.ReticleError as e:
                         warnings.append(f"{e} The animal's position wasn't calculated.")
                         return warnings
@@ -1064,10 +1075,11 @@ class Recorder:
         unit = row.get("DistUnit") or "nm"
         dm = geo.haversine_m(vlat, vlon, slat, slon)
         d = None
-        if unit == "reticle":
+        if schema.reticle_name(unit) is not None:
             alt = row.get("Altitude") or self.platform()[1]
+            entry = self.reticle_entry(unit)
             try:
-                d = reticle.reading_for(dm, float(alt), self.cfg.settings) if alt else None
+                d = reticle.reading_for(dm, float(alt), reticle.settings_for(entry)) if alt and entry else None
             except (ValueError, ZeroDivisionError):
                 d = None
             if d is None or d < 0:                 # no reading for it (marks, no altitude): give it in meters
@@ -1657,7 +1669,7 @@ class Recorder:
         return dest
 
     # columns of the merged CSV, in order
-    MERGED_EFFORT = ["Effort", "Segment", "Visibility", "SeaState", "Weather", "Glare", "Port", "Recorder", "Starboard"]
+    MERGED_EFFORT = ["Effort", "Segment", "Visibility", "SeaState", "Weather", "Glare", "GlareStart", "GlareEnd", "GlareRef", "Port", "Recorder", "Starboard"]
     MERGED_SIGHTING = ["SightNo", "ResightOf", "Species", "Count", "Calves", "NumConf", "IDrel", "Behaviors", "Observer",
                        "Bearing", "BrgRef", "Distance", "DistUnit", "Altitude", "SigLat", "SigLon", "VesHdg", "Images", "FieldID"]
     MERGED_EVENT = ["EventNo", "EventType", "EventID"]

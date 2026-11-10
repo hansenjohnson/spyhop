@@ -142,6 +142,9 @@ export class Grid {
   // ---------------------------------------------------------------- display
   listInfo(name) {
     const S = this.app.S;
+    // Unit: the units, then one reticles-<name> for each entry of the reticles list (0.37)
+    if (name === 'distunit') return [...S.schema.fixed_lists.distunit.map((n) => ({ name: n })),
+      ...(S.config.lists.reticles || []).map((r) => ({ name: `reticles-${r.name}`, extra: (S.schema.reticle?.methods || {})[r.method] || r.method }))];
     if (S.schema.fixed_lists[name]) return S.schema.fixed_lists[name].map((n) => ({ name: n, color: name === 'colors' ? n : undefined }));
     return (S.config.lists[name] || []).map((r) => ({
       name: r.name, code: r.species_code || r.behavior_code || r.event_code || '', extra: r.full_name || '', color: r.color, definition: r.definition || '' }));
@@ -358,7 +361,8 @@ export class Grid {
     if (initial === undefined) input.select();
     if (col.type === 'choice') this.openDropdown(col, input.value, initial === undefined);
     // a clock bearing (Ref C): pick 1–12 o'clock from a list (or type it)
-    else if (this.tab === 'sightings' && col.key === 'Bearing' && r.BrgRef === 'C') this.openDropdown(col, input.value, initial === undefined, CLOCK_ITEMS);
+    else if ((this.tab === 'sightings' && col.key === 'Bearing' && r.BrgRef === 'C')
+      || (this.tab === 'effort' && (col.key === 'GlareStart' || col.key === 'GlareEnd') && r.GlareRef === 'C')) this.openDropdown(col, input.value, initial === undefined, CLOCK_ITEMS);
     input.addEventListener('keydown', (e) => this.onEditKey(e));
     input.addEventListener('input', () => { if (this.dropdown) this.filterDropdown(input.value); });
     input.addEventListener('blur', () => setTimeout(() => {

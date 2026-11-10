@@ -29,16 +29,14 @@ FIXED_LISTS = {
     "numconf": ["Definite", "Probable", "Possible", "At Least"],
     "idrel": ["Definite", "Probable", "Possible"],
     "seastate": [str(i) for i in range(0, 10)],
-    "weather": ["Clear", "Partly cloudy", "Overcast", "Haze", "Fog", "Mist",
-                "Drizzle", "Rain", "Showers", "Snow"],
-    "visibility": ["<0.5 nm", "0.5-1 nm", "1-2 nm", "2-5 nm", "5-10 nm", ">10 nm"],
     "glare": ["None", "Slight", "Moderate", "Severe"],
     # on effort: ON (plain on/off effort) or a kind of on effort (LINE transect, FOLLOW a focal whale or
     # group, PHOTO a directed photo-ID approach); ERROR: a trackline break (GPS jump or loss)
     "effort": ["Start", "ON", "LINE", "FOLLOW", "PHOTO", "OFF", "End", "ERROR"],
     "images": ["None", "Photo", "Video", "Photo + Video", "Drone"],
     "brgref": ["M", "T", "R", "C"],              # C: clock bearing (1–12) relative to the heading
-    "distunit": ["m", "km", "nm", "mi", "yd", "reticle"],
+    # plus one "reticles-<name>" for each entry of the reticles list (Settings → Dropdowns → Reticles)
+    "distunit": ["m", "km", "nm", "mi", "yd"],
     "shapes": ["Circle", "Diamond", "Square", "Triangle", "Star"],
     "colors": ["red", "orange", "gold", "yellow", "green", "darkgreen", "teal", "cyan", "blue", "navy",
                "purple", "magenta", "pink", "brown", "black", "gray", "white"],
@@ -95,9 +93,9 @@ TABS = {
             col("BrgRef", "choice", "Ref", list="brgref", width=45,
                 help="Bearing reference: M = magnetic (compass), T = true, R = relative to the bow (000 = dead ahead), C = clock bearing relative to the bow (each hour 30°: 12 = dead ahead, 3 = starboard beam, 6 = astern, 9 = port beam)."),
             col("Distance", "float", "Dist", width=55,
-                help="Distance from the platform to the animals, in Unit. With Unit = reticle: the reading (reticles below the horizon, a calibrated mark, or degrees below the horizontal; Settings → General → Reticles)."),
+                help="Distance from the platform to the animals, in Unit. With a reticles-… Unit: the reading (reticles below the horizon, a calibrated mark, or degrees below the horizontal, as that entry of Settings → Dropdowns → Reticles says)."),
             col("DistUnit", "choice", "Unit", list="distunit", width=60,
-                help="Unit of Dist: m, km, nm, mi, yd, or reticle (a reading turned into a distance with the platform altitude)."),
+                help="Unit of Dist: m, km, nm, mi, yd, or reticles-<name> (a reading taken the way that entry of Settings → Dropdowns → Reticles says, turned into a distance with the platform altitude)."),
             col("Altitude", "float", "Alt (ft)", width=60, optional="altitude",
                 help="Platform altitude (ft) for this sighting: eye height, or the aircraft’s altitude. Filled in from the survey details; used to turn reticle readings into distances. Show or hide it in Settings → General."),
             col("SigLat", "lat", "SigLat",
@@ -123,10 +121,16 @@ TABS = {
                 help="Start = survey began (first row only) · ON = on effort, searching · LINE = on effort, line transect · FOLLOW = on effort, focal follow of one whale or group · PHOTO = on effort, directed photo-ID approach · OFF = not searching · End = survey ended (last row only; use End survey in the Survey tab)."),
             col("Segment", "int", "Seg", width=45, copy=False, skip=True, readonly=True, optional="segment",
                 help="Effort segment: numbered by Spyhop, a new number each time the effort status changes from the row before (e.g. ON → OFF). Rows with the same status in a row share it."),
-            col("Visibility", "choice", "Vis", list="visibility", help="Estimated visibility."),
+            col("Visibility", "choice", "Vis", list="visibility", help="Estimated visibility. List: Settings → Dropdowns → Visibility."),
             col("SeaState", "choice", "SeaSt", list="seastate", width=55, help="Sea state, 0–9."),
-            col("Weather", "choice", "Weather", list="weather", help="Weather."),
+            col("Weather", "choice", "Weather", list="weather", help="Weather. List: Settings → Dropdowns → Weather."),
             col("Glare", "choice", "Glare", list="glare", help="Sun glare on the search area."),
+            col("GlareStart", "float", "Glare start", width=60,
+                help="Where the glare starts: a bearing in Glare ref (0–360°, or 1–12 o'clock with C), going clockwise to Glare end. Blank when there's no glare."),
+            col("GlareEnd", "float", "Glare end", width=60,
+                help="Where the glare ends: a bearing in Glare ref (0–360°, or 1–12 o'clock with C), clockwise from Glare start."),
+            col("GlareRef", "choice", "Glare ref", list="brgref", width=55,
+                help="Reference of Glare start and end: M = magnetic, T = true, R = relative to the bow, C = clock bearing (12 = dead ahead)."),
             col("Port", "choice", "Port", list="observers", help="Observer on the port side. List: observers.csv."),
             col("Recorder", "choice", "Recorder", list="observers", help="Data recorder. List: observers.csv."),
             col("Starboard", "choice", "Stbd", list="observers", help="Observer on the starboard side. List: observers.csv."),
@@ -188,6 +192,15 @@ TRACK_COLUMNS = ["DateTime", "Lat", "Lon", "SOG", "COG", "Effort"]
 
 def headers(tab: str) -> list[str]:
     return [c["key"] for c in TABS[tab]["columns"]]
+
+
+RETICLE_UNIT = "reticles-"          # Unit "reticles-<name>": an entry of the reticles list
+
+
+def reticle_name(unit: str) -> str | None:
+    """'reticles-binos' → 'binos'; None for any other unit."""
+    u = str(unit or "")
+    return u[len(RETICLE_UNIT):] if u.startswith(RETICLE_UNIT) and len(u) > len(RETICLE_UNIT) else None
 
 
 def column(tab: str, key: str) -> dict | None:

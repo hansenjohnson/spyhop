@@ -61,6 +61,9 @@ TABLES = {
     "event_types.csv": ["name"],
     "observers.csv": ["name"],
     "behaviors.csv": ["name"],
+    "visibility.csv": ["name"],
+    "weather.csv": ["name"],
+    "reticles.csv": ["name", "method"],
     "shortcuts.csv": ["combo", "action"],
 }
 OPTIONAL = ("waypoints", "routes", "overlays")

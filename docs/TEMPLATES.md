@@ -72,7 +72,7 @@ The lists and shortcuts stay as CSV files so they can be edited in a spreadsheet
 
 **Only the parts in the template are changed.** For example, a template with only `species.csv` and `observers.csv` changes only those two lists on each computer.
 
-**Lists, shortcuts, map display and settings are replaced.** The shared settings are: lat/lon format, clock (time zone), bearing reference, distance unit, magnetic variation, track point interval, track break speed and gap, effort reminder, keep the computer awake and the screen on, the raw NMEA log (on/off and time stamps), the Altitude column choice, and how reticle readings are taken (method, binocular magnification and degrees per division, calibrated marks). The template's network GPS / NMEA inputs replace this computer's network inputs; **serial ports, file replays and the simulator stay as they are**, since port names differ between computers. Everything else in Settings (the data folder, the view and split, follow vessel, the browsing cache…) belongs to the computer and is never in a template.
+**Lists, shortcuts, map display and settings are replaced.** The shared settings are: lat/lon format, clock (time zone), bearing reference, distance unit, magnetic variation, track point interval, track break speed and gap, effort reminder, keep the computer awake and the screen on, the raw NMEA log (on/off and time stamps), and the Altitude column choice. The lists in a template are species, event types, observers, behaviors, visibility, weather and the reticles (how reticle readings are taken: method, binocular magnification and degrees per division, or calibrated marks), plus the shortcuts. The template's network GPS / NMEA inputs replace this computer's network inputs; **serial ports, file replays and the simulator stay as they are**, since port names differ between computers. Everything else in Settings (the data folder, the view and split, follow vessel, the browsing cache…) belongs to the computer and is never in a template.
 
 **Saved reports go as a set.** If the template has saved reports, each computer ends up with exactly those reports: any others of its own are removed. A template with no saved reports leaves each computer's reports alone.
 
@@ -124,7 +124,7 @@ You can also type the **path of a zip or folder on this computer**, such as a te
 
 **A template with any problem isn't used at all.** Problems are parts Spyhop can't read: a list missing its `name` column, a `spyhop-config.json` that isn't valid, or a saved report with a mistake. Spyhop names them, and nothing on the computer changes.
 
-**During a survey:** using a template is allowed, after a warning. Rows already recorded are never changed. If a template removes a list entry that earlier rows use, those rows keep their values, and the Error check flags them as "not in the list".
+**During a survey:** a template can be used only if it changes nothing that defines or works out the data: the lists (species, event types, observers, behaviors, visibility, weather, reticles), the track point interval and trackline-break settings, and the magnetic variation. One that would change any of them is refused until the survey ends; shortcuts, map display, reports and display settings can be changed by a template at any time. This keeps the copy of the template saved with each survey exact. After the survey, rows already recorded are never changed by a template; if it removes a list entry that earlier rows use, those rows keep their values, and the Error check flags them as "not in the list".
 
 ## Undoing it
 

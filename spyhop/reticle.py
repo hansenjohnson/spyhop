@@ -1,8 +1,10 @@
 """Distances from angles below the horizon or the horizontal (Unit = reticle on a sighting).
 
-A sighting's Dist with Unit "reticle" is a reading, turned into a distance with the platform's
+A sighting's Dist with Unit "reticles-<name>" is a reading, turned into a distance with the platform's
 altitude (the observer's eye height on a ship or station, the survey altitude on an aircraft;
-the sighting's Altitude, else the survey's Platform altitude) and Settings → General → Reticles:
+the sighting's Altitude, else the survey's Platform altitude) and the entry <name> of the reticles
+list (Settings → Dropdowns → Reticles; reticles.csv in the template, locked during a survey), whose
+method is one of:
 
   binoculars    reticle divisions counted down from the horizon. Each division is a fixed angle
                 (reticle_deg_per_division, which depends on the binoculars: see PRESETS); the angle
@@ -63,10 +65,10 @@ def angle_below_horizontal(reading: float, h_m: float, settings: dict) -> float:
         for m in marks:
             if _mark_key(m["mark"]) == key:
                 return math.radians(m["angle"])
-        raise ReticleError(f"Mark {reading} isn't in the calibration table (Settings → General → Reticles).")
+        raise ReticleError(f"Mark {reading} isn't in the calibration table (Settings → Dropdowns → Reticles).")
     per = float(settings.get("reticle_deg_per_division") or 0)
     if per <= 0:
-        raise ReticleError("Set the angle of one reticle division in Settings → General → Reticles.")
+        raise ReticleError("Set the angle of one reticle division in Settings → Dropdowns → Reticles.")
     return dip(h_m) + math.radians(float(reading) * per)
 
 
@@ -158,3 +160,32 @@ def check_marks(rows) -> list[dict]:
     if problems:
         raise ValueError("\n".join(problems))
     return clean_marks(rows)
+
+
+# ------------------------------------------------------------------ the reticles list (0.37)
+def parse_marks(text) -> list[dict]:
+    """'1=2.5; 2=5' (or a list already) → [{mark, angle}] (not checked: see check_marks)."""
+    if isinstance(text, list):
+        return text
+    out = []
+    for part in str(text or "").replace("\n", ";").split(";"):
+        if not part.strip():
+            continue
+        mark, _, angle = part.partition("=")
+        out.append({"mark": mark.strip(), "angle": angle.strip()})
+    return out
+
+
+def marks_text(marks: list[dict]) -> str:
+    return "; ".join(f"{m['mark']}={m['angle']:g}" for m in marks)
+
+
+def settings_for(entry: dict) -> dict:
+    """The settings the functions above read, from an entry of the reticles list."""
+    try:
+        per = float(entry.get("deg_per_division") or 0)
+    except ValueError:
+        per = 0.0
+    return {"reticle_method": (entry.get("method") or "binoculars").strip().lower(),
+            "reticle_deg_per_division": per,
+            "reticle_marks": clean_marks(parse_marks(entry.get("marks", "")))}
