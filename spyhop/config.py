@@ -102,11 +102,11 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
                            ["Drizzle"], ["Rain"], ["Showers"], ["Snow"]]),
     # how reticle distances are worked out (reticle.py): Unit = reticles-<name> on a sighting.
     # binoculars: magnification (a key of reticle.PRESETS, a suggestion) and degrees per division;
-    # marks: "mark=degrees below the horizontal; …"; inclinometer: the reading is the angle itself.
-    "reticles": (["name", "method", "magnification", "deg_per_division", "marks"], [
-        ["binos", "binoculars", "7", "0.573", ""],
-        ["big-eyes", "binoculars", "25", "0.0771", ""],
-        ["incl", "inclinometer", "", "", ""],
+    # marks: evenly spaced calibrated marks, degrees between marks; inclinometer: the reading is the angle itself.
+    "reticles": (["name", "method", "magnification", "deg_per_division"], [
+        ["binos", "binoculars", "7", "0.573"],
+        ["big-eyes", "binoculars", "25", "0.0771"],
+        ["incl", "inclinometer", "", ""],
     ]),
     "behaviors": (["name", "behavior_code", "definition"], [
         ["Travel", "TR", "Moving steadily in one direction, with regular surfacings and dives."],
@@ -143,8 +143,8 @@ DEFAULT_SHORTCUTS = ["combo", "action", "prefill"], [
     ["Mod+Shift+R", "add:sightings", "Species=North Atlantic right whale"],
     ["Mod+Shift+H", "add:sightings", "Species=Humpback whale"],
     ["Mod+Shift+L", "add-resight", ""],
-    ["Mod+Shift+U", "undo", ""],
-    ["Mod+Shift+Y", "redo", ""],
+    ["Mod+Z", "undo", ""],
+    ["Mod+Shift+Z", "redo", ""],
     ["Mod+PageUp", "prev-tab", ""],
     ["Mod+PageDown", "next-tab", ""],
     ["Alt+ArrowLeft", "prev-tab", ""],
@@ -167,7 +167,7 @@ LIST_COLUMNS = {
     "visibility": {"name": "Visibility"},
     "weather": {"name": "Weather"},
     "reticles": {"name": "Name", "method": "How readings are taken", "magnification": "Magnification",
-                 "deg_per_division": "Degrees per division", "marks": "Calibrated marks"},
+                 "deg_per_division": "Degrees per division"},
 }
 # lists that define what recorded values mean: none can change during an active survey
 LOCKED_LISTS = ("species", "event_types", "observers", "behaviors", "visibility", "weather", "reticles")
@@ -190,23 +190,19 @@ def _clean_reticle(row: dict) -> dict:
     method = row.get("method", "").strip().lower()
     if method not in reticle.METHODS:
         raise ValueError("choose how readings are taken: " + ", ".join(reticle.METHODS) + ".")
-    out = {"method": method, "magnification": "", "deg_per_division": "", "marks": ""}
-    if method == "binoculars":
-        mag = row.get("magnification", "").strip()
+    out = {"method": method, "magnification": "", "deg_per_division": ""}
+    if method in ("binoculars", "marks"):
+        mag = row.get("magnification", "").strip() if method == "binoculars" else ""
         if mag and mag not in reticle.PRESETS:
             raise ValueError("the magnification is one of " + ", ".join(reticle.PRESETS) + " (or blank).")
+        what = "degrees per reticle division (e.g. 0.573)" if method == "binoculars" else "degrees between marks (e.g. 5)"
         try:
             per = float(row.get("deg_per_division", "") or "x")
         except ValueError:
-            raise ValueError("give the degrees per reticle division (e.g. 0.573).")
-        if not 0 < per <= 10:
-            raise ValueError("one reticle division must be more than 0° and at most 10°.")
+            raise ValueError(f"give the {what}.")
+        if not 0 < per <= (10 if method == "binoculars" else 45):
+            raise ValueError(f"the {what.split(' (')[0]} must be more than 0° and at most {10 if method == 'binoculars' else 45}°.")
         out.update(magnification=mag, deg_per_division=f"{per:g}")
-    elif method == "marks":
-        marks = reticle.check_marks(reticle.parse_marks(row.get("marks", "")))
-        if not marks:
-            raise ValueError("give the calibrated marks, e.g. 1=2.5; 2=5; 3=10 (mark = degrees below the horizontal).")
-        out["marks"] = reticle.marks_text(marks)
     return out
 
 
@@ -550,6 +546,8 @@ class Config:
                 have = [h.strip() for h in next(csv.reader(fh), []) if h.strip()]
         except OSError:
             have = []
+        if name == "reticles":         # 0.37's calibrated-marks table column: marks are evenly spaced since 0.38
+            have = [h for h in have if h != "marks"]
         return known + [h for h in have if h not in known]
 
     def save_list(self, name: str, rows: list[dict]) -> list[dict]:

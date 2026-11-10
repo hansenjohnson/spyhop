@@ -851,11 +851,13 @@ class Recorder:
                 raise ValueErrorMsg(f"{c['label']}: {e}")
         if tab == "sightings" and key == "ResightOf":
             return self._parse_resight_of(s, row)
+        if c.get("na") and s.upper() in ("NA", "N/A"):
+            return "NA", None
         if t in ("int", "seq"):
             try:
                 v = float(s)
             except ValueError:
-                raise ValueErrorMsg(f"{c['label']} must be a whole number")
+                raise ValueErrorMsg(f"{c['label']} must be a whole number" + (" (or NA)" if c.get("na") else ""))
             if v != int(v) or v < 0:
                 raise ValueErrorMsg(f"{c['label']} must be a whole number ≥ 0")
             return str(int(v)), None
@@ -1816,7 +1818,7 @@ class Recorder:
             pos = self._marker_pos("sightings", r)
             if pos:
                 n = r.get("Count", "")
-                calves = f" + {r['Calves']} calves" if r.get("Calves") not in (None, "", "0") else ""
+                calves = f" + {r['Calves']} calves" if r.get("Calves") not in (None, "", "0", "NA") else ""
                 feats.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [round(pos[1], 6), round(pos[0], 6)]},
                               "properties": {"name": f"S{r.get('SightNo', '')} {r.get('Species', '')}".strip(),
                                              "survey": prefix, "time": r.get("DateTime", ""), "number": f"{n}{calves}",

@@ -30,7 +30,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from . import __version__, geo, schema
+from . import __version__, geo, resights, schema
 
 BUILTIN_DIR = Path(__file__).parent / "report_defs"
 TABLES = ("sightings", "events", "effort")
@@ -161,13 +161,23 @@ def _rule_ok(row: dict, r: dict) -> bool:
     return a > b if op == "gt" else a < b
 
 
+def _rows(rec, table: str) -> list[dict]:
+    """The rows a report reads: for Sightings, the first sighting of each group of animals only (0.38: resights
+    are left out, so nothing is counted twice)."""
+    rows = list(rec.tables[table].rows) if rec.survey is not None else []
+    if table == "sightings":
+        index = resights.by_sightno(rows)
+        rows = [r for r in rows if not resights.is_resight(r, rows, index)]
+    return rows
+
+
 def counts(rec, table: str) -> list[dict]:
     """[{code, name, n}] for the codes in this survey's table, most rows first."""
     if table not in CODE_COLUMN or rec.survey is None:
         return []
     codes = _codes(rec.cfg, table)
     seen: dict[str, dict] = {}
-    for r in rec.tables[table].rows:
+    for r in _rows(rec, table):
         k = row_key(table, r, codes)
         if not k:
             continue
@@ -195,7 +205,7 @@ def run(rec, spec: dict) -> dict:
     fmt = cfg.settings.get("latlon_format", "DDM")
     tz = rec.tz()
     codes = _codes(cfg, table)
-    rows = list(rec.tables[table].rows) if rec.survey is not None else []
+    rows = _rows(rec, table)
     total = len(rows)
     want = {c.upper() for c in spec["codes"]}
     t_from, t_to = _local(spec["time_from"]) if spec["time_from"] else None, _local(spec["time_to"]) if spec["time_to"] else None

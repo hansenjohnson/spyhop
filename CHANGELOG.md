@@ -6,6 +6,16 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.38.0 — 2026-11-10
+
+- **Calibrated marks** (Settings → Dropdowns → Reticles) are evenly spaced: *Degrees per division* is the angle between marks, counted down from the horizontal, so mark *n* is *n* × that angle (magnification isn't used). The reticles list's marks column is gone. A position picked on the map now gives a mark reading too.
+- **Gstart, Gend, Gref** are the new, shorter headers of the glare columns (the CSV columns are still GlareStart, GlareEnd, GlareRef).
+- **Reports leave out resights:** a Sightings report, and its species counts, list each group of animals once, as its first sighting.
+- **Calves takes NA**, for species codes where calves don't apply (dead birds, fishing gear, vessels…).
+- **Insert row…:** the typed-time choice reads "Use this time and the nearest vessel position".
+- **Undo / redo are Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z** by default (were Ctrl/Cmd+Shift+U / Y). While you're typing in a box they undo the typing instead. An existing shortcuts list keeps its keys: change them in Settings → Shortcuts.
+- **The Unit drop-down says what each unit is** (nm nautical miles, …), and for each reticle its method and angle.
+
 ## 0.37.0 — 2026-11-10
 
 - **Reticles are a list** (Settings → Dropdowns → Reticles), replacing General → Reticles. Each entry has a name and says how readings are taken: binocular reticles (magnification and degrees per division), calibrated marks (`mark=degrees; …`) or inclinometer degrees. Each is a Unit in Sightings, `reticles-<name>` (the default list has `reticles-binos`, `reticles-big-eyes` and `reticles-incl`), so several can be used in one survey and every sighting records which. The single `reticle` unit and the `reticle_*` settings are gone.

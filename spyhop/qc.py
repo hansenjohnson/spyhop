@@ -281,7 +281,7 @@ def run_qc(rec) -> dict:
                     if n is None or abs(n) > lim:
                         add("error", "Valid positions", f"{c['label']} “{v}” isn't a valid position.", tab, r, c["key"], name)
                 elif c["type"] in ("int", "float", "seq"):
-                    if _num(v) is None:
+                    if _num(v) is None and not (c.get("na") and v == "NA"):
                         add("error", "Valid numbers", f"{c['label']} “{v}” isn't a number.", tab, r, c["key"], name)
                 elif c["type"] == "datetime":
                     t = _t(v)
@@ -323,9 +323,9 @@ def run_qc(rec) -> dict:
             continue
         name = lab("effort", r, i)
         if bool(gs) != bool(ge):
-            add("warning", "Glare bearings", "Give both Glare start and Glare end (or neither).", "effort", r, "GlareEnd" if gs else "GlareStart", name)
+            add("warning", "Glare bearings", "Give both Gstart and Gend (or neither).", "effort", r, "GlareEnd" if gs else "GlareStart", name)
         if (gs or ge) and not gref:
-            add("warning", "Glare bearings", "Glare start / end have no Glare ref (M, T, R or C).", "effort", r, "GlareRef", name)
+            add("warning", "Glare bearings", "Gstart / Gend have no Gref (M, T, R or C).", "effort", r, "GlareRef", name)
         lo, hi = (1, 12) if gref == "C" else (0, 360)
         for key, v in (("GlareStart", gs), ("GlareEnd", ge)):
             n = _num(v)
@@ -675,7 +675,7 @@ CHECKS = [
     ("Effort starts with Start / Survey ended", "The first Effort row is Start; the survey has an End row."),
     ("Times within the survey", "Nothing is timed before Start, after End, or in the future; rows are in time order."),
     ("Unique numbers", "No SigNo or EventNo is used twice; gaps in the numbering are noted."),
-    ("Plausible numbers", f"Num is a whole number ≥ 1 (flagged above {LIMITS['max_group']}); Calves ≤ Num."),
+    ("Plausible numbers", f"Num is a whole number ≥ 1 (flagged above {LIMITS['max_group']}); Calves ≤ Num (or NA)."),
     ("Plausible bearings and distances", f"Bearing 0–360°, Dist not negative, both or neither given, Ref/Unit set, "
      f"relative bearings have a heading, animals within {LIMITS['max_sighting_nm']:g} nm of the vessel."),
     ("Positions match the trackline", f"Vessel positions within {LIMITS['pos_vs_track_nm']:g} nm of the trackline at that time."),
@@ -689,7 +689,7 @@ CHECKS = [
     ("Observer rest", f"Observers on watch over {LIMITS['max_watch_h']:g} h without a break (information only)."),
     ("Distance within visibility", "A sighting's distance (Dist and Unit, or the vessel-to-animal distance) isn't beyond the visibility on the Effort row in force at the time."),
     ("Resights linked", "Each ResNo names an existing sighting, timed before the resight and of the same species."),
-    ("Glare bearings", "Glare start and end come together, with a Glare ref, and are 0–360° (1–12 for clock bearings)."),
+    ("Glare bearings", "Gstart and Gend come together, with a Gref, and are 0–360° (1–12 for clock bearings)."),
     ("Resight swim speeds", f"The animals don’t swim faster than {LIMITS['max_resight_kn']:g} kn from one sighting of them to the next (warning; positions from SigLat/SigLon, else the platform’s)."),
     ("No duplicate records", "A sighting with the same time, species, number and position as another (entered twice), or the same event and ID within 30 s."),
 ]

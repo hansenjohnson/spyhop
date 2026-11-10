@@ -143,8 +143,15 @@ export class Grid {
   listInfo(name) {
     const S = this.app.S;
     // Unit: the units, then one reticles-<name> for each entry of the reticles list (0.37)
-    if (name === 'distunit') return [...S.schema.fixed_lists.distunit.map((n) => ({ name: n })),
-      ...(S.config.lists.reticles || []).map((r) => ({ name: `reticles-${r.name}`, extra: (S.schema.reticle?.methods || {})[r.method] || r.method }))];
+    if (name === 'distunit') {
+      const UNITS = { m: 'meters', km: 'kilometers', nm: 'nautical miles', mi: 'statute miles', yd: 'yards' };
+      const ret = (r) => {
+        const m = (S.schema.reticle?.methods || {})[r.method] || r.method;
+        return r.method === 'binoculars' ? `${m}, ${r.deg_per_division}° per division` : r.method === 'marks' ? `${m}, ${r.deg_per_division}° between marks` : m;
+      };
+      return [...S.schema.fixed_lists.distunit.map((n) => ({ name: n, extra: UNITS[n] || '' })),
+        ...(S.config.lists.reticles || []).map((r) => ({ name: `reticles-${r.name}`, extra: ret(r) }))];
+    }
     if (S.schema.fixed_lists[name]) return S.schema.fixed_lists[name].map((n) => ({ name: n, color: name === 'colors' ? n : undefined }));
     return (S.config.lists[name] || []).map((r) => ({
       name: r.name, code: r.species_code || r.behavior_code || r.event_code || '', extra: r.full_name || '', color: r.color, definition: r.definition || '' }));

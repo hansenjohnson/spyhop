@@ -510,7 +510,7 @@ class App {
       radio('ins-method', 'average', 'Average of the rows before and after', true),
       radio('ins-method', 'previous', 'Copied from the row before'),
       radio('ins-method', 'next', 'Copied from the row after'),
-      radio('ins-method', 'time', 'At a time I type: the position is the vessel’s then, from the trackline'),
+      radio('ins-method', 'time', 'Use this time and the nearest vessel position'),
       el('label', { class: 'row', id: 'ins-time-row' }, 'Time ', el('input', { type: 'text', id: 'ins-time', placeholder: 'e.g. 14:05 or 14:05:30', size: 14,
         onfocus: () => { body.querySelector('input[name=ins-method][value=time]').checked = true; between(); } })),
       el('p', { class: 'hint', id: 'ins-between' }),
@@ -1535,8 +1535,11 @@ class App {
     if (this.comboCapture && this.comboCapture(e) !== false) return;     // Settings → Shortcuts is recording new keys
     if (isModalOpen()) return;
     if (e.key === 'Escape' && this.map?.measure?.active) { this.map.endMeasure(); return; }
+    const typing = e.target?.matches?.('input[type=text], input[type=number], input:not([type]), textarea, [contenteditable=true]');
     for (const s of this.S.config.shortcuts) {
       if (!this.matchCombo(s.combo, e)) continue;
+      // undo / redo while typing in a box (a cell being edited, a Settings field) undo the typing, as usual
+      if (typing && (s.action === 'undo' || s.action === 'redo')) return;
       e.preventDefault();
       e.stopPropagation();
       const g = this.grids[this.tab];
@@ -2433,10 +2436,11 @@ class App {
         } }, el('option', { value: '', selected: !r.magnification }, '—'),
         Object.entries(R.presets).map(([k, [label]]) => el('option', { value: k, selected: String(r.magnification) === k }, label))));
       }
-      if (cur === 'reticles' && (c === 'deg_per_division' || c === 'marks')) {
-        const on = c === 'marks' ? r.method === 'marks' : r.method === 'binoculars';
-        return el('td', {}, el('input', { type: 'text', value: on ? r[c] ?? '' : '', disabled: locked || !on, 'data-col': c,
-          size: c === 'marks' ? 36 : 8, placeholder: on ? (c === 'marks' ? '1=2.5; 2=5; 3=10' : '0.573') : '',
+      if (cur === 'reticles' && c === 'deg_per_division') {
+        const on = r.method === 'binoculars' || r.method === 'marks';
+        return el('td', {}, el('input', { type: 'text', value: on ? r[c] ?? '' : '', disabled: locked || !on, 'data-col': c, size: 8,
+          placeholder: r.method === 'marks' ? '5' : r.method === 'binoculars' ? '0.573' : '',
+          title: r.method === 'marks' ? 'Degrees between one mark and the next' : r.method === 'binoculars' ? 'Degrees per reticle division' : 'Not used: the reading is the angle itself',
           oninput: (e) => { edit()[i][c] = e.target.value; markDirty(); } }));
       }
       if (c === 'color') {
@@ -2469,7 +2473,7 @@ class App {
       observers: 'The observer drop-downs (Obs in Sightings; Port, Recorder and Stbd in Effort). The initials are what’s recorded; NA means nobody in that position.',
       visibility: 'The Vis drop-down in Effort. The Error check reads distances from the names (e.g. “1-2 nm” is at most 2 nm, “<0.5 nm” at most 0.5; km, m and mi are understood) to flag sightings beyond the visibility.',
       weather: 'The Weather drop-down in Effort.',
-      reticles: 'How reticle readings are turned into distances. Each entry is a Unit in Sightings, reticles-<name> (e.g. reticles-binos): type the reading in Dist and the animals’ position comes from the bearing, the reading and the platform altitude (the row’s Alt), allowing for the curvature of the earth (Lerczak & Hobbs 1998). Binocular reticles: divisions counted down from the horizon, each a fixed angle (the magnification suggests one, but check the binoculars’ manual or calibrate them: many 7×50 and 10× marine binoculars have a 10-mil scale, 0.573° per division; Fujinon 25×150 big-eyes are 0.0771°, Kinzey & Gerrodette 2001). Calibrated marks: each mark (e.g. on an aircraft’s window or strut) and the degrees below the horizontal it stands for, written mark=degrees; …. Inclinometer degrees: the reading is the angle below the horizontal (90 = straight down). Names may use letters, digits, - _ and . (no spaces).' }[cur];
+      reticles: 'How reticle readings are turned into distances. Each entry is a Unit in Sightings, reticles-<name> (e.g. reticles-binos): type the reading in Dist and the animals’ position comes from the bearing, the reading and the platform altitude (the row’s Alt), allowing for the curvature of the earth (Lerczak & Hobbs 1998). Binocular reticles: divisions counted down from the horizon, each a fixed angle (the magnification suggests one, but check the binoculars’ manual or calibrate them: many 7×50 and 10× marine binoculars have a 10-mil scale, 0.573° per division; Fujinon 25×150 big-eyes are 0.0771°, Kinzey & Gerrodette 2001). Calibrated marks: evenly spaced marks (e.g. on an aircraft’s window or strut), counted down from the horizontal (mark 0); Degrees per division is the angle between one mark and the next, so mark n is n × that angle below the horizontal (no magnification). Inclinometer degrees: the reading is the angle below the horizontal (90 = straight down). Names may use letters, digits, - _ and . (no spaces).' }[cur];
     pane.replaceChildren(pills, el('section', { class: `settings-sec dd-sec${locked ? ' dd-locked' : ''}` },
       locked ? el('p', { class: 'warnbox', id: 'dd-locked' }, el('b', {}, 'A survey is under way, so the drop-down lists can’t be changed. '),
         'End the survey (in Survey) to edit them.') : null,

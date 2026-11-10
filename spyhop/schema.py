@@ -15,14 +15,15 @@ from __future__ import annotations
 
 
 def col(key, type="text", label=None, list=None, auto=False, width=None, hidden=False,
-        default="", copy=True, skip=False, help="", optional=None, readonly=False):
+        default="", copy=True, skip=False, help="", optional=None, readonly=False, na=False):
     """skip=True: a new row's cursor jumps over this column (filled in later, e.g. IDs).
     help: one-line description shown under the table when the column is selected.
     optional: the name of a Settings → General choice that shows or hides the column (it's always in the CSV).
-    readonly: worked out by Spyhop, not typed (e.g. the effort segment)."""
+    readonly: worked out by Spyhop, not typed (e.g. the effort segment).
+    na: a number column that also takes NA (not applicable, e.g. calves of fishing gear)."""
     return {"key": key, "type": type, "label": label or key, "list": list, "auto": auto,
             "width": width, "hidden": hidden, "default": default, "copy": copy, "skip": skip,
-            "help": help, "optional": optional, "readonly": readonly}
+            "help": help, "optional": optional, "readonly": readonly, "na": na}
 
 
 FIXED_LISTS = {
@@ -79,7 +80,8 @@ TABS = {
             col("Species", "choice", "Species", list="species", width=170,
                 help="Species seen. Type part of the name or its code (e.g. HUWH) to filter. List: species.csv."),
             col("Count", "int", "Num", width=50, help="Best estimate of the number of animals."),
-            col("Calves", "int", "Calves", width=55, help="Number of calves."),
+            col("Calves", "int", "Calves", width=55, na=True,
+                help="Number of calves, or NA where calves don't apply (dead birds, fishing gear, vessels…)."),
             col("ResightOf", "int", "ResNo", width=60, skip=True,
                 help="Resight number: for a resight of animals already recorded (an approach, a focal follow), the SigNo of their first sighting. Blank for a new sighting. Resights aren’t counted again in the summary. “Add resight” fills it in."),
             col("NumConf", "choice", "NumConf", list="numconf",
@@ -125,12 +127,12 @@ TABS = {
             col("SeaState", "choice", "SeaSt", list="seastate", width=55, help="Sea state, 0–9."),
             col("Weather", "choice", "Weather", list="weather", help="Weather. List: Settings → Dropdowns → Weather."),
             col("Glare", "choice", "Glare", list="glare", help="Sun glare on the search area."),
-            col("GlareStart", "float", "Glare start", width=60,
-                help="Where the glare starts: a bearing in Glare ref (0–360°, or 1–12 o'clock with C), going clockwise to Glare end. Blank when there's no glare."),
-            col("GlareEnd", "float", "Glare end", width=60,
-                help="Where the glare ends: a bearing in Glare ref (0–360°, or 1–12 o'clock with C), clockwise from Glare start."),
-            col("GlareRef", "choice", "Glare ref", list="brgref", width=55,
-                help="Reference of Glare start and end: M = magnetic, T = true, R = relative to the bow, C = clock bearing (12 = dead ahead)."),
+            col("GlareStart", "float", "Gstart", width=55,
+                help="Glare start: where the glare starts, a bearing in Gref (0–360°, or 1–12 o'clock with C), going clockwise to Gend. Blank when there's no glare."),
+            col("GlareEnd", "float", "Gend", width=55,
+                help="Glare end: where the glare ends, a bearing in Gref (0–360°, or 1–12 o'clock with C), clockwise from Gstart."),
+            col("GlareRef", "choice", "Gref", list="brgref", width=50,
+                help="Glare reference, for Gstart and Gend: M = magnetic, T = true, R = relative to the bow, C = clock bearing (12 = dead ahead)."),
             col("Port", "choice", "Port", list="observers", help="Observer on the port side. List: observers.csv."),
             col("Recorder", "choice", "Recorder", list="observers", help="Data recorder. List: observers.csv."),
             col("Starboard", "choice", "Stbd", list="observers", help="Observer on the starboard side. List: observers.csv."),
@@ -194,6 +196,7 @@ def headers(tab: str) -> list[str]:
     return [c["key"] for c in TABS[tab]["columns"]]
 
 
+UNIT_NAMES = {"m": "meters", "km": "kilometers", "nm": "nautical miles", "mi": "statute miles", "yd": "yards"}
 RETICLE_UNIT = "reticles-"          # Unit "reticles-<name>": an entry of the reticles list
 
 

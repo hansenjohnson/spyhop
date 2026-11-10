@@ -2200,16 +2200,14 @@ def test_reticle_distances():
     assert abs(rt.reading_for(d, 33, b) - 1.3) < 1e-6                   # map pick → reading, and back
     inc = {"reticle_method": "inclinometer"}
     assert abs(rt.distance_m(30, 750, inc) - 750 * rt.FT / math.tan(math.radians(30))) < 1
-    marks = {"reticle_method": "marks", "reticle_marks": [{"mark": "1", "angle": 30}, {"mark": "2", "angle": 45}]}
+    # 0.38: evenly spaced marks, counted from the horizontal: mark 2 at 22.5° apart = 45° down
+    marks = {"reticle_method": "marks", "reticle_deg_per_division": 22.5}
     assert abs(rt.distance_m(2, 1000, marks) - 1000 * rt.FT) < 1
-    assert rt.reading_for(500, 1000, marks) is None
-    with pytest.raises(rt.ReticleError, match="isn't in the calibration table"):
-        rt.distance_m(3, 1000, marks)
+    assert abs(rt.reading_for(rt.distance_m(1.5, 1000, marks), 1000, marks) - 1.5) < 1e-6
+    with pytest.raises(rt.ReticleError, match="degrees between marks"):
+        rt.distance_m(3, 1000, {"reticle_method": "marks"})
     with pytest.raises(rt.ReticleError, match="above the horizon"):
         rt.distance_m(-1, 33, b)
-    with pytest.raises(ValueError, match="must be a number"):
-        rt.check_marks([{"mark": "A", "angle": 10}])
-    assert rt.check_marks([{"mark": "1", "angle": "12.5"}, {"mark": "", "angle": ""}]) == [{"mark": "1", "angle": 12.5}]
 
 
 def test_reticle_sighting_altitude_and_platforms(tmp_path):
@@ -2640,15 +2638,16 @@ def test_reticles_visibility_weather_lists_and_glare(tmp_path):
     for bad, msg in [({"name": "big eyes", "method": "binoculars", "deg_per_division": "0.1"}, "no spaces"),
                      ({"name": "x", "method": "laser"}, "how readings are taken"),
                      ({"name": "x", "method": "binoculars", "deg_per_division": ""}, "degrees per reticle division"),
-                     ({"name": "x", "method": "marks", "marks": ""}, "calibrated marks"),
-                     ({"name": "x", "method": "marks", "marks": "1=95"}, "at most 90")]:
+                     ({"name": "x", "method": "marks", "deg_per_division": ""}, "degrees between marks"),
+                     ({"name": "x", "method": "marks", "deg_per_division": "50"}, "at most 45")]:
         with pytest.raises(ValueError, match=msg):
             cfg.save_list("reticles", [bad])
     cfg.save_list("reticles", [{"name": "big-eyes", "method": "Binoculars", "magnification": "25", "deg_per_division": "0.0771"},
-                               {"name": "strut", "method": "marks", "marks": "1 = 10; 2=20 ;3=35", "deg_per_division": "9"},
+                               {"name": "strut", "method": "marks", "magnification": "7", "deg_per_division": "10"},
                                {"name": "incl", "method": "inclinometer", "magnification": "7"}])
     by = {r["name"]: r for r in cfg.lists["reticles"]}
-    assert by["strut"]["marks"] == "1=10; 2=20; 3=35" and by["strut"]["deg_per_division"] == "" and by["incl"]["magnification"] == ""
+    assert by["strut"]["deg_per_division"] == "10" and by["strut"]["magnification"] == "" and by["incl"]["magnification"] == ""
+    assert "marks" not in cfg.list_header("reticles")
     assert by["big-eyes"]["method"] == "binoculars"
     _sim_fix(rec)
     rec.start_survey("R", meta={"platform_type": "Aerial", "platform_altitude_ft": "750"})
@@ -2661,8 +2660,8 @@ def test_reticles_visibility_weather_lists_and_glare(tmp_path):
     assert abs(got - rt.distance_m(2, 750, rt.settings_for(by["strut"]))) < 2 and 600 < got < 700   # 20° down from 750 ft
     row, _ = place("reticles-incl", "20")
     assert abs(geo.haversine_m(41.0, -70.0, float(row["SigLat"]), float(row["SigLon"])) - got) < 2   # the same angle, read directly
-    row, w = place("reticles-strut", "4")
-    assert row["SigLat"] in ("", "41.000000") and any("isn't in the calibration table" in x for x in w)
+    row, _ = place("reticles-strut", "1")                        # 10° down: further than mark 2
+    assert geo.haversine_m(41.0, -70.0, float(row["SigLat"]), float(row["SigLon"])) > got * 1.9
     with pytest.raises(ValueErrorMsg, match="choose one of"):
         place("reticles-nope", "1")
     # glare
@@ -2672,7 +2671,7 @@ def test_reticles_visibility_weather_lists_and_glare(tmp_path):
     rec.new_row("effort", {"Effort": "ON", "GlareStart": "13", "GlareEnd": "3", "GlareRef": "C"})
     issues = [i for i in qc.run_qc(rec)["issues"] if i["check"] == "Glare bearings"]
     msgs = " | ".join(i["message"] for i in issues)
-    assert "both Glare start and Glare end" in msgs and "Glare start 13 is outside 1–12" in msgs
+    assert "both Gstart and Gend" in msgs and "Gstart 13 is outside 1–12" in msgs
     assert not any(i["row_id"] == e["RowID"] for i in issues)
     head, merged = rec.merged_rows()
     assert {"GlareStart", "GlareEnd", "GlareRef"} <= set(head)
@@ -2718,3 +2717,31 @@ def test_data_settings_are_locked_during_a_survey(tmp_path):
     chk = _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))
     _run(app.templates_use(_Req({"token": chk["token"]})))
     assert not any(s["combo"] == "Alt+9" for s in cfg.shortcuts) and any(s["combo"] == "Mod+Shift+K" for s in cfg.shortcuts)
+
+
+def test_calves_na_reports_without_resights_and_undo_keys(tmp_path):
+    """0.38: Calves takes NA; reports read only the first sighting of each group (no resights);
+    undo / redo are Mod+Z / Mod+Shift+Z by default."""
+    from spyhop import qc, reports
+    from spyhop.config import DEFAULT_SHORTCUTS
+    rec = Recorder(tmp_path)
+    _sim_fix(rec)
+    rec.start_survey("N", meta={"platform_type": "Shipboard"})
+    g = rec.new_row("sightings", {"Species": "Fishing gear - reported", "Count": "1", "Calves": "na"})["row"]
+    assert next(r for r in rec.tables["sightings"].rows if r["RowID"] == g["RowID"])["Calves"] == "NA"
+    with pytest.raises(ValueErrorMsg, match=r"whole number \(or NA\)"):
+        rec.new_row("sightings", {"Species": "Fin whale", "Count": "1", "Calves": "some"})
+    with pytest.raises(ValueErrorMsg, match="whole number"):
+        rec.new_row("sightings", {"Species": "Fin whale", "Count": "NA"})              # only Calves takes NA
+    issues = [i for i in qc.run_qc(rec)["issues"] if i["row_id"] == g["RowID"] and i["column"] == "Calves"]
+    assert issues == []
+    # reports: resights are left out
+    a = rec.new_row("sightings", {"Species": "North Atlantic right whale", "Count": "2", "Calves": "1"})["row"]
+    rec.add_resight(a["RowID"])
+    rec.add_resight(a["RowID"])
+    saved, _ = reports.load(rec.cfg)
+    rw = reports.run(rec, {f["name"]: f for f in saved}["Right whales"])
+    assert rw["count"] == 1 and rw["total"] == 2 and rw["row_ids"] == [a["RowID"]] and rw["totals"][2] == "2"
+    assert {c["code"]: c["n"] for c in reports.counts(rec, "sightings")}["RIWH"] == 1
+    keys = {r[1]: r[0] for r in DEFAULT_SHORTCUTS[1]}
+    assert keys["undo"] == "Mod+Z" and keys["redo"] == "Mod+Shift+Z"
