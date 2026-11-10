@@ -110,13 +110,13 @@ The window has **three panes** under the status bar: the **map** (top left), **S
 - **Resize:** drag the bar between the map and Survey/Tools/Settings, or the bar above the data tables (or click a bar and use the arrow keys; double-click it for the starting size).
 - **Minimize** (▁ in a pane's header): the map or Survey/Tools/Settings shrinks to a thin strip at the side and the other takes the top (click the strip to bring it back); the data tables shrink to their tab bar (click a tab, or ▴, to bring them back; Ctrl/Cmd+Shift+M toggles it). With both top panes minimized, the data tables get almost the whole window.
 - **Maximize** (□): one pane fills the window; ❐ restores the three panes. Going to a tab in a hidden pane (e.g. with a shortcut) brings it back.
-- **Reset panes** (in the status bar) goes back to the starting sizes.
+- **Reset the pane sizes** (Settings → General → Tables) goes back to the starting sizes; double-clicking a bar puts just that one back.
 - The sizes and which panes are minimized are kept **on this computer** (like column widths), since they depend on the screen.
 
 - **Status bar (top):**
   - the time, with its zone (e.g. `14:31:05 EST`, or `UTC` — choose the clock in Settings), and the position, with a warning if there is **NO GPS**, the **GPS is LOST** (no fix for 10 s), or the position is **NOT MOVING** (the GPS stopped updating while under way)
   - speed, course and heading
-  - the **conditions-check countdown** (click it to change the interval), which flashes when overdue
+  - the **conditions-check countdown** (click it to open the Effort table; the interval is in Settings → General), which flashes when overdue
   - survey name
   - whether tracking is on (switch it on or off in Settings)
   - latest effort state
@@ -140,27 +140,29 @@ The window has **three panes** under the status bar: the **map** (top left), **S
     - ◎ range rings
     - ⤢ zoom to the whole survey (overlays are imported in Tools → Overlays). When Spyhop starts with a survey open (active or ended), the map starts zoomed to the whole survey, with vessel-following off (⌖ turns it back on).
   - **layers menu** (top right): base maps in two sections, **Online map tiles** and **Offline map tiles** (the files in the charts folder, and the built-in **Coastline (offline)**), and overlays you can switch on and off, also in two sections, **Offline overlays** (survey data, waypoints, routes, imported files, range rings…) and **Online overlays** (AIS, weather radar, map feeds), including a **graticule** (lat/lon grid; spacing adapts to the zoom, longitude labels run vertically so they don't collide)
-  - **labels:** sightings show the species code plus the FieldID if there is one, e.g. `RIWH Eg-3720` (or SightNo if there's no species yet); events show their event code and ID, e.g. `CTD C-07` (or E1, E2… if both are blank)
+  - **labels:** sightings show the species code plus the FieldID if there is one, e.g. `RIWH Eg-3720` (or SigNo if there's no species yet); events show their event code and ID, e.g. `CTD C-07` (or E1, E2… if both are blank)
   - **right-click menu:** add a sighting, event or waypoint at that point; measure from here; copy the position
   - **readout (bottom-left):** cursor position, bearing and distance from the vessel, and a nautical-mile scale
 - **Tabs:** **Sightings**, **Effort** and **Events** in the data pane; **Survey**, **Tools** and **Settings** in the pane beside the map. Each data tab has **Add row**, **Delete row**, **Undo** and **Redo**. With no survey open, Spyhop opens on **Survey** (see *Surveys* below).
   - **Survey:** start, end, close, open, export and clear surveys; survey details; the surveys in the data folder; the folders.
   - **Tools** has a second row of tabs:
     - **Waypoints:** the waypoints table.
-    - **Overlays:** the **map overlays**: import GeoJSON/GPX/KML files, **show or hide** each one (or all), zoom to one, or remove it; and add **past surveys** in the data folder as overlays (their trackline, solid on effort and dashed off effort, sightings and events; press **Update** after changing one). Hidden overlays stay hidden next time. Click an overlay's **color** to draw it in another color (↺ goes back to its own colors); the colors are kept with the map display, so they travel in templates too. *Imported overlays* in the map's layers menu switches them all on or off.
+    - **Overlays:** the **offline overlays**: import GeoJSON/GPX/KML files, **show or hide** each one (or all), zoom to one, or remove it; and add **past surveys** in the data folder as overlays (their trackline, solid on effort and dashed off effort, sightings and events; press **Update** after changing one). Hidden overlays stay hidden next time. Click an overlay's **color** to draw it in another color (↺ goes back to its own colors); the colors are kept with the map display, so they travel in templates too. *Imported overlays* in the map's layers menu switches them all on or off. Below them, the **online overlays** (AIS, weather radar, map feeds; see *Online overlays* below).
     - **Routes:** saved routes (show them on the map, open, delete) and the route being designed or activated (see *Planning routes* below).
     - **Instruments:** instrument readings (click one to plot it) and the raw NMEA log.
-    - **Quality Control**
+    - **Error check:** checks the survey for mistakes (see *Error check* below).
+    - **Resights:** swim speeds and dive times of animals with resights (see *Resights* below).
     - **Summary:** the survey summary (below).
     - **Reports:** pick rows of Sightings, Events or Effort and some of their columns, and save them as CSV, HTML or PDF; **Run Reports…** saves several at once (see *Reports* below).
   - **Settings** has a second row of tabs:
     - **General:** map display, text size (tables, interface and the status bar), tracking and reminders, bearings, distances and the clock, and sleep.
     - **Basemap:** downloading areas for offline use, and the charts folder (see *Maps offline* below).
-    - **Inputs:** the GPS / NMEA inputs, and the **online overlays** (AIS, weather radar, map feeds; see *Online overlays* below).
+    - **Inputs:** the GPS / NMEA inputs.
     - **Shortcuts:** every keyboard shortcut and what it does.
     - **Dropdowns:** the species, event, behavior and observer lists.
     - **Templates:** a team's settings in one file (see *Templates* below).
-    - **About:** the version, the tutorial, the changelog, the diagnostic logs (**Save diagnostics…**), and **Updates**: **Check for updates** looks on GitHub for a newer Spyhop and can install it (with a backup of the old version) and restart. Tick *Check when Spyhop starts* to be told automatically when there's internet. **Uninstall or reinstall:**
+    - **Guide:** the tutorial.
+    - **About:** the version, the changelog, the diagnostic logs (**Save diagnostics…**), and **Updates**: **Check for updates** looks on GitHub for a newer Spyhop and can install it (with a backup of the old version) and restart. Tick *Check when Spyhop starts* to be told automatically when there's internet. **Uninstall or reinstall:**
       - **Reinstall a clean copy…** replaces the program with the latest version from GitHub and restarts; your surveys and (unless you tick reset) your settings are kept. A git checkout is reset to its branch on GitHub instead.
       - **Uninstall Spyhop…** removes the program and its shortcuts. Your settings and your survey data are deleted only if you tick them; survey data also needs DELETE typed, and a data folder you chose yourself is never deleted.
       - Neither works during a survey. A git checkout can be uninstalled or reinstalled only when it has no uncommitted changes and nothing unpushed; the dialog says why if not.
@@ -196,30 +198,30 @@ The tables work like a spreadsheet:
   - **Inclinometer degrees:** the angle below the horizontal, in degrees (90° is straight down).
   - A position picked on the map is turned back into a reading (or into meters, for calibrated marks).
 - **The Alt column** (Sightings, Settings → General → Altitude column): *Automatic* shows it for aerial surveys and hides it for shipboard and stationary ones; it can also be always shown or hidden. It is always kept in the file.
-- **Trackline breaks** (Settings → General → Tracking): the trackline and the summary distances are broken where the platform would have moved faster than **30 kn** between two points (a GPS jump; use about 200 for aerial surveys), or where no position came in for **120 s**. 0 turns either off. Quality Control lists each jump or gap (one that jumps away and back counts as one), and its **Fix** button adds an **ERROR** row to the Effort table one second after the last good track point before the stretch (so in the merged export it comes after that point), plus a row at its end that puts the effort and conditions back. ERROR counts as off effort, and the stretch isn't drawn.
+- **Trackline breaks** (Settings → General → Tracking): the trackline and the summary distances are broken where the platform would have moved faster than **30 kn** between two points (a GPS jump; use about 200 for aerial surveys), or where no position came in for **120 s**. 0 turns either off. The Error check lists each jump or gap (one that jumps away and back counts as one), and its **Fix** button adds an **ERROR** row to the Effort table one second after the last good track point before the stretch (so in the merged export it comes after that point), plus a row at its end that puts the effort and conditions back. ERROR counts as off effort, and the stretch isn't drawn.
 - **Sightings:**
-  - New rows get the time, vessel position and an auto-incrementing **SightNo**. **FieldID** (after Images) is free text for your own ID (photo-ID, catalog number…). It becomes the sighting's map label. The cursor skips it on a new row so you go straight to Species.
+  - New rows get the time, vessel position and an auto-incrementing **SigNo** (the CSV column is SightNo). **FieldID** (after Images) is free text for your own ID (photo-ID, catalog number…). It becomes the sighting's map label. The cursor skips it on a new row so you go straight to Species.
   - Enter **Bearing** and **Distance**, and the animal's position (**SigLat/SigLon**) is calculated. With **Unit = reticle**, Dist is a reading instead (see *Reticle distances* below). Bearings can be negative and count back from 360 (−10 is stored as 350), which is handy for relative bearings to port. Without a bearing and distance, SigLat/SigLon are the vessel position.
   - The vessel heading is saved in the CSV (`VesHdg`, not shown in the table) so that bearings relative to the bow can be converted.
   - Each row stores its own bearing reference (**Ref**: M magnetic, T true, R relative to the bow, **C clock**) and distance **Unit**, so changing the defaults in Settings never changes old rows.
   - **Clock bearings (Ref C):** with Ref C, the Bearing cell offers 1 to 12 o'clock (or type the number). Each hour is 30° from the bow: 12 dead ahead, 3 the starboard beam, 6 astern, 9 the port beam. It's turned into a true bearing with the vessel heading recorded on the row. Choose C as the **Default bearing reference** in Settings → General to have it on every new sighting.
   - Magnetic bearings use the World Magnetic Model.
-- **Resights** (another look at animals already recorded: closing in for photos, a focal follow): select the sighting and press **Add resight** (Ctrl/Cmd+Shift+L), greyed out when no sighting is selected. The new row gets the time and position as usual, **Resight of** (right after Calves) holds the first sighting's SightNo, and the species, Num, Calves, NumConf, IDrel and FieldID are copied from the row you selected, ready to correct. A resight of a resight is linked to the first sighting. You can also type a SightNo in **Resight of** to link rows afterwards, or clear it to unlink one.
-  - Resights aren't counted again in the Summary (see *Summary*), and Quality Control doesn't list them as off-effort sightings or their observer as off watch.
-  - **Settings → General → Resights:** list the Sightings table in time order or with each sighting's **resights nested** under it (a resight's SightNo is indented either way); the resight markers' shape (or hidden), fill (outline, filled or faded), size and labels. The line through each sighting's resights is set with the other lines in Map display.
+- **Resights** (another sighting of animals already recorded: closing in for photos, a focal follow): select the sighting and press **Add resight** (Ctrl/Cmd+Shift+L), greyed out when no sighting is selected. The new row gets the time and position as usual, **ResNo** (right after Calves; the CSV column is ResightOf) holds the first sighting's SigNo, and the species, Num, Calves, NumConf, IDrel and FieldID are copied from the row you selected, ready to correct. A resight of a resight is linked to the first sighting. You can also type a SigNo in **ResNo** to link rows afterwards, or clear it to unlink one.
+  - Resights aren't counted again in the Summary (see *Summary*), and the Error check doesn't list them as off-effort sightings or their observer as off watch.
+  - **Settings → General → Resights:** list the Sightings table in time order or with each sighting's **resights nested** under it (a resight's SigNo is indented either way); the resight markers' shape (or hidden), fill (outline, filled or faded), size and labels. The line through each sighting's resights is set with the other lines in Map display.
   - **Add resight** keeps the column you had selected, on the new row.
-  - **Tools → Resights** lists each sighting that has resights: the number of looks, the time span, the distance along the looks, the **average swim speed** (that distance over the time; in knots and km/h), the **net speed** (first look to last in a straight line), and the **dive times**. A dive time runs from a look with a dive behavior (Fluke-up dive and Fluke-down dive to start with; tick others) to the next look with **First surfacing** (a behavior in the default list; choose another if yours is named differently). **Looks…** shows each interval and dive; **Save as CSV…** saves them all. Speeds use the animals' positions (SigLat/SigLon) worked out from bearings and distances, so distance errors show up as speed, most of all over short intervals.
+  - **Tools → Resights** lists each sighting that has resights: its **FieldID** (blank if none), the number of resights, the time span, the distance along the resights, the **average swim speed** (that distance over the time; in knots and km/h), the **net speed** (first sighting to last resight in a straight line), and the **dive times**. A dive time runs from a resight with a dive behavior (Fluke-up dive and Fluke-down dive to start with; tick others) to the next resight with **First surfacing** (a behavior in the default list; choose another if yours is named differently). **Resights…** shows each interval and dive; **Save as CSV…** saves them all. Speeds use the animals' positions (SigLat/SigLon) worked out from bearings and distances, so distance errors show up as speed, most of all over short intervals.
   - In the exports, the merged CSV has a **ResightOf** column: keep the rows where it's blank for first detections only (e.g. for encounter rates or detection distances).
 - **Waypoints** (Tools → Waypoints; called Marks before 0.5.0): each waypoint has its own **Shape** (Circle, Diamond, Square, Triangle, Star) and **Color** (pick from the list or type a `#hex` code).
-- **Events:** the default list includes **Gear Reported**, **Gear Recovered** and **Other** (they're added once to existing `event_types.csv` files too; delete them there if you don't want them). **ID** is free text for an instrument or sample ID (CTD cast number, tag ID, drifter ID…). Each event type has a short code in `event_types.csv` (the `event_code` column, e.g. `CTD`, `ACOD`). Type the code to pick the event, and the map label shows code + ID.
-- **Effort:** the Effort column is **Start**, an on-effort value, **OFF** or **End**. On effort is **ON** (plain on/off effort, for teams that prefer it) or a kind of on effort: **LINE** (line transect), **FOLLOW** (a focal follow of one whale or group) or **PHOTO** (a directed photo-ID approach). All four count as on effort on the track, in the Summary (which also gives the time spent in each) and in Quality Control. The Toggle effort shortcut (Ctrl/Cmd+Shift+F) goes OFF, then back on as the last kind you were on.
+- **Events:** the default list has CTD casts, drifters, drones, tags, biopsies, **Mooring deployed/recovered**, plankton tows and **Other**. Vessels, marine debris and fishing gear (reported, recovered) are recorded as Sightings: they're at the end of the default species list. **ID** is free text for an instrument or sample ID (CTD cast number, tag ID, drifter ID…). Each event type has a short code in `event_types.csv` (the `event_code` column, e.g. `CTD`, `MOOD`). Type the code to pick the event, and the map label shows code + ID.
+- **Effort:** the Effort column is **Start**, an on-effort value, **OFF** or **End**. On effort is **ON** (plain on/off effort, for teams that prefer it) or a kind of on effort: **LINE** (line transect), **FOLLOW** (a focal follow of one whale or group) or **PHOTO** (a directed photo-ID approach). All four count as on effort on the track, in the Summary (which also gives the time spent in each) and in the Error check. The Toggle effort shortcut (Ctrl/Cmd+Shift+F) goes OFF, then back on as the last kind you were on.
   - **Seg** (effort segment) is numbered by Spyhop: each Effort row whose status differs from the row before starts a new segment, and rows with the same status in a row share its number (e.g. LINE, LINE with new conditions, OFF, LINE → 2, 2, 3, 4 after the Start row's 1). It's renumbered after every change, can't be typed, and is carried onto sightings and events in the merged CSV. Hide it in **Settings → General → Tables**.
   - The first row is always **Start** (added when the survey starts; it can't be changed or deleted), and **End** can only be the last row.
   - A new row copies everything from the previous row except the notes. Right after the Start row, Effort is left blank for you to choose ON or OFF.
   - Start and End count as off effort in the summary and on the track.
   - In the track CSV, points are labeled with the effort status (LINE, FOLLOW, PHOTO or ON when on effort).
 - **Insert row…** (every data tab): select a row, then choose whether the new row goes **after** or **before** it, and how its time and position are filled in: the **average** of the rows either side of it, **copied** from the row before or the row after, or **at a time you type** (e.g. `14:05`), when the row goes in time order and its position is the vessel's at that time from the trackline (in proportion between the track points either side). Its Notes say how (e.g. *Inserted: time and position averaged from the rows before and after (10:00:00 and 10:20:00).*). Other columns are filled in as for a new row. You can insert rows into an ended survey to fill a gap; nothing can go before the Start row or after the End row.
-- **Columns:** drag a column's header to move it, and drag the right edge of a header to change its width (double-click the edge for the default width). Each table's **Columns…** button lists the columns in order with ↑/↓ buttons and **Reset order and widths**. The order and widths are kept on this computer only (not in templates); **Settings → General → Tables** resets them all.
+- **Columns:** drag a column's header to move it, and drag the right edge of a header to change its width (double-click the edge for the default width). The order and widths are kept on this computer only (not in templates); **Settings → General → Tables** resets them all.
 - **Sightings row colors** (Settings → General → Tables): **None**, **Alternating** rows, **Highlight resights** (the default: resights tinted) or **Group resights** (each sighting that has resights, and its resights, in a color of their own).
 - Every edit is saved to disk immediately. Undo/redo is unlimited per tab.
 
@@ -227,7 +229,7 @@ The tables work like a spreadsheet:
 
 | Keys (Cmd on Mac) | Action |
 |---|---|
-| Ctrl+Enter | Add a row to the table you're in (also works while typing in a cell; that edit is saved first) |
+| Ctrl+Enter | Add a row to the data table in view (Sightings, Effort or Events), even from Survey, Tools or Settings; never a waypoint (also works while typing in a cell; that edit is saved first) |
 | Ctrl+Shift+S / E / V / K | Add sighting / conditions row / event / waypoint |
 | Ctrl+Shift+F | Add an effort row that switches effort ON↔OFF |
 | Ctrl+Shift+R, Ctrl+Shift+H | Add a sighting pre-filled with North Atlantic right whale / Humpback whale |
@@ -251,7 +253,7 @@ The **Species**, **Events**, **Behaviors** and **Observers** tabs edit the drop-
 - Each entry has a name (initials, for observers), a code, and for species and events a color, typed as a name like `red` or picked. Behaviors also have a **definition**, shown at the bottom of the Behaviors checklist as each one is highlighted.
 - **↑ ↓** set the order of the drop-down, **✕** removes an entry, **Add entry** and **Sort A–Z** do what they say, and **Save** keeps the changes.
 - Names and codes must be unique. Spyhop shows what's wrong and saves nothing until it's fixed.
-- Renaming or removing an entry doesn't change rows already recorded; Quality Control flags values that are no longer in the list.
+- Renaming or removing an entry doesn't change rows already recorded; the Error check flags values that are no longer in the list.
 - **While a survey is under way the lists are grayed out and can't be changed**, so they stay the same for the whole survey. End the survey to edit them. (Using a template during a survey is still possible, after a warning.)
 - For many changes at once, the files (`species.csv` and so on) can still be edited in a spreadsheet and reloaded.
 
@@ -272,7 +274,7 @@ A report is a chosen part of one table: some rows, some columns. It updates as y
 - Each saved report is also offered in **Export Data…**, as a CSV.
 - **PDFs** are printed by Google Chrome or Microsoft Edge, which Spyhop finds by itself. Set `SPYHOP_CHROME` to the path of another Chromium-based browser if needed.
 
-## Online overlays (Settings → Inputs)
+## Online overlays (Tools → Overlays)
 
 Live data from the internet, drawn over the map. Each one is also in the map's layers menu (marked *online* or *feed*), and the ones you leave on are on next time.
 
@@ -314,7 +316,7 @@ The online layers could not be tested from the machine this was built on, which 
 
 ## Surveys
 
-Surveys are managed in **Survey**; the quality control check is in **Tools → Quality Control**.
+Surveys are managed in **Survey**; the error check is in **Tools → Error check**.
 
 - **Start New Survey…** asks for a name and the survey details, then adds the **Start** row to the Effort tab. The trackline starts recording.
   - The details are **platform name** (vessel, aircraft or station), **platform type**, **platform altitude (ft)**, **organization**, **chief scientist** and **chief scientist email**. They're filled in from your last survey and can be changed any time in Survey.
@@ -323,7 +325,7 @@ Surveys are managed in **Survey**; the quality control check is in **Tools → Q
     - **Aerial:** an aircraft, turned to the heading. The Sightings **Alt** column is shown.
     - **Stationary:** a tower. The platform doesn't move, so only the Start and End positions are recorded, with no trackline in between, and no heading vector is drawn. The status bar says *Stationary (no trackline)*.
     - **Other:** a dot. The trackline is recorded.
-  - **Platform altitude (ft)** is the observers' average eye height above the water on a ship or station, or the usual survey altitude for an aircraft. It fills in each new sighting's Alt and turns reticle readings into distances (below). Quality Control doesn't require it unless a reticle sighting needs it.
+  - **Platform altitude (ft)** is the observers' average eye height above the water on a ship or station, or the usual survey altitude for an aircraft. It fills in each new sighting's Alt and turns reticle readings into distances (below). The Error check doesn't require it unless a reticle sighting needs it.
   - **Survey notes** (in Survey, below the details): general notes or a summary of the survey, as many lines as you like. They're shown in the Summary and its HTML and PDF files, and aren't carried over to the next survey.
   - They're saved with the survey as `<survey>_metadata.csv` and included in exports and the summary.
   - The name is used exactly as typed (only characters that file systems forbid, such as `/ : * ?`, become `_`), so use your team's own convention, e.g. `NEAQ_CCB_2026-11-04_A`. A name that's already in use is refused rather than changed.
@@ -334,12 +336,12 @@ Surveys are managed in **Survey**; the quality control check is in **Tools → Q
 - **Surveys in this folder** lists every survey with its status (Active/Ended), start and end times, and number of sightings. **Refresh** reads the folder again, e.g. after copying surveys into it.
   - Press **Open** to open one. If it's still active, you're asked whether to **Continue** it (tracking resumes) or just open it to look at or correct.
   - Surveys made before Start/End existed get a Start row added at the top, timed at their earliest record, with a notice.
-- **Quality control check** (Tools → Quality Control): press **Run quality control check** before you finish a survey (or any time). It lists problems as **errors** (must fix), **warnings** (probably wrong) and **notes** (worth a look), and **Show** takes you to the row and column. It doesn't change anything, except when you press a **Fix** button. **Save report…** downloads the list as a CSV. It checks:
+- **Error check** (Tools → Error check): press **Run error check** before you finish a survey (or any time). It lists problems as **errors** (must fix), **warnings** (probably wrong) and **notes** (worth a look), and **Show** takes you to the row and column in the data table below (the row flashes), so the list and the data can be seen together. It doesn't change anything, except when you press a **Fix** button. **Save report…** downloads the list as a CSV. It checks:
   - **Survey details:** every field filled in, and a valid email.
-  - **Required fields:** Sightings — everything except Behaviors, Bearing, Ref, Dist, Unit, Alt, Resight of, FieldID and Notes. Effort — everything except Notes (Start and End rows need only the time and position). Events — everything except ID and Notes.
-  - **Valid values:** choices are in their lists; numbers, positions and times can be read; no time is in the future; nothing is before Start or after End; rows are in time order; no SightNo or EventNo is used twice; the survey starts with Start and has an End.
+  - **Required fields:** Sightings — everything except Behaviors, Bearing, Ref, Dist, Unit, Alt, ResNo, FieldID and Notes. Effort — everything except Notes (Start and End rows need only the time and position). Events — everything except ID and Notes.
+  - **Valid values:** choices are in their lists; numbers, positions and times can be read; no time is in the future; nothing is before Start or after End; rows are in time order; no SigNo or EventNo is used twice; the survey starts with Start and has an End.
   - **Plausible values:** Num a whole number of at least 1 (flagged over 500); Calves not more than Num; Bearing 0–360° (negative bearings are stored as their 0–360 equivalent) and Dist not negative, given together and with their Ref and Unit; relative bearings have a heading; animals within 10 nm of the vessel and no further than the visibility on the Effort row in force; vessel positions within 0.5 nm of the trackline at that time; positions not on land (by the bundled coastline, ignoring the first 0.5 km); no track jumps or gaps beyond the trackline-break settings (each has a **Fix** button that marks it with an ERROR Effort row).
-  - **Resights:** each Resight of names an existing sighting (one deleted or renumbered is flagged, and the row is counted as a sighting of its own), timed before the resight and of the same species.
+  - **Resights:** each ResNo names an existing sighting (one deleted or renumbered is flagged, and the row is counted as a sighting of its own), timed before the resight and of the same species. A **warning** when the animals would have swum faster than **30 kn** from one sighting of them to the next (positions from SigLat/SigLon, else the platform's).
   - **Protocol:** a new Effort row at least every 1.5 × the reminder interval while on effort; nobody in two watch positions at once; the sighting's observer is on watch; a sighting entered twice (same time, species, number and position) or a duplicated event (same type and ID within 30 s). A FieldID can be reused for different species, and two sightings of one species close together are fine. Notes list sightings off effort, effort in sea state above 5 or visibility under 0.5 nm, and observers on watch over 2 hours without a break.
   - The thresholds are at the top of `spyhop/qc.py`.
 - **Keeping the computer awake** (Settings → General → Sleep): a computer that goes to sleep stops recording the trackline and NMEA data, so by default Spyhop stops it sleeping **during a survey** (from Start until End, or until the survey is closed). Choose **Always** to keep it awake whenever Spyhop is open, or **Never** to leave sleep to the computer's own settings. Tick **Keep the screen on too** to stop the screen turning off as well. Closing a laptop's lid still puts most laptops to sleep, and a laptop on battery runs down faster. When Spyhop quits, or crashes, the computer's own sleep settings apply again. (It uses `caffeinate` on a Mac, a Windows power request on Windows, and `systemd-inhibit` on Linux.)
@@ -375,7 +377,7 @@ Spyhop/                                   (Spyhop's own folder)
                       the open survey) — never in a template
   charts/    *.mbtiles      overlays/  imported GeoJSON/GPX/KML
   routes/    saved routes (Tools → Routes), one GPX file each
-  feeds/     the last copy of each map feed (Settings → Inputs)
+  feeds/     the last copy of each map feed (Tools → Overlays)
   logs/      diagnostic logs (spyhop.log, crash.log, diagnostics zips)
   data/                                   (default survey data folder — or the one you chose)
     <survey name>_sightings.csv   _effort.csv   _events.csv   _track.csv   _metadata.csv   _instruments.csv
@@ -428,7 +430,7 @@ New or different:
 - A Waypoints tab (in Tools), with map overlays.
 - GeoJSON, GPX and merged-CSV export, chosen per export.
 - An Instruments tab (in Tools) with live instrument readings and raw NMEA logging.
-- A quality control check.
+- An error check.
 - Several NMEA inputs at once, with priority and a raw monitor.
 - The keyboard opens dropdowns on Windows too. This was a known limitation in the plugin.
 - Per-row bearing reference and distance unit.

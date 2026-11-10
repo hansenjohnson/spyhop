@@ -6,6 +6,20 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.34.0 — 2026-11-10
+
+- **Markers are colored by species (and event type) again.** Since 0.25 a second `markerColor` in map.js (for overlay colors) had replaced the one for sightings and events, so every marker was the same color.
+- **Error check** is the new name of Quality Control (the tab and its text). It has a new check: a **warning** when animals would have swum faster than **30 kn** from one sighting of them to the next resight (from SigLat/SigLon, else the platform's position).
+- **Error check → Show** scrolls the table itself, so the row no longer ends up hidden under the table's header (or a frozen column), brings back an optional column's row in a visible column, and flashes the row so it's easy to find.
+- **Tools → Resights** says "resights", not "looks", and shows the **FieldID** (blank if none) in the table, the details and the CSV. Its Resights column now counts the resights (not counting the first sighting).
+- **Online overlays** (AIS, weather radar, map feeds) moved from Settings → Inputs to **Tools → Overlays**, below the offline overlays.
+- **Settings → Guide** (left of About) holds the tutorial; About keeps the version, changelog, diagnostics and updates.
+- **Add a row to the table you're in** (Ctrl/Cmd+Enter) adds to the data table in view (Sightings, Effort or Events) even when Survey, Tools or Settings has the focus, and never to Waypoints (Ctrl/Cmd+Shift+K still adds a waypoint).
+- Clicking the **conditions check** countdown opens the Effort table (the interval is in Settings → General).
+- Column headers **SigNo** (was SightNo) and **ResNo** (was Resight of). The CSV column names are unchanged.
+- **Removed:** the Columns… buttons (drag the headers instead), the status bar's **Reset panes** (now Settings → General → Tables → Reset the pane sizes, or double-click a bar) and its **Live** connection status.
+- **Default lists:** *Vessel sighted*, *Marine debris*, *Fishing gear - reported* and *Fishing gear - recovered* are now species (Sightings) rather than event types; *Photo-ID session start/end*, *Fishing gear sighted* and *Acoustic recorder deployed/recovered* are gone; *Mooring deployed* and *Mooring recovered* are new event types. The starting Gear report now reads Sightings. Lists already on a computer don't change: edit them in Settings → Dropdowns.
+
 ## 0.33.0 — 2026-11-09
 
 - **Three panes** replace the split and overlay views: the **map** and **Survey/Tools/Settings** share the top, and the **data tables** (Sightings, Effort, Events) span the full width below, so a data table and a Tools or Settings page show at the same time. Drag the bars between them (or use the arrow keys on a focused bar) to resize; ▁ minimizes a pane to a strip (the data pane to its tab bar; Ctrl/Cmd+Shift+M), □ fills the window with it and ❐ restores; **Reset panes** in the status bar goes back to the start. The map keeps its own zoom controls.

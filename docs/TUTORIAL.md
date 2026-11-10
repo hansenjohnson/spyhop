@@ -1,6 +1,6 @@
 # Spyhop tutorial
 
-Spyhop records a vessel-based whale survey: sightings, effort and conditions, events, the trackline and instrument data, all against a live chart. This tour covers the basics. It's also in Spyhop itself, under **Settings → About**.
+Spyhop records a vessel-based whale survey: sightings, effort and conditions, events, the trackline and instrument data, all against a live chart. This tour covers the basics. It's also in Spyhop itself, under **Settings → Guide**.
 
 ## Find your way around
 
@@ -11,7 +11,7 @@ Spyhop records a vessel-based whale survey: sightings, effort and conditions, ev
 - **Tabs** (right):
   - **Sightings**, **Effort** and **Events** are the data tables.
   - **Survey** starts, ends, opens and exports surveys.
-  - **Tools** holds Waypoints, Overlays, Routes, Instruments, Quality Control, Summary and Reports.
+  - **Tools** holds Waypoints, Overlays, Routes, Instruments, Error check, Summary and Reports.
   - **Settings** holds General, Basemap, Inputs, Shortcuts, Dropdowns, Templates and About.
 - **Status bar** (top): time, position, speed, survey name, tracking and effort state.
   - If the GPS fix is lost, it says **NO GPS** or **GPS LOST**.
@@ -40,7 +40,7 @@ You don't need a GPS to try Spyhop. The simulator is a pretend vessel that steam
 
 1. In the Survey tab, press **Start New Survey…** and call it something like *Practice*.
 2. Record effort, sightings and events as described in *Record data* below: the simulator's positions, times and readings fill in the rows like a real GPS.
-3. When you're done, **End Survey**, then try **Quality Control**, the **Summary** and **Export Data…** on it.
+3. When you're done, **End Survey**, then try **Error check**, the **Summary** and **Export Data…** on it.
 4. To get rid of it, open it and press **Delete Survey Data…**.
 
 **Switch it off**
@@ -57,7 +57,7 @@ Behind the scenes they are plain CSV files in `templates/current` in Spyhop's fo
 
 - **species.csv:** species names, map colors and codes (e.g. `RIWH`). The code labels sightings on the map, and Reports use it.
 - **observers.csv:** observer codes and full names. `NA` (None) is a placeholder for an empty watch position, and can fill several positions at once.
-- **event_types.csv:** event names, colors and codes (e.g. `GRPT` for Gear Reported).
+- **event_types.csv:** event names, colors and codes (e.g. `CTD` for CTD cast).
 - **behaviors.csv:** behavior names, codes and definitions (shown in the Behaviors checklist).
 - **spyhop-config.json:** the map display, saved reports and shared settings (set in Settings and Tools → Reports; best left to Spyhop).
 - **shortcuts.csv:** keyboard shortcuts.
@@ -111,7 +111,7 @@ In **Survey**, press **End Survey**. This adds the **End** row and switches the 
 
 ## Check for errors
 
-Open **Tools → Quality Control** and press **Run quality control check**. It lists:
+Open **Tools → Error check** and press **Run error check**. It lists:
 
 - **errors:** must fix, e.g. required fields left blank, values that aren't in the lists, impossible numbers
 - **warnings:** probably wrong, e.g. a sighting beyond the visibility, positions on land, GPS jumps

@@ -31,7 +31,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
   - keeps the computer from going to sleep during a survey (optional)
   - survey details (platform, organization, chief scientist)
   - a clock in local time, UTC, any offset, or the zone at the vessel's position
-- **Quality control:**
+- **Error check:**
   - required fields, list values, plausible numbers and bearings
   - positions on land, sightings beyond the visibility, GPS jumps and gaps (with a one-click Fix), observer rules, and more
 - **Summary and reports:**
@@ -105,9 +105,9 @@ Download and unzip the [latest release](https://github.com/hansenjohnson/spyhop/
 4. **Start:** in **Survey**, press **Start New Survey…**. Enter a name (in your team's own naming convention) and the survey details. Spyhop adds the *Start* row to Effort and starts the trackline.
 5. **Go on effort:** Ctrl+Shift+F (⌘⇧F on a Mac) adds an Effort row that switches effort ON or OFF. Fill in the conditions and the observers.
 6. **Record sightings and events:** press **Add row** in the Sightings or Events tab, use a shortcut (Ctrl/⌘+Shift+S for a sighting, Ctrl/⌘+Shift+V for an event), or right-click the map.
-7. **Finish:** **Tools → Quality Control → Run quality control check**, then **Survey → End Survey…** and **Export Data…**.
+7. **Finish:** **Tools → Error check → Run error check**, then **Survey → End Survey…** and **Export Data…**.
 
-The **tutorial** in **Settings → About** (also [docs/TUTORIAL.md](docs/TUTORIAL.md)) walks through all of this, including the simulator, config files, error checking and reports.
+The **tutorial** in **Settings → Guide** (also [docs/TUTORIAL.md](docs/TUTORIAL.md)) walks through all of this, including the simulator, config files, error checking and reports.
 
 ## Documentation
 

@@ -32,13 +32,13 @@ spyhop/
   layout.py       the one-time move from the 0.27 folder layout (remove before 1.0)
   nmea.py         NMEA 0183 parser, vessel state, instrument readings, raw log
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
-  qc.py           the quality control check (thresholds in LIMITS)
+  qc.py           the error check (thresholds in LIMITS)
   resights.py     resights: ResightOf → the first sighting, groups (the same rules as web/js/resights.js)
   reticle.py      Unit = reticle: angle below the horizon/horizontal → distance (Lerczak & Hobbs 1998), presets, calibrated marks
   reports.py      Tools → Reports: report specs → rows and columns, CSV/HTML pages; saved reports in the current template (Config.reports)
   report_defs/    the starting saved reports of a new current template
   routes.py       the routes folder (Tools → Routes): list, read, save, delete GPX files
-  feeds.py        map feeds (Settings → Inputs): ArcGIS / GeoJSON fetch, presets, the saved copy in <Spyhop>/feeds
+  feeds.py        map feeds (Tools → Overlays): ArcGIS / GeoJSON fetch, presets, the saved copy in <Spyhop>/feeds
   templates.py    templates (Settings → Templates): spyhop-config.json + the list CSVs (+ waypoints, routes, overlays); read, compare, use, save (templates/saved), fetch from the web, backups (templates/backups), current_status
   browser.py      finds Chrome/Edge for the app window and for PDF printing (headless --print-to-pdf)
   tzguess.py      the clock's time zone from the platform's position (tzfpy)
@@ -61,7 +61,7 @@ spyhop/
     js/summary_html.js   the self-contained Summary page (HTML export)
     js/util.js           formatting, geodesy and small helpers
     vendor/              Leaflet, the Natural Earth coastline
-docs/            TUTORIAL.md (also shown in Settings → About), USER_GUIDE.md, this file
+docs/            TUTORIAL.md (shown in Settings → Guide), USER_GUIDE.md, this file
 tests/test_core.py   pytest
 CHANGELOG.md     changes in each version (shown in Settings → About)
 ```

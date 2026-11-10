@@ -25,6 +25,7 @@ LIMITS = {
     "max_group": 500,               # a larger Num is flagged
     "pos_vs_track_nm": 0.5,         # a row's vessel position this far from the trackline
     "max_speed_kn": 30.0,           # faster than this between track points is a GPS jump
+    "max_resight_kn": 30.0,         # animals swimming faster than this between a sighting and its next resight
     "track_gap_min": 10.0,          # no track points for this long while recording
     "conditions_gap_factor": 1.5,   # on effort with no Effort row for this × the reminder interval
     "max_watch_h": 2.0,             # an observer on watch this long without a break
@@ -307,7 +308,7 @@ def run_qc(rec) -> dict:
         for i, r in enumerate(rows):
             n = (r.get(key) or "").strip()
             if n and n in seen:
-                add("error", "Unique numbers", f"{key} {n} is used twice (also on row {seen[n] + 1}).", tab, r, key, lab(tab, r, i))
+                add("error", "Unique numbers", f"{schema.column(tab, key)['label']} {n} is used twice (also on row {seen[n] + 1}).", tab, r, key, lab(tab, r, i))
             seen.setdefault(n, i)
         nums = sorted(int(k) for k in seen if k.isdigit())
         missing = sorted(set(range(1, nums[-1] + 1)) - set(nums)) if nums else []
@@ -507,7 +508,7 @@ def run_qc(rec) -> dict:
         orig = resights.original_of(r, S, rs_index)
         resight = orig is not r
         if r.get("ResightOf") and not resight:
-            add("warning", "Resights linked", f"Resight of {r['ResightOf']}: there is no such sighting (deleted or renumbered?), "
+            add("warning", "Resights linked", f"ResNo {r['ResightOf']}: there is no such sighting (deleted or renumbered?), "
                 "so this row is counted as a sighting of its own.", "sightings", r, "ResightOf", name)
         if resight:
             t_r, t_o = _t(r.get("DateTime")), _t(orig.get("DateTime"))
@@ -601,6 +602,25 @@ def run_qc(rec) -> dict:
             add("info", "Species identification", "An unidentified species with IDrel Definite — is that what you meant?",
                 "sightings", r, "IDrel", name)
 
+    # ---- resights: the animals' swim speed from one sighting of them to the next (as Tools → Resights)
+    def animal_pos(r):
+        return _pos(r, "SigLat", "SigLon") or _pos(r, "Lat", "Lon")
+    for g in resights.groups(S):
+        if len(g) < 2:
+            continue
+        timed = sorted(((t, r) for r in g if (t := _t(r.get("DateTime")))), key=lambda x: x[0])
+        for (ta, a), (tb, b) in zip(timed, timed[1:]):
+            pa, pb, dt = animal_pos(a), animal_pos(b), (tb - ta).total_seconds()
+            if not (pa and pb) or dt <= 0:
+                continue
+            kn = geo.haversine_m(pa[0], pa[1], pb[0], pb[1]) / M_PER_NM / (dt / 3600)
+            if kn > L["max_resight_kn"]:
+                i = S.index(b)
+                add("warning", "Resight swim speeds",
+                    f"The animals would have swum {kn:.0f} kn from sighting {a.get('SightNo')} to this resight "
+                    f"({_fmt_dur(dt) if dt >= 60 else f'{dt:.0f} s'} apart) — check the times, bearings and distances.",
+                    "sightings", b, "SigLat" if _pos(b, "SigLat", "SigLon") else "Lat", lab("sightings", b, i))
+
     # ---- events
     prev = []
     for i, r in enumerate(V):
@@ -636,7 +656,7 @@ CHECKS = [
     ("Valid numbers, positions and times", "Numbers are numbers, positions are on the globe, times can be read."),
     ("Effort starts with Start / Survey ended", "The first Effort row is Start; the survey has an End row."),
     ("Times within the survey", "Nothing is timed before Start, after End, or in the future; rows are in time order."),
-    ("Unique numbers", "No SightNo or EventNo is used twice; gaps in the numbering are noted."),
+    ("Unique numbers", "No SigNo or EventNo is used twice; gaps in the numbering are noted."),
     ("Plausible numbers", f"Num is a whole number ≥ 1 (flagged above {LIMITS['max_group']}); Calves ≤ Num."),
     ("Plausible bearings and distances", f"Bearing 0–360°, Dist not negative, both or neither given, Ref/Unit set, "
      f"relative bearings have a heading, animals within {LIMITS['max_sighting_nm']:g} nm of the vessel."),
@@ -650,6 +670,7 @@ CHECKS = [
     ("Survey conditions", f"On effort in sea state above {LIMITS['max_seastate_on']} or visibility under 0.5 nm (information only)."),
     ("Observer rest", f"Observers on watch over {LIMITS['max_watch_h']:g} h without a break (information only)."),
     ("Distance within visibility", "A sighting's distance (Dist and Unit, or the vessel-to-animal distance) isn't beyond the visibility on the Effort row in force at the time."),
-    ("Resights linked", "Each Resight of names an existing sighting, timed before the resight and of the same species."),
+    ("Resights linked", "Each ResNo names an existing sighting, timed before the resight and of the same species."),
+    ("Resight swim speeds", f"The animals don’t swim faster than {LIMITS['max_resight_kn']:g} kn from one sighting of them to the next (warning; positions from SigLat/SigLon, else the platform’s)."),
     ("No duplicate records", "A sighting with the same time, species, number and position as another (entered twice), or the same event and ID within 30 s."),
 ]

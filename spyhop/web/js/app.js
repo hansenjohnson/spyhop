@@ -180,9 +180,9 @@ class App {
   topTabs() { return ['sightings', 'effort', 'events']; }
   tabGroups() {
     return [
-      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Routes'], ['nmea', 'Instruments'], ['qc', 'Quality Control'], ['summary', 'Summary'], ['resights', 'Resights'], ['reports', 'Reports']]],
+      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Routes'], ['nmea', 'Instruments'], ['qc', 'Error check'], ['summary', 'Summary'], ['resights', 'Resights'], ['reports', 'Reports']]],
       ['config', 'Settings', [['settings', 'General'], ['basemap', 'Basemap'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'],
-        ['templates', 'Templates'], ['about', 'About']]]];
+        ['templates', 'Templates'], ['guide', 'Guide'], ['about', 'About']]]];
   }
   groupTabs() { return this.tabGroups().flatMap(([g, , tabs]) => tabs.map(([k, l]) => [k, l, g])); }
   groupOf(tab) { return this.groupTabs().find(([k]) => k === tab)?.[2] || null; }
@@ -240,16 +240,14 @@ class App {
       f('sf-clock', 'Survey clock (local or UTC — set in Settings)'),
       f('sf-pos', 'Vessel position from GPS', el('span', { id: 'pos-text' }), el('span', { id: 'pos-flag' })),
       f('sf-nav', 'Speed / course / heading'),
-      f('sf-remind', 'Time until the next Effort/conditions check — click to change the interval'),
+      f('sf-remind', 'Time until the next Effort/conditions check — click to open the Effort table (the interval is in Settings → General)'),
       f('sf-survey', 'Current survey'),
       f('sf-track', 'Internal trackline (switch on/off in Settings)'),
       f('sf-effort', 'Latest effort state'),
       el('div', { class: 'sf grow' }),
-      el('button', { id: 'btn-reset-panes', class: 'sf', title: 'Put the map, Survey/Tools/Settings and the data tables back to their starting sizes', onclick: () => this.resetPanes() }, 'Reset panes'),
-      f('sf-version', 'Spyhop version — click for details (Settings → About)', `Spyhop ${this.S.about?.spyhop || ''}`),
-      f('sf-conn', 'Connection to Spyhop'));
+      f('sf-version', 'Spyhop version — click for details (Settings → About)', `Spyhop ${this.S.about?.spyhop || ''}`));
     $('#sf-version').addEventListener('click', () => this.showTab('about'));
-    $('#sf-remind').addEventListener('click', () => this.setReminder());
+    $('#sf-remind').addEventListener('click', () => this.showTab('effort'));
     $('#sf-survey').addEventListener('click', () => this.showTab('survey'));
   }
 
@@ -291,11 +289,10 @@ class App {
       el('button', { id: `insert-${tab}`, onclick: () => this.insertRow(tab), title: 'Insert a row before or after the selected row, with its time and position averaged from the rows either side or copied from one of them' }, 'Insert row…'),
       el('button', { onclick: () => this.deleteRow(tab), title: 'Delete the selected row' }, 'Delete row'),
       el('button', { id: `undo-${tab}`, onclick: () => this.undo(tab), title: `Undo${sc('undo')}` }, '↶ Undo'),
-      el('button', { id: `redo-${tab}`, onclick: () => this.redo(tab), title: `Redo${sc('redo')}` }, '↷ Redo'),
-      el('button', { id: `columns-${tab}`, class: 'tb-right', onclick: () => this.grids[tab]?.columnsDialog(), title: 'Change the order and widths of the columns (or drag the headers)' }, 'Columns…'));
+      el('button', { id: `redo-${tab}`, onclick: () => this.redo(tab), title: `Redo${sc('redo')}` }, '↷ Redo'));
     if (tab === 'sightings') {
       bar.insertBefore(el('button', { id: 'btn-add-resight', disabled: true, onclick: () => this.addResight(),
-        title: `Add another look at the animals of the selected sighting: a new row linked to their first sighting, with the species, numbers and FieldID filled in${sc('add-resight')}` },
+        title: `Add a resight of the animals of the selected sighting: a new row linked to their first sighting, with the species, numbers and FieldID filled in${sc('add-resight')}` },
         'Add resight'), bar.children[1]);
     }
     return bar;
@@ -463,7 +460,7 @@ class App {
   renderPane(tab) {
     const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, dropdowns: this.renderDropdowns, nmea: this.renderNmea,
       inputs: this.renderInputs, templates: this.renderTemplates, overlays: this.renderOverlays, basemap: this.renderBasemap,
-      qc: this.renderQc, summary: this.renderSummaryPane, resights: () => this.resightTool.render(), reports: () => this.reportsTool.render(), about: this.renderAbout,
+      qc: this.renderQc, summary: this.renderSummaryPane, resights: () => this.resightTool.render(), reports: () => this.reportsTool.render(), guide: this.renderGuide, about: this.renderAbout,
       route: () => this.planner.render() }[tab];
     if (f) f.call(this);
   }
@@ -607,11 +604,22 @@ class App {
     else box.replaceChildren();
   }
 
-  selectRow(tab, id, key) {
+  // select a row (and a column) in a data table, bringing its pane into view; flash: make it obvious (Error check → Show)
+  selectRow(tab, id, key, { flash = false } = {}) {
     this.showTab(tab);
     const g = this.grids[tab];
-    const col = key && this.S.schema.tabs[tab]?.columns.find((c) => c.key === key && !c.hidden) ? key : g?.sel?.key;
-    if (g) g.select(id, col);
+    if (!g) return;
+    if (!g.wrap.querySelector(`tr[data-id="${CSS.escape(id)}"]`)) g.render();       // drawn while hidden: draw it now
+    // the column if it's shown (an optional column may be hidden), else the one already selected, else the first
+    const shown = (k) => k && g.cols.some((c) => c.key === k);
+    const col = shown(key) ? key : shown(g.sel?.key) ? g.sel.key : g.cols[0]?.key;
+    g.select(id, col, { center: flash });
+    if (flash) {
+      const tr = g.wrap.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
+      tr?.classList.remove('flash'); void tr?.offsetWidth; tr?.classList.add('flash');
+      // a redraw just after (a live update) mustn't lose the selection or the scroll
+      requestAnimationFrame(() => { if (g.sel?.id === id && !g.td(id, col)?.classList.contains('sel')) g.select(id, col, { center: true, focus: false }); });
+    }
   }
 
   // ---------------------------------------------------------------- live updates
@@ -752,17 +760,6 @@ class App {
     tr.classList.toggle('on', !!st.tracking_enabled);
     const eff = last?.Effort || '—';
     $('#sf-effort').replaceChildren('Effort ', el('span', { class: `pill ${isOn(eff) ? 'on' : 'off'}` }, eff));
-    const c = $('#sf-conn');
-    c.textContent = this.wsOk ? '● Live' : '○ Reconnecting…';
-    c.classList.toggle('alert', !this.wsOk);
-  }
-
-  async setReminder() {
-    const v = await promptBox('Effort reminder', 'Remind me to log conditions every … minutes', String(this.S.config.settings.effort_reminder_min));
-    if (v === null) return;
-    const n = +v;
-    if (!(n > 0 && n <= 600)) { toast('Enter a number of minutes between 1 and 600', 'warn'); return; }
-    this.saveSettings({ effort_reminder_min: n });
   }
 
   // Re-draw tables, popups and summary when the lat/lon format or clock (local/UTC) changes.
@@ -1151,7 +1148,7 @@ class App {
     const pane = $('#pane-qc');
     if (!pane) return;
     const sv = this.S.survey;
-    pane.replaceChildren(sv ? this.qcSection(sv) : el('section', { class: 'settings-sec' }, el('h3', {}, 'Quality control check'),
+    pane.replaceChildren(sv ? this.qcSection(sv) : el('section', { class: 'settings-sec' }, el('h3', {}, 'Error check'),
       el('p', {}, 'Open a survey (in Survey) to check it.')));
   }
 
@@ -1161,7 +1158,7 @@ class App {
     const f = this.qcFilter || (this.qcFilter = { error: true, warning: true, info: true });
     const LEVEL = { error: 'Error', warning: 'Warning', info: 'Note' };
     const kids = [el('p', { class: 'hint' }, 'Checks this survey for missing survey details, blank required fields and values that look wrong. It doesn’t change anything — click Show to go to a row and fix it there.'),
-      el('div', { class: 'btnrow' }, el('button', { class: 'primary', onclick: () => this.runQc() }, rep ? 'Run the check again' : 'Run quality control check'),
+      el('div', { class: 'btnrow' }, el('button', { class: 'primary', onclick: () => this.runQc() }, rep ? 'Run the check again' : 'Run error check'),
         rep ? el('button', { onclick: () => this.saveQcReport() }, 'Save report…') : null)];
     if (rep) {
       const t = timeParts(rep.generated, this.clock());
@@ -1193,7 +1190,7 @@ class App {
       kids.push(el('details', {}, el('summary', {}, 'What is checked'),
         el('ul', { class: 'qc-checks' }, rep.checks.map(([name, what]) => el('li', {}, el('b', {}, name), ' — ', what)))));
     }
-    return el('section', { class: 'settings-sec', id: 'qc-section' }, el('h3', {}, 'Quality control check'), ...kids);
+    return el('section', { class: 'settings-sec', id: 'qc-section' }, el('h3', {}, 'Error check'), ...kids);
   }
 
   async fixQcIssue(x) {
@@ -1211,7 +1208,7 @@ class App {
     this.renderQc();
     const c = r.report.counts;
     const n = (k, w) => `${c[k]} ${w}${c[k] === 1 ? '' : 's'}`;
-    toast(c.error + c.warning ? `Quality control: ${n('error', 'error')}, ${n('warning', 'warning')}, ${n('info', 'note')}` : 'Quality control: no problems found');
+    toast(c.error + c.warning ? `Error check: ${n('error', 'error')}, ${n('warning', 'warning')}, ${n('info', 'note')}` : 'Error check: no problems found');
   }
 
   showQcIssue(x) {
@@ -1224,7 +1221,7 @@ class App {
     }
     if (!x.row_id || !this.grids[x.tab]) return;
     if (!this.S.tables[x.tab].rows.some((r) => r.RowID === x.row_id)) { toast('That row no longer exists — run the check again.', 'warn'); return; }
-    this.selectRow(x.tab, x.row_id, x.column);
+    this.selectRow(x.tab, x.row_id, x.column, { flash: true });
   }
 
   saveQcReport() {
@@ -1241,12 +1238,19 @@ class App {
   renderAbout() {
     const pane = $('#pane-about');
     if (!pane) return;
-    const tut = el('div', { class: 'tutorial' }, el('p', { class: 'hint' }, 'Loading the tutorial…'));
-    pane.replaceChildren(this.aboutSection(), el('section', { class: 'settings-sec', id: 'tutorial-section' }, tut));
+    pane.replaceChildren(this.aboutSection());
+  }
+
+  // Settings → Guide: the tutorial (docs/TUTORIAL.md); it doesn't change, so it's drawn once
+  renderGuide() {
+    const pane = $('#pane-guide');
+    if (!pane || pane.querySelector('#tutorial-section .tutorial h1, #tutorial-section .tutorial h2')) return;
+    const tut = el('div', { class: 'tutorial' }, el('p', { class: 'hint' }, 'Loading the guide…'));
+    pane.replaceChildren(el('section', { class: 'settings-sec', id: 'tutorial-section' }, tut));
     fetch('/api/tutorial').then((r) => r.text()).then((md) => {
-      // the first heading is the section title; drop the line that points back to this tab
-      const nodes = renderMarkdown(md.replace(/^.*It's also in Spyhop itself.*$/m, (l) => l.replace(/ It's also in Spyhop itself, under \*\*(?:Survey|Settings) → About\*\*\./, '')));
-      tut.replaceChildren(...(nodes.length ? nodes : [el('p', { class: 'hint' }, 'The tutorial (docs/TUTORIAL.md) is missing.')]));
+      // drop the sentence that points back to this tab
+      const nodes = renderMarkdown(md.replace(/ It's also in Spyhop itself, under \*\*Settings → (?:Guide|About)\*\*\./, ''));
+      tut.replaceChildren(...(nodes.length ? nodes : [el('p', { class: 'hint' }, 'The guide (docs/TUTORIAL.md) is missing.')]));
     }).catch(() => {});
   }
 
@@ -1470,10 +1474,8 @@ class App {
     const tabs = this.allTabs();
     switch (verb) {
       case 'add': this.addRow(arg, prefill); break;
-      case 'add-current':
-        if (this.grids[this.tab]) this.addRow(this.tab, prefill);
-        else toast('Go to Sightings, Effort, Events or Tools → Waypoints to add a row.', 'info', 2500);
-        break;
+      // the data table in view (Sightings, Effort or Events), whichever pane has the focus; never waypoints
+      case 'add-current': this.addRow(this.topTabs().includes(this.dataTab) ? this.dataTab : 'sightings', prefill); break;
       case 'add-resight': this.addResight(); break;
       case 'toggle-effort': this.toggleEffort(); break;
       case 'undo': this.undo(); break;
@@ -1615,7 +1617,7 @@ class App {
         el('td', { class: 'num' }, number || ''), el('td', { class: 'num' }, calves || ''), el('td', { class: 'num' }, resights || ''),
         el('td', {}, fieldIds.join(', ')), el('td', {}, r.Notes || ''))))) : null;
     const riwhTotals = riwh.length ? `${riwh.length} sighting${riwh.length === 1 ? '' : 's'}, ${riwh.reduce((a, g) => a + g.number, 0)} animals`
-      + `, ${riwh.reduce((a, g) => a + g.calves, 0)} calves. Positions are the whales’ at the first sighting (SigLat/SigLon), or the vessel’s if none was worked out; numbers are the largest seen on any look.` : '';
+      + `, ${riwh.reduce((a, g) => a + g.calves, 0)} calves. Positions are the whales’ at the first sighting (SigLat/SigLon), or the vessel’s if none was worked out; numbers are the largest seen on the sighting or any resight.` : '';
     pane.replaceChildren(
       el('div', { class: 'summary-head' },
         el('h2', {}, `Survey: ${sv.name}`),
@@ -1961,7 +1963,7 @@ class App {
       let text = over.length ? `${over.length === 1 ? 'This' : 'These'} will be replaced or removed on this computer: ${over.map((f) => f.file).join(', ')}.` : '';
       if (adds.length) text += `${text ? ' ' : ''}Added: ${adds.map((f) => f.unit === 'waypoints' ? `${f.add} waypoint${f.add > 1 ? 's' : ''}` : f.file).join(', ')}.`;
       text += backup ? ' A backup is saved first.' : ' No backup will be saved, so changes made here to these will be lost.';
-      if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and Quality Control will flag values that are no longer in a list. Changing the template during a survey is unusual: are you sure?';
+      if (r.survey_active) text += '\n\nA survey is active. Rows already recorded are not changed, but the lists and shortcuts change straight away, and the Error check will flag values that are no longer in a list. Changing the template during a survey is unusual: are you sure?';
       if (!await confirmBox('Use this template?', text, r.kind === 'backup' ? 'Restore' : 'Use it', true)) return;
     }
     tp.busy = 'use'; this.renderTemplates();
@@ -2046,8 +2048,9 @@ class App {
             .map(([v, l]) => el('option', { value: v, selected: (d.sightings_row_colors || 'resights') === v }, l)))),
         el('label', { class: 'row' }, 'Effort segment column', sel('segment_column', [['show', 'Shown'], ['hide', 'Hidden']]))),
       el('p', { class: 'hint' }, 'Group resights gives each sighting that has resights, and its resights, a color of their own. The effort segment (Seg) is numbered by Spyhop: a new number each time the effort status changes. ',
-        'Drag a column header to move it, or the edge of a header to change its width; each table’s Columns… button lists them too. The order and widths are kept on this computer only. ',
-        Object.keys(lay).length ? el('button', { id: 'cols-reset-all', onclick: async () => { await this.saveColumnLayout({}); for (const g of Object.values(this.grids)) g.refreshColumns?.(); this.renderSettings(); } }, 'Reset all column orders and widths') : null));
+        'Drag a column header to move it, or the edge of a header to change its width; the order and widths are kept on this computer only. Double-click the bar between two panes to put it back where it started. ',
+        Object.keys(lay).length ? el('button', { id: 'cols-reset-all', onclick: async () => { await this.saveColumnLayout({}); for (const g of Object.values(this.grids)) g.refreshColumns?.(); this.renderSettings(); } }, 'Reset all column orders and widths') : null,
+        ' ', el('button', { id: 'btn-reset-panes', title: 'Put the map, Survey/Tools/Settings and the data tables back to their starting sizes', onclick: () => this.resetPanes() }, 'Reset the pane sizes')));
   }
 
   // Settings → General → Resights: the Sightings table's order, and resights on the map
@@ -2056,7 +2059,7 @@ class App {
     const dsel = (key, opts, id) => el('select', { id, onchange: (e) => this.saveDisplay({ [key]: e.target.value }) },
       opts.map(([v, l]) => el('option', { value: v, selected: (d[key] || '') === v }, l)));
     return sec('Resights',
-      el('p', { class: 'hint' }, 'A resight is a later look at animals already recorded, e.g. on the approach for photos or during a focal follow. Select the sighting and use Add resight: the new row’s Resight of holds the first sighting’s SightNo, and its species, numbers, confidence and FieldID are filled in. Resights aren’t counted again in the Summary, which uses the largest number and calves seen on any look. Time order lists rows as recorded; Resights nested puts each sighting’s resights straight under it. The marker size is a percentage of the sightings’ marker size.'),
+      el('p', { class: 'hint' }, 'A resight is a later sighting of animals already recorded, e.g. on the approach for photos or during a focal follow. Select the sighting and use Add resight: the new row’s ResNo holds the first sighting’s SigNo, and its species, numbers, confidence and FieldID are filled in. Resights aren’t counted again in the Summary, which uses the largest number and calves seen on any resight. Time order lists rows as recorded; Resights nested puts each sighting’s resights straight under it. The marker size is a percentage of the sightings’ marker size.'),
       el('div', { class: 'grid2' },
         el('label', { class: 'row' }, 'Sightings table', dsel('resight_order', [['time', 'Time order'], ['nested', 'Resights nested']], 'resight-order')),
         el('label', { class: 'row' }, 'Resight marker', dsel('resight_marker_shape', [['same', 'Same shape'], ...SHAPES.map((x) => [x, x]), ['hidden', 'Not shown']], 'resight-shape')),
@@ -2103,7 +2106,7 @@ class App {
           el('label', { class: 'row' }, 'Conditions reminder (min)', num('effort_reminder_min', 1, 600)),
           el('label', { class: 'row' }, 'Break the trackline above (kn)', num('track_break_kn', 0, 2000)),
           el('label', { class: 'row' }, '… or after no GPS for (s)', num('track_break_gap_s', 0, 86400))),
-        el('p', { class: 'hint' }, 'The trackline on the map, and the distances in the summary, are broken where the platform would have moved faster than this between two points (a GPS jump; 30 kn suits a vessel, use about 200 for aerial surveys), or where no position came in for that long. 0 turns either off. Quality Control lists each jump or gap, and its Fix button marks it in the Effort table with an ERROR row.')),
+        el('p', { class: 'hint' }, 'The trackline on the map, and the distances in the summary, are broken where the platform would have moved faster than this between two points (a GPS jump; 30 kn suits a vessel, use about 200 for aerial surveys), or where no position came in for that long. 0 turns either off. Tools → Error check lists each jump or gap, and its Fix button marks it in the Effort table with an ERROR row.')),
       sec('Sleep',
         el('div', { class: 'grid2' },
           el('label', { class: 'row' }, 'Keep the computer awake', sel('keep_awake', [['survey', 'During a survey'], ['always', 'Always'], ['off', 'Never']]))),
@@ -2201,7 +2204,7 @@ class App {
       ['survey', 'Survey'], ...this.groupTabs().map(([k]) => [k, this.tabPath(k)])]);
     return [
       ['add:sightings', 'Add a sighting'], ['add:effort', 'Add a conditions (effort) row'], ['add:events', 'Add an event'],
-      ['add:marks', 'Add a waypoint'], ['add-current', 'Add a row to the table you’re in'], ['add-resight', 'Add a resight of the selected sighting'],
+      ['add:marks', 'Add a waypoint'], ['add-current', 'Add a row to the data table in view'], ['add-resight', 'Add a resight of the selected sighting'],
       ['toggle-effort', 'Add an effort row that switches effort ON↔OFF'],
       ['undo', 'Undo in the current table'], ['redo', 'Redo in the current table'],
       ['next-tab', 'Next tab'], ['prev-tab', 'Previous tab'],
@@ -2404,7 +2407,7 @@ class App {
       el('div', { class: 'btnrow' },
         el('button', { id: 'btn-dd-save', class: `primary${dirty ? ' dirty' : ''}`, disabled: locked, onclick: () => this.saveDropdown(cur) }, dirty ? 'Save — unsaved changes' : 'Save'),
         el('button', { disabled: locked || !this.ddDrafts[cur], onclick: () => { delete this.ddDrafts[cur]; this.renderDropdowns(); } }, 'Revert')),
-      el('p', { class: 'hint' }, 'The order here is the order in the drop-down. Renaming or removing an entry doesn’t change rows already recorded; Quality Control flags values that are no longer in the list.'),
+      el('p', { class: 'hint' }, 'The order here is the order in the drop-down. Renaming or removing an entry doesn’t change rows already recorded; the Error check flags values that are no longer in the list.'),
       this.fileBox(`${cur}.csv`, `config:${cur}`, () => { delete this.ddDrafts[cur]; }, locked)));
   }
 
@@ -2556,16 +2559,16 @@ class App {
     const pane = $('#pane-inputs');
     if (!pane) return;
     pane.replaceChildren(this.nmeaSection(), el('p', { class: 'hint' }, 'Live readings from these inputs and the raw NMEA log are in ',
-      el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('nmea'); } }, 'Tools → Instruments'), '.'),
-      this.online.section());
+      el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('nmea'); } }, 'Tools → Instruments'), '. The online overlays (AIS, weather radar, map feeds) are in ',
+      el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('overlays'); } }, 'Tools → Overlays'), '.'));
     this.updateNmeaStatus();
   }
 
-  // an online overlay loaded or changed: redraw its part of Settings → Inputs (not while typing in it)
-  onlineChanged() {
-    if (!this.shown('inputs')) return;
+  // an online overlay loaded or changed: redraw its part of Tools → Overlays (not while typing in it)
+  onlineChanged(force = false) {
+    if (!this.shown('overlays')) return;
     const box = $('#online-overlays');
-    if (!box || box.contains(document.activeElement) && document.activeElement.matches('input[type=text], select')) return;
+    if (!box || !force && box.contains(document.activeElement) && document.activeElement.matches('input[type=text], select')) return;
     box.replaceWith(this.online.section());
   }
 
@@ -2631,7 +2634,7 @@ class App {
     const m = this.map;
     const allOn = m.map.hasLayer(m.layers.imported);
     const remove = async (n) => { if (await confirmBox('Remove overlay?', `Remove ${n} from Spyhop’s overlays folder? It can be imported again.`, 'Remove', true)) api(`/api/overlays/${encodeURIComponent(n)}`, undefined, 'DELETE').catch(() => {}); };
-    pane.replaceChildren(el('div', { id: 'overlay-panel' }, el('section', { class: 'settings-sec' }, el('h3', {}, 'Map overlays'),
+    const panel = el('div', { id: 'overlay-panel' }, el('section', { class: 'settings-sec' }, el('h3', {}, 'Offline overlays'),
       el('p', { class: 'hint' }, 'GeoJSON, GPX or KML files: planned transects, management areas, other surveys. They are kept in Spyhop’s overlays folder. Click an overlay’s color to change it (↺ goes back to its own colors); the colors are kept with the map display, so they travel in templates too.'),
       el('div', { class: 'btnrow' }, el('button', { class: 'primary', onclick: () => this.importOverlay() }, 'Import…'),
         list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, true)); this.renderOverlays(); } }, 'Show all') : null,
@@ -2652,7 +2655,11 @@ class App {
             el('button', { title: 'Zoom the map to this overlay', onclick: () => { m.setOverlayVisible(n, true); m.zoomToOverlay(n); this.renderOverlays(); } }, 'Zoom to'),
             el('button', { class: 'ov-remove', title: 'Remove this overlay', onclick: () => remove(n) }, 'Remove'))))))
         : el('p', { class: 'hint', id: 'overlay-none' }, 'No overlays yet.')),
-      el('section', { class: 'settings-sec' }, this.pastSurveyOverlays())));
+      el('section', { class: 'settings-sec' }, this.pastSurveyOverlays()));
+    // the online overlays (AIS, radar, map feeds) follow; they redraw themselves (onlineChanged), so keep them while typing in them
+    const old = $('#overlay-panel'), box = $('#online-overlays');
+    if (old && box && pane.contains(old) && pane.contains(box)) old.replaceWith(panel);
+    else pane.replaceChildren(panel, this.online.section());
   }
 
   // Other surveys in the data folder, each of which can be drawn as an overlay

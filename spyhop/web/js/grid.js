@@ -117,22 +117,6 @@ export class Grid {
     });
   }
 
-  // Columns…: the order and widths in a list, for those who'd rather not drag
-  async columnsDialog() {
-    const draw = (list) => list.replaceChildren(...this.cols.map((c, i) => el('li', { 'data-key': c.key },
-      el('span', { class: 'col-name' }, c.label, c.label !== c.key ? el('span', { class: 'hint' }, ` (${c.key})`) : null),
-      el('span', { class: 'hint' }, this.widthOf(c) ? `${this.widthOf(c)} px` : ''),
-      el('button', { class: 'col-up', disabled: i === 0, 'aria-label': `Move ${c.label} left`, onclick: async () => { await this.moveColumn(c.key, i - 1); draw(list); } }, '↑'),
-      el('button', { class: 'col-down', disabled: i === this.cols.length - 1, 'aria-label': `Move ${c.label} right`, onclick: async () => { await this.moveColumn(c.key, i + 1); draw(list); } }, '↓'))));
-    const list = el('ol', { class: 'col-list', id: `cols-${this.tab}` });
-    draw(list);
-    await modal({ title: `Columns: ${this.spec.title}`, body: el('div', {},
-      el('p', { class: 'hint' }, 'First in the list = leftmost. You can also drag a column’s header to move it, and drag the edge of a header to change its width. These are kept on this computer only.'),
-      list,
-      el('p', {}, el('button', { id: `cols-reset-${this.tab}`, onclick: async () => { await this.saveLayout(null); draw(list); } }, 'Reset order and widths'))),
-    buttons: [{ label: 'Done', value: true, primary: true }] });
-  }
-
   // Sightings row colors (Settings → General → Tables): none | alternate | resights | groups
   rowTint(r, i, rs) {
     if (this.tab !== 'sightings') return '';
@@ -254,7 +238,7 @@ export class Grid {
     return this.wrap.querySelector(`tr[data-id="${CSS.escape(id)}"] td[data-key="${CSS.escape(key)}"]`);
   }
 
-  select(id, key, { scroll = true, focus = true } = {}) {
+  select(id, key, { scroll = true, focus = true, center = false } = {}) {
     if (!id) return;
     key = key || this.sel?.key || this.cols[0].key;
     this.sel = { id, key };
@@ -264,11 +248,24 @@ export class Grid {
     if (td) {
       td.classList.add('sel');
       td.parentElement.classList.add('selrow');
-      if (scroll) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      if (scroll) this.scrollTo(td, center);
     }
     if (focus && !this.editing) this.wrap.focus({ preventScroll: true });
     this.app.onRowSelected(this.tab, id);
     this.app.showHelp(this.tab, key);
+  }
+
+  // scroll the table (only the table: scrollIntoView would also scroll the panes around it) to show a cell
+  scrollTo(td, center = false) {
+    const w = this.wrap, r = td.getBoundingClientRect(), b = w.getBoundingClientRect();
+    const head = w.querySelector('thead')?.getBoundingClientRect().height || 0;
+    const top = b.top + head, bottom = b.top + w.clientHeight;
+    if (center && (r.top < top || r.bottom > bottom)) w.scrollTop += r.top - (top + bottom) / 2 + r.height / 2;
+    else if (r.top < top) w.scrollTop -= top - r.top;
+    else if (r.bottom > bottom) w.scrollTop += r.bottom - bottom;
+    const left = b.left + (w.querySelector('td.rownum')?.getBoundingClientRect().width || 0), right = b.left + w.clientWidth;
+    if (r.left < left) w.scrollLeft -= left - r.left;
+    else if (r.right > right) w.scrollLeft += Math.min(r.right - right, r.left - left);
   }
 
   firstEmptyEditable(row) {

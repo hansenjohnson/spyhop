@@ -52,7 +52,7 @@ export class Resights {
   }
 }
 
-// Summary figures for one group: the largest number and calves seen on any look (counts usually
+// Summary figures for one group: the largest number and calves seen on the sighting or any resight (counts usually
 // get better on approach), and every FieldID used.
 export function groupCounts(group) {
   const max = (k) => Math.max(0, ...group.map((r) => +r[k] || 0));

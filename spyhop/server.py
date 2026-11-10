@@ -924,7 +924,7 @@ class App:
         self._rv_cache = (now, out)
         return json_ok(**out)
 
-    # ---- online map feeds (Settings → Inputs → Online overlays; feeds.py)
+    # ---- online map feeds (Tools → Overlays → Online overlays; feeds.py)
     def _feeds(self) -> list[dict]:
         return [f for f in (self.rec.cfg.settings.get("online_feeds") or []) if isinstance(f, dict) and f.get("id")]
 
@@ -1411,7 +1411,7 @@ class App:
         return json_ok(result=res)
 
     async def qc_fix(self, request):
-        """Quality Control → Fix: mark a trackline jump or GPS gap with an ERROR Effort row."""
+        """Error check → Fix: mark a trackline jump or GPS gap with an ERROR Effort row."""
         b = await request.json()
         fix = b.get("fix") or {}
         if fix.get("kind") != "track_break":

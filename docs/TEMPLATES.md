@@ -90,7 +90,7 @@ Each template keeps a record of its changes, one entry per change: the date, who
 
 ## Making and changing a template
 
-1. Set up one computer the way the team wants: lists and shortcuts (**Settings → Dropdowns** and **Settings → Shortcuts**), Settings → General, the network inputs and online overlays (**Settings → Inputs**), and the waypoints, routes and overlays to hand out.
+1. Set up one computer the way the team wants: lists and shortcuts (**Settings → Dropdowns** and **Settings → Shortcuts**), Settings → General, the network inputs (**Settings → Inputs**) and online overlays (**Tools → Overlays**), and the waypoints, routes and overlays to hand out.
 2. In **Settings → Templates**, press **Save as a new template…**, or **Update…** on the template you are changing.
 3. Spyhop asks for **your name** and **what you changed** (and, for a new template, its name). It fills in **Parts changed** itself: for a new template, the parts changed since this computer last used or saved a template ("all" if it doesn't know); for an update, the parts that differ from that template.
    - **Also include:** tick **Waypoints**, **Routes** and **Overlays** to put them in the template (all of this computer's, with how many). Updating a template starts with that template's choice; a new template with the last choice made here. Keep **Which online overlays are switched on** ticked to hand out the overlays showing now.
@@ -124,7 +124,7 @@ You can also type the **path of a zip or folder on this computer**, such as a te
 
 **A template with any problem isn't used at all.** Problems are parts Spyhop can't read: a list missing its `name` column, a `spyhop-config.json` that isn't valid, or a saved report with a mistake. Spyhop names them, and nothing on the computer changes.
 
-**During a survey:** using a template is allowed, after a warning. Rows already recorded are never changed. If a template removes a list entry that earlier rows use, those rows keep their values, and Quality Control flags them as "not in the list".
+**During a survey:** using a template is allowed, after a warning. Rows already recorded are never changed. If a template removes a list entry that earlier rows use, those rows keep their values, and the Error check flags them as "not in the list".
 
 ## Undoing it
 

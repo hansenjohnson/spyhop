@@ -70,6 +70,10 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
         ["Loggerhead sea turtle", "olive", "LOTU"],
         ["Unid. sea turtle", "yellowgreen", "UNTU"],
         ["Dead bird", "sienna", "DEBI"],
+        ["Vessel sighted", "gray", "VESL"],
+        ["Marine debris", "sienna", "DEBR"],
+        ["Fishing gear - reported", "darkorange", "GRPT"],
+        ["Fishing gear - recovered", "chocolate", "GRCV"],
     ]),
     "event_types": (["name", "color", "event_code"], [
         ["CTD cast", "blue", "CTD"],
@@ -81,16 +85,9 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
         ["Tagging attempt", "lightcoral", "TAGA"],
         ["Biopsy sample", "darkgoldenrod", "BIOP"],
         ["Biopsy attempt", "goldenrod", "BIOA"],
-        ["Acoustic recorder deployed", "teal", "ACOD"],
-        ["Acoustic recorder recovered", "teal", "ACOR"],
+        ["Mooring deployed", "teal", "MOOD"],
+        ["Mooring recovered", "teal", "MOOR"],
         ["Plankton tow", "seagreen", "PLNK"],
-        ["Photo-ID session start", "slateblue", "PIDS"],
-        ["Photo-ID session end", "slateblue", "PIDE"],
-        ["Fishing gear sighted", "orangered", "GEAR"],
-        ["Vessel sighted", "gray", "VESL"],
-        ["Marine debris", "sienna", "DEBR"],
-        ["Gear Reported", "darkorange", "GRPT"],
-        ["Gear Recovered", "chocolate", "GRCV"],
         ["Other", "black", "OTH"],
     ]),
     "observers": (["name", "full_name"], [
@@ -258,7 +255,7 @@ DEFAULT_SETTINGS = {
     "reticle_deg_per_division": 0.573,   # binoculars: degrees per reticle division
     "reticle_marks": [],            # calibrated marks: [{mark, angle (degrees below the horizontal)}]
     # --- also in spyhop-config.json, under their own keys (see CONFIG_KEYS)
-    "online_feeds": [],             # map feeds (Settings → Inputs → Online overlays; feeds.py) → map_feeds
+    "online_feeds": [],             # map feeds (Tools → Overlays → Online overlays; feeds.py) → map_feeds
     "online_display": {},           # online overlays to show, set by a template: {ais, radar_us, radar_world,
                                     # feeds: [urls], radar_opacity, hide_stopped, stamp}; applied once per stamp
     "nmea_sources": [{"type": "udp", "port": 10110, "enabled": True}],

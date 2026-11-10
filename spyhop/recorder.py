@@ -743,7 +743,7 @@ class Recorder:
         resight is linked to that resight's original, so every resight points at the first sighting."""
         k = resights._key(s)
         if not k.isdigit():
-            raise ValueErrorMsg("Resight of must be the SightNo of the first sighting of these animals")
+            raise ValueErrorMsg("ResNo must be the SigNo of the first sighting of these animals")
         if k == resights._key(row.get("SightNo")):
             raise ValueErrorMsg("A sighting can't be a resight of itself")
         rows = [r for r in self.table("sightings").rows if r.get("RowID") != row.get("RowID")]
@@ -769,7 +769,7 @@ class Recorder:
     def add_resight(self, row_id: str) -> dict:
         """A new sighting row for another look at the animals of row_id: linked to their first
         sighting, with the species, number, calves, number and ID confidence and FieldID copied
-        from the row chosen (the latest look, if it's a resight itself)."""
+        from the row chosen (the latest resight, if it's a resight itself)."""
         t = self.table("sightings")
         try:
             row = t.get(row_id)
@@ -777,7 +777,7 @@ class Recorder:
             raise ValueErrorMsg("That sighting no longer exists.")
         orig = resights.original_of(row, t.rows)
         if not resights._key(orig.get("SightNo")):
-            raise ValueErrorMsg("That sighting has no SightNo to link a resight to.")
+            raise ValueErrorMsg("That sighting has no SigNo to link a resight to.")
         prefill = {k: row.get(k, "") for k in resights.COPIED if row.get(k, "") != ""}
         prefill["ResightOf"] = orig.get("SightNo")
         return self.new_row("sightings", prefill)
@@ -1312,7 +1312,7 @@ class Recorder:
         t_err = (last or t0) + timedelta(seconds=1)
         if t_err >= t1:
             t_err = t0
-        err = make(t_err, "ERROR", f"Trackline break (GPS jump or loss) until {hhmm(t1)}, added by Quality Control → Fix.")
+        err = make(t_err, "ERROR", f"Trackline break (GPS jump or loss) until {hhmm(t1)}, added by Error check → Fix.")
         r = self._write(lambda: t.add(err, index_for(t_err)))
         if r:
             added.append(r)

@@ -1,5 +1,5 @@
-// Tools → Resights: for each sighting with resights, the swim speed between looks and the dive times
-// (from a look with a dive behavior to the next look with the first-surfacing behavior).
+// Tools → Resights: for each sighting with resights, the swim speed between resights and the dive times
+// (from a resight with a dive behavior to the next resight with the first-surfacing behavior).
 import { el, api, fmtDist, fmtDuration, distM, timeParts, toast } from './util.js';
 import { Resights } from './resights.js';
 
@@ -13,36 +13,38 @@ function pos(r) {
   return r.Lat !== '' && r.Lat != null && Number.isFinite(b[0]) && Number.isFinite(b[1]) ? b : null;
 }
 const behaviors = (r) => String(r.Behaviors || '').split(';').map((s) => s.trim()).filter(Boolean);
+// the FieldIDs used (in order, once each; blank if none)
+const fieldIds = (rows) => [...new Set(rows.map((r) => String(r.FieldID || '').trim()).filter(Boolean))].join(', ');
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
-// one sighting and its resights: legs between looks, speeds and dives
+// one sighting and its resights (in time order): legs between them, speeds and dives
 export function analyse(group, dive, surface) {
-  const looks = [...group].filter((r) => r.DateTime && !isNaN(new Date(r.DateTime)))
+  const seen = [...group].filter((r) => r.DateTime && !isNaN(new Date(r.DateTime)))
     .sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime));
   const legs = [];
-  for (let i = 1; i < looks.length; i++) {
-    const a = looks[i - 1], b = looks[i], pa = pos(a), pb = pos(b);
+  for (let i = 1; i < seen.length; i++) {
+    const a = seen[i - 1], b = seen[i], pa = pos(a), pb = pos(b);
     const dt = (new Date(b.DateTime) - new Date(a.DateTime)) / 1000;
     const d = pa && pb ? distM(pa, pb) : null;
     legs.push({ from: a, to: b, dt, d, speed: d != null && dt > 0 ? d / dt : null });
   }
   const timed = legs.filter((l) => l.speed != null);
   const tDist = timed.reduce((s, l) => s + l.d, 0), tTime = timed.reduce((s, l) => s + l.dt, 0);
-  const p0 = pos(looks[0] || {}), p1 = pos(looks.at(-1) || {});
-  const span = looks.length > 1 ? (new Date(looks.at(-1).DateTime) - new Date(looks[0].DateTime)) / 1000 : 0;
-  // dives: the latest look with a dive behavior, then the next look with the surfacing behavior
+  const p0 = pos(seen[0] || {}), p1 = pos(seen.at(-1) || {});
+  const span = seen.length > 1 ? (new Date(seen.at(-1).DateTime) - new Date(seen[0].DateTime)) / 1000 : 0;
+  // dives: the latest resight with a dive behavior, then the next one with the surfacing behavior
   const dives = [];
   let down = null;
-  for (const r of looks) {
+  for (const r of seen) {
     const bs = behaviors(r);
     if (down && bs.includes(surface)) { dives.push({ from: down, to: r, dt: (new Date(r.DateTime) - new Date(down.DateTime)) / 1000 }); down = null; }
     if (bs.some((b) => dive.includes(b))) down = r;
   }
   return {
-    first: group[0], looks, legs, dives,
+    first: group[0], seen, legs, dives,
     distance: tDist, time: tTime,
-    speed: tTime > 0 ? tDist / tTime : null,                                   // along the looks
-    net: p0 && p1 && span > 0 ? distM(p0, p1) / span : null,                   // first look → last look, straight
+    speed: tTime > 0 ? tDist / tTime : null,                                   // along the resights
+    net: p0 && p1 && span > 0 ? distM(p0, p1) / span : null,                   // first → last, straight
     diveMean: mean(dives.map((x) => x.dt)),
   };
 }
@@ -76,7 +78,7 @@ export class ResightTool {
     const sec = (title, ...kids) => el('section', { class: 'settings-sec' }, el('h3', {}, title), ...kids);
 
     const setup = sec('Dive and surfacing behaviors',
-      el('p', { class: 'hint' }, 'A dive time runs from a look with a dive behavior to the next look with the first-surfacing behavior (the latest dive, if several come first). The behaviors come from Settings → Dropdowns → Behaviors.'),
+      el('p', { class: 'hint' }, 'A dive time runs from a resight with a dive behavior to the next resight with the first-surfacing behavior (the latest dive, if several come first). The behaviors come from Settings → Dropdowns → Behaviors.'),
       el('div', { class: 'grid2' },
         el('label', { class: 'row' }, 'First surfacing behavior', el('select', { id: 'rs-surface', onchange: (e) => app.saveDisplay({ resight_surface_behavior: e.target.value }) },
           ['', ...beh].map((b) => el('option', { value: b, selected: b === surface }, b || '—'))))),
@@ -90,27 +92,28 @@ export class ResightTool {
         el('button', { id: 'rs-add-surface', onclick: () => this.addSurfacing(surface) }, `Add “${surface}” to the behaviors list`),
         ' or choose another.') : null);
 
-    const head = ['Sighting', 'Species', 'Looks', 'Time span', 'Distance (along the looks)', 'Average swim speed', 'Net speed (first → last)', 'Dives', 'Mean dive time', ''];
+    const head = ['Sighting', 'Species', 'FieldID', 'Resights', 'Time span', 'Distance (along the resights)', 'Average swim speed', 'Net speed (first → last)', 'Dives', 'Mean dive time', ''];
     const body = [];
     for (const r of res) {
       const id = r.first.RowID, open = this.open.has(id);
       body.push(el('tr', { 'data-sighting': r.first.SightNo },
-        el('td', {}, r.first.SightNo), el('td', {}, r.first.Species || ''), el('td', { class: 'num' }, r.looks.length),
-        el('td', {}, r.looks.length > 1 ? `${fmtT(r.looks[0].DateTime)}–${fmtT(r.looks.at(-1).DateTime)}` : '—'),
+        el('td', {}, r.first.SightNo), el('td', {}, r.first.Species || ''), el('td', { class: 'rs-fieldid' }, fieldIds(r.seen)),
+        el('td', { class: 'num' }, r.seen.length - 1),
+        el('td', {}, r.seen.length > 1 ? `${fmtT(r.seen[0].DateTime)}–${fmtT(r.seen.at(-1).DateTime)}` : '—'),
         el('td', { class: 'num' }, r.time > 0 ? fmtDist(r.distance, unit) : '—'),
         el('td', { class: 'rs-speed' }, spd(r.speed)), el('td', {}, spd(r.net)),
         el('td', { class: 'num' }, r.dives.length || ''),
         el('td', { class: 'rs-dive' }, r.diveMean == null ? '—' : fmtDuration(r.diveMean)),
-        el('td', {}, el('button', { class: 'rs-toggle', onclick: () => { if (open) this.open.delete(id); else this.open.add(id); this.render(); } }, open ? 'Hide looks' : 'Looks…'))));
+        el('td', {}, el('button', { class: 'rs-toggle', onclick: () => { if (open) this.open.delete(id); else this.open.add(id); this.render(); } }, open ? 'Hide resights' : 'Resights…'))));
       if (open) {
         const legRows = r.legs.map((l) => el('tr', {},
-          el('td', {}, `${l.from.SightNo} → ${l.to.SightNo}`), el('td', {}, `${fmtT(l.from.DateTime)} → ${fmtT(l.to.DateTime)}`),
+          el('td', {}, `${l.from.SightNo} → ${l.to.SightNo}`), el('td', {}, fieldIds([l.from, l.to])), el('td', {}, `${fmtT(l.from.DateTime)} → ${fmtT(l.to.DateTime)}`),
           el('td', {}, fmtDuration(l.dt)), el('td', {}, l.d == null ? 'no position' : fmtDist(l.d, unit)), el('td', {}, spd(l.speed)),
           el('td', {}, behaviors(l.to).join(', '))));
         const diveRows = r.dives.map((x) => el('tr', {}, el('td', {}, `Dive ${x.from.SightNo} → surfacing ${x.to.SightNo}`),
           el('td', {}, `${fmtT(x.from.DateTime)} → ${fmtT(x.to.DateTime)}`), el('td', {}, fmtDuration(x.dt))));
         body.push(el('tr', { class: 'rs-detail' }, el('td', { colspan: head.length },
-          el('table', { class: 'summary' }, el('thead', {}, el('tr', {}, ['Looks', 'Times', 'Interval', 'Distance', 'Swim speed', 'Behaviors (later look)'].map((h) => el('th', {}, h)))),
+          el('table', { class: 'summary' }, el('thead', {}, el('tr', {}, ['Sightings', 'FieldID', 'Times', 'Interval', 'Distance', 'Swim speed', 'Behaviors (later one)'].map((h) => el('th', {}, h)))),
             el('tbody', {}, legRows)),
           diveRows.length ? el('table', { class: 'summary' }, el('thead', {}, el('tr', {}, ['Dive', 'Times', 'Dive time'].map((h) => el('th', {}, h)))), el('tbody', {}, diveRows)) : null)));
       }
@@ -121,11 +124,11 @@ export class ResightTool {
           el('button', { id: 'rs-csv', disabled: !res.length, onclick: () => this.saveCsv(res) }, 'Save as CSV…'))),
       res.length ? el('div', { class: 'table-scroll' }, el('table', { class: 'summary', id: 'rs-table' },
         el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))), el('tbody', {}, body)))
-        : el('p', { class: 'hint' }, 'No sightings with resights yet. Select a sighting in the Sightings tab and use Add resight for each later look at the same animals.'),
+        : el('p', { class: 'hint' }, 'No sightings with resights yet. Select a sighting in the Sightings tab and use Add resight each time the same animals are seen again.'),
       res.length ? el('p', { class: 'hint', id: 'rs-overall' },
         `${res.length} sighting${res.length === 1 ? '' : 's'} with resights. `,
         allDives.length ? `${allDives.length} dive${allDives.length === 1 ? '' : 's'}, mean ${fmtDuration(mean(allDives))} (${fmtDuration(Math.min(...allDives))}–${fmtDuration(Math.max(...allDives))}). ` : 'No dives found yet. ',
-        'Speeds use the animals’ positions (SigLat/SigLon, worked out from the bearing and distance; the platform’s position when there was none), so errors in the distance estimates show up as speed, most of all over short intervals. Average swim speed follows the looks in turn; net speed is the straight line from the first look to the last.') : null,
+        'Speeds use the animals’ positions (SigLat/SigLon, worked out from the bearing and distance; the platform’s position when there was none), so errors in the distance estimates show up as speed, most of all over short intervals. Average swim speed follows the resights in turn; net speed is the straight line from the first sighting to the last resight.') : null,
       setup);
   }
 
@@ -141,11 +144,11 @@ export class ResightTool {
   saveCsv(res) {
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const n = (v, k = 1) => (v == null ? '' : (v * k).toFixed(3));
-    const lines = [['Sighting', 'Species', 'Record', 'FromSightNo', 'ToSightNo', 'FromTime', 'ToTime', 'Seconds', 'Meters', 'Knots', 'KmPerHour', 'Behaviors'].join(',')];
+    const lines = [['Sighting', 'Species', 'FieldID', 'Record', 'FromSightNo', 'ToSightNo', 'FromTime', 'ToTime', 'Seconds', 'Meters', 'Knots', 'KmPerHour', 'Behaviors'].join(',')];
     for (const r of res) {
-      for (const l of r.legs) lines.push([r.first.SightNo, r.first.Species, 'leg', l.from.SightNo, l.to.SightNo, l.from.DateTime, l.to.DateTime, l.dt, n(l.d), n(l.speed, KN), n(l.speed, KMH), behaviors(l.to).join('; ')].map(q).join(','));
-      for (const x of r.dives) lines.push([r.first.SightNo, r.first.Species, 'dive', x.from.SightNo, x.to.SightNo, x.from.DateTime, x.to.DateTime, x.dt, '', '', '', ''].map(q).join(','));
-      lines.push([r.first.SightNo, r.first.Species, 'sighting', r.looks[0]?.SightNo, r.looks.at(-1)?.SightNo, r.looks[0]?.DateTime, r.looks.at(-1)?.DateTime, r.time, n(r.distance), n(r.speed, KN), n(r.speed, KMH), r.diveMean == null ? '' : `mean dive ${r.diveMean.toFixed(0)} s`].map(q).join(','));
+      for (const l of r.legs) lines.push([r.first.SightNo, r.first.Species, fieldIds([l.from, l.to]), 'leg', l.from.SightNo, l.to.SightNo, l.from.DateTime, l.to.DateTime, l.dt, n(l.d), n(l.speed, KN), n(l.speed, KMH), behaviors(l.to).join('; ')].map(q).join(','));
+      for (const x of r.dives) lines.push([r.first.SightNo, r.first.Species, fieldIds([x.from, x.to]), 'dive', x.from.SightNo, x.to.SightNo, x.from.DateTime, x.to.DateTime, x.dt, '', '', '', ''].map(q).join(','));
+      lines.push([r.first.SightNo, r.first.Species, fieldIds(r.seen), 'sighting', r.seen[0]?.SightNo, r.seen.at(-1)?.SightNo, r.seen[0]?.DateTime, r.seen.at(-1)?.DateTime, r.time, n(r.distance), n(r.speed, KN), n(r.speed, KMH), r.diveMean == null ? '' : `mean dive ${r.diveMean.toFixed(0)} s`].map(q).join(','));
     }
     const sv = this.app.S.survey?.prefix || 'survey';
     const a = el('a', { href: URL.createObjectURL(new Blob([lines.join('\r\n') + '\r\n'], { type: 'text/csv' })), download: `${sv}_resights.csv` });

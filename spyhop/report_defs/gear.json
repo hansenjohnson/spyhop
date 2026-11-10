@@ -1,7 +1,7 @@
 {
   "name": "Gear",
-  "table": "events",
+  "table": "sightings",
   "codes": ["GRPT", "GRCV"],
-  "columns": ["time", "EventType", "position", "Notes"],
+  "columns": ["time", "Species", "position", "Notes"],
   "on_effort": false, "time_from": "", "time_to": "", "rules": []
 }

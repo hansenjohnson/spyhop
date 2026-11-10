@@ -265,7 +265,7 @@ export const ON_EFFORT = ['ON', 'LINE', 'FOLLOW', 'PHOTO'];
 export const isOn = (e) => ON_EFFORT.includes(e);
 
 // Effort state of each track point from the Effort table as it is now (so an ERROR row added
-// later by Quality Control → Fix applies). A point in the same second as an Effort row keeps the
+// later by Error check → Fix applies). A point in the same second as an Effort row keeps the
 // state it was recorded with, as in the export.
 export function trackStates(points, effortRows) {
   const rows = (effortRows || []).map((r) => [new Date(r.DateTime).getTime(), r.Effort || ''])

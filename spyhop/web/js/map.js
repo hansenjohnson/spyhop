@@ -927,12 +927,12 @@ export class MapView {
     return { color: (!custom && f?.properties?.stroke) || color, weight: +f?.properties?.['stroke-width'] || 2.5, opacity: 0.9,
       fillOpacity: 0.1, dashArray: f?.properties?.dash || null };
   }
-  markerColor(name, f) { const custom = this.customOverlayColor(name); return (!custom && f?.properties?.['marker-color']) || custom || colorFor(name); }
+  overlayMarkerColor(name, f) { const custom = this.customOverlayColor(name); return (!custom && f?.properties?.['marker-color']) || custom || colorFor(name); }
   // after a color change (here, from another window or from a template)
   restyleOverlays() {
     for (const [name, gl] of Object.entries(this.overlayLayers || {})) {
       gl.eachLayer((l) => {
-        if (l instanceof L.CircleMarker) { const c = this.markerColor(name, l.feature); l.setStyle({ color: c, fillColor: c }); }
+        if (l instanceof L.CircleMarker) { const c = this.overlayMarkerColor(name, l.feature); l.setStyle({ color: c, fillColor: c }); }
         else if (l.setStyle) l.setStyle(this.overlayStyle(name, l.feature));
       });
     }
@@ -964,7 +964,7 @@ export class MapView {
         const gl = L.geoJSON(gj, {
           style: (f) => this.overlayStyle(name, f),
           pointToLayer: (f, ll) => {
-            const c = this.markerColor(name, f);
+            const c = this.overlayMarkerColor(name, f);
             return L.circleMarker(ll, { radius: +f.properties?.['marker-radius'] || 5, color: c, fillColor: c, fillOpacity: 0.8 });
           },
           onEachFeature: (f, layer) => {

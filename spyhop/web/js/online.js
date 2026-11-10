@@ -458,10 +458,10 @@ export class OnlineOverlays {
       el('p', { class: 'hint' }, 'An ArcGIS Online or ArcGIS Server address ending in /FeatureServer/<number> (one layer), /FeatureServer (every layer of the service) or /MapServer/<number>, or a link to a GeoJSON file. Areas whose attributes give a season (st_mo, st_day, end_mo, end_day, as NOAA’s Seasonal Management Areas) are drawn solid while in effect and dashed otherwise.'));
   }
 
-  // ------------------------------------------------------------------ Settings → Inputs
+  // ------------------------------------------------------------------ Tools → Overlays
   section() {
     const chk = (which, label, hint) => el('label', { class: 'check' },
-      el('input', { type: 'checkbox', checked: this.isOn(which), onchange: (e) => { this.setOn(which, e.target.checked); this.app.renderInputs?.(); } }),
+      el('input', { type: 'checkbox', checked: this.isOn(which), onchange: (e) => { this.setOn(which, e.target.checked); this.app.onlineChanged?.(true); } }),
       el('span', {}, el('b', {}, label), el('br'), el('span', { class: 'hint' }, hint)));
     const op = el('input', { type: 'range', min: 0.2, max: 1, step: 0.05, value: this.prefs.radarOpacity,
       oninput: (e) => this.setOpacity(+e.target.value) });

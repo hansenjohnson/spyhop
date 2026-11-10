@@ -1,4 +1,4 @@
-"""Online map feeds (Settings → Inputs → Online overlays): polygons, lines or points from the web,
+"""Online map feeds (Tools → Overlays → Online overlays): polygons, lines or points from the web,
 drawn as map overlays. A feed is an ArcGIS FeatureServer or MapServer (a layer, or a whole
 service: all its layers) or a GeoJSON file. Spyhop fetches it, keeps the last copy in
 `<Spyhop folder>/feeds/<id>.geojson`, and shows that copy when there's no internet.

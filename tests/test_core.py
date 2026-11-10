@@ -746,7 +746,7 @@ def test_qc_finds_problems(rec):
                                   "Distance": "40", "DistUnit": "nm", "Observer": "OBS4"})["row"]
     rec.new_row("sightings", {"Species": "Fin whale"})                                  # most fields blank
     rec.edit("sightings", s["RowID"], {"Lat": "42.5"})                               # typo, far from the track
-    rec.new_row("events", {"EventType": "Gear Reported"})
+    rec.new_row("events", {"EventType": "Mooring deployed"})
     r = _qc(rec)
     got = {(x["check"], x["column"]) for x in r["issues"]}
     msgs = " | ".join(x["message"] for x in r["issues"])
@@ -1411,17 +1411,18 @@ def test_reports_presets_run_and_export(rec):
     rec.new_row("sightings", {"Species": "Humpback whale", "Count": "2"})
     rec.new_row("sightings", {"Species": "RIWH", "Count": "2"})            # typed as the code
     rec.new_row("sightings", {"Species": "Spyhop mystery whale", "Count": "1"})   # not in the list
-    rec.new_row("events", {"EventType": "Gear Reported", "Notes": "buoy line"})
     rec.new_row("events", {"EventType": "CTD cast"})
     by = {f["name"]: f for f in saved}
     r = filters.run(rec, by["Right whales"])
     assert r["count"] == 2 and r["total"] == 4
     assert [c["label"] for c in r["columns"]] == ["Time", "Position", "Num", "Calves", "Notes"]
     assert r["totals"] == ["", "", "5", "1", ""] and "°" in r["rows"][0][1] and len(r["row_ids"]) == 2
-    assert filters.run(rec, by["Gear"])["rows"][0][1] == "Gear Reported"
+    rec.new_row("sightings", {"Species": "Fishing gear - reported", "Count": "1", "Notes": "buoy line"})   # 0.34: a sighting
+    g = filters.run(rec, by["Gear"])
+    assert g["count"] == 1 and g["rows"][0][1] == "Fishing gear - reported"
     # codes in this survey, with counts; a name with no code counts by its name
     c = {x["code"]: x["n"] for x in filters.counts(rec, "sightings")}
-    assert c == {"RIWH": 2, "HUWH": 1, "Spyhop mystery whale": 1}
+    assert c == {"RIWH": 2, "HUWH": 1, "Spyhop mystery whale": 1, "GRPT": 1}
     spec = {"name": "Big groups", "table": "sightings", "codes": [], "columns": ["code", "Count"],
             "rules": [{"column": "Count", "op": "gt", "value": "1"}, {"column": "Notes", "op": "not_contains", "value": "calf"}]}
     r = filters.run(rec, spec)
@@ -2456,3 +2457,28 @@ def test_pane_layout_is_kept_on_this_computer(tmp_path):
     cfg = Config(tmp_path)
     cfg.save_settings({"pane_layout": got})
     assert "pane_layout" in cfg.local_path.read_text() and "pane_layout" not in cfg.config_path.read_text()
+
+
+def test_resight_swim_speed_check_and_default_lists(tmp_path):
+    """0.34: the Error check warns when animals would have swum faster than 30 kn between one
+    sighting of them and the next; vessels, debris and fishing gear are sightings, moorings events."""
+    from datetime import datetime, timedelta
+    from spyhop import qc
+    from spyhop.config import DEFAULT_LISTS
+    rec = Recorder(tmp_path)
+    rec.decoder.feed(with_checksum("GPRMC,120000,A,4154.000,N,07020.000,W,10.0,045.0,041126,14.5,W"))
+    rec.start_survey("SP", meta={"platform_type": "Shipboard"})
+    a = rec.new_row("sightings", {"Species": "Fin whale", "Count": "1", "SigLat": "41.9", "SigLon": "-70.3"})["row"]
+    b = rec.add_resight(a["RowID"])["row"]
+    c = rec.add_resight(a["RowID"])["row"]
+    t0 = datetime.fromisoformat(a["DateTime"])
+    rec.edit("sightings", b["RowID"], {"DateTime": (t0 + timedelta(minutes=10)).isoformat(), "SigLat": "41.91", "SigLon": "-70.3"})  # 0.6 nm in 10 min
+    rec.edit("sightings", c["RowID"], {"DateTime": (t0 + timedelta(minutes=12)).isoformat(), "SigLat": "42.0", "SigLon": "-70.3"})   # 5.4 nm in 2 min
+    fast = [i for i in qc.run_qc(rec)["issues"] if i["check"] == "Resight swim speeds"]
+    assert len(fast) == 1 and fast[0]["row_id"] == c["RowID"] and fast[0]["level"] == "warning" and fast[0]["column"] == "SigLat"
+    assert "162 kn" in fast[0]["message"] and f"sighting {b['SightNo']}" in fast[0]["message"]
+    species = {r[0]: r[2] for r in DEFAULT_LISTS["species"][1]}
+    events = {r[0] for r in DEFAULT_LISTS["event_types"][1]}
+    assert species["Vessel sighted"] == "VESL" and species["Fishing gear - reported"] == "GRPT" and "Marine debris" in species
+    assert {"Mooring deployed", "Mooring recovered"} <= events
+    assert not events & {"Vessel sighted", "Marine debris", "Gear Reported", "Photo-ID session start", "Fishing gear sighted", "Acoustic recorder deployed"}
