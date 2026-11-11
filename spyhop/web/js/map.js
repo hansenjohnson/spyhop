@@ -61,6 +61,9 @@ export class MapView {
       zoomSnap: 0.5, wheelPxPerZoomLevel: 90, boxZoom: true }).setView([41.8, -69.9], 9);
     this.map.createPane('land').style.zIndex = 150;
     this.map.createPane('tracks').style.zIndex = 420;
+    // 0.43: external inputs (drones, buoys, other vessels) sit below everything of the survey's own
+    this.map.createPane('externals').style.zIndex = 405;
+    this.map.createPane('externalLabels').style.zIndex = 406;
     this.map.createPane('vessel').style.zIndex = 650;
     this.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
     this.map.on('dragstart', () => { this.userMoved = Date.now(); this.setFollow(false); });
@@ -72,9 +75,10 @@ export class MapView {
       try { localStorage.setItem('wsr.base', e.name); } catch {}
       this.baseLayer = e.layer; this.showDepth('');
       this.app.renderChartList?.();
+      this.app.renderBasemapChoice?.();
     });
     this.map.on('mouseout', () => this.showDepth(''));
-    this.map.on('overlayadd overlayremove', () => this.saveOverlayState());
+    this.map.on('overlayadd overlayremove', (e) => { this.trackToggle(e); this.saveOverlayState(); });
     this.buildLayers();
     this.buildControls();
     setInterval(() => { if (this.app.S.config.display.fade_enabled === '1') this.redrawData(); }, 60000);
@@ -163,6 +167,12 @@ export class MapView {
     this.layers.graticule = L.layerGroup();
     this.layers.vessel = L.layerGroup().addTo(this.map);
 
+    // 0.43: the platform, its track (the on- and off-effort parts: Settings → General → Map display) in the menu
+    overlays['Platform icon'] = this.layers.vessel;
+    this.layers.effortOn = L.layerGroup();
+    this.layers.effortOff = L.layerGroup();
+    overlays['Effort (on-effort track)'] = this.layers.effortOn;
+    overlays['Track (off effort)'] = this.layers.effortOff;
     overlays['Sightings'] = this.markerLayers.sightings;
     overlays['Events'] = this.markerLayers.events;
     overlays['Waypoints'] = this.markerLayers.marks;
@@ -178,12 +188,23 @@ export class MapView {
     this.baseLayer = base;
     // track and sighting/FieldID lines are always on the map; Settings decides what they draw
     for (const k of ['track', 'lines', 'fidlines', 'relines']) this.layers[k].addTo(this.map);
-    const defaultsOn = ['Sightings', 'Events', 'Waypoints', 'Imported overlays'];
+    const defaultsOn = ['Platform icon', 'Sightings', 'Events', 'Waypoints', 'Imported overlays'];
+    let seen = null;
+    try { seen = JSON.parse(localStorage.getItem('wsr.overlays.seen') || 'null'); } catch {}
+    const disp = this.app.S.config.display;
     for (const [name, layer] of Object.entries(overlays)) {
-      const on = ov ? ov.includes(name) : defaultsOn.includes(name);
+      if (layer === this.layers.effortOn || layer === this.layers.effortOff) continue;
+      // a name new to this computer's saved list starts as its default
+      const on = ov && (!seen || seen.includes(name)) && (seen || name !== 'Platform icon') ? ov.includes(name) : defaultsOn.includes(name);
       if (on) layer.addTo(this.map);
     }
-    this.layerControl = new GroupedLayers(bases, overlays, { position: 'topright', collapsed: true }).addTo(this.map);
+    this._trackSync = true;
+    if (disp.show_track_on !== '0') this.layers.effortOn.addTo(this.map);
+    if (disp.show_track_off !== '0') this.layers.effortOff.addTo(this.map);
+    this._trackSync = false;
+    // 0.43: map tiles are chosen in Settings → Basemap; the menu has the layers only
+    this.layerControl = new GroupedLayers({}, overlays, { position: 'topright', collapsed: true }).addTo(this.map);
+    this.externals = new Map();
   }
 
   // the charts folder changed (a download finished, or Rescan): update the layers menu
@@ -204,7 +225,7 @@ export class MapView {
       layer._info = { tiles: m.tiles, created: m.created };
       layer._group = 'offline';
       if (m.overlay) { this.overlays[this.chartLabel(m)] = layer; this.layerControl.addOverlay(layer, this.chartLabel(m)); }
-      else { this.bases[this.chartLabel(m)] = layer; this.layerControl.addBaseLayer(layer, this.chartLabel(m)); }
+      else { this.bases[this.chartLabel(m)] = layer; this.app.renderBasemapChoice?.(); }
       if (this._restoreBase === m.file) { this.setBase(layer, this.chartLabel(m)); this._restoreBase = null; }
     }
     if (this._restoreBase) { const first = this.bases['Seascape depths (feet)'] || Object.values(this.bases)[0]; this.setBase(first); this._restoreBase = null; }
@@ -231,8 +252,31 @@ export class MapView {
     return true;
   }
 
+  // the Effort / Track entries switch the on- and off-effort track (Settings → General → Map display)
+  trackToggle(e) {
+    if (this._trackSync || !e?.layer) return;
+    const key = e.layer === this.layers.effortOn ? 'show_track_on' : e.layer === this.layers.effortOff ? 'show_track_off' : null;
+    if (!key) return;
+    const v = e.type === 'overlayadd' ? '1' : '0';
+    if ((this.app.S.config.display[key] !== '0' ? '1' : '0') !== v) this.app.saveDisplay({ [key]: v });
+  }
+
+  // the display settings changed: tick or untick the Effort / Track entries to match
+  syncTrackToggles() {
+    const disp = this.app.S.config.display;
+    this._trackSync = true;
+    for (const [layer, key] of [[this.layers.effortOn, 'show_track_on'], [this.layers.effortOff, 'show_track_off']]) {
+      const want = disp[key] !== '0';
+      if (want && !this.map.hasLayer(layer)) layer.addTo(this.map);
+      if (!want && this.map.hasLayer(layer)) this.map.removeLayer(layer);
+    }
+    this._trackSync = false;
+    this.layerControl?._update?.();
+  }
+
   saveOverlayState() {
-    const on = Object.entries(this.overlays).filter(([, l]) => this.map.hasLayer(l)).map(([n]) => n);
+    const on = Object.entries(this.overlays).filter(([n, l]) => this.map.hasLayer(l) && l !== this.layers.effortOn && l !== this.layers.effortOff).map(([n]) => n);
+    try { localStorage.setItem('wsr.overlays.seen', JSON.stringify(Object.keys(this.overlays))); } catch {}
     // keep names not (yet) in the menu, e.g. map feeds still loading, so they come back on
     let before = [];
     try { before = JSON.parse(localStorage.getItem('wsr.overlays') || '[]') || []; } catch {}
@@ -510,19 +554,21 @@ export class MapView {
   // they're drawn to the new fix instead of hopping. Only the drawing is smoothed: the data, popups,
   // measurements and Follow vessel all use the real latest fix.
   // the secondary GPS / NMEA inputs chosen to show on the map (0.41): a point and its name each, where
-  // that input says it is (drawing only; nothing is recorded in the tables)
+  // that input says it is (drawing only; nothing is recorded in the tables). Externals (0.43) have their
+  // own layers instead: see updateExternal.
   updateOthers(list) {
     if (!this.layers.others) this.layers.others = L.layerGroup().addTo(this.map);
     this._others = this._others || new Map();
     const seen = new Set();
     for (const o of list || []) {
       if (o.lat == null || o.lon == null) continue;
+      if (o.external) { this.updateExternal(o); continue; }
       seen.add(o.name);
       let m = this._others.get(o.name);
       const ll = [o.lat, o.lon];
       if (!m) {
-        m = L.circleMarker(ll, { pane: 'vessel', radius: 6, color: '#ffffff', weight: 2, fillColor: o.external ? '#e07000' : '#7b3fbf', fillOpacity: 0.9, className: o.external ? 'external-input' : 'secondary-input' })
-          .bindTooltip(o.name, { permanent: true, direction: 'right', offset: [8, 0], className: o.external ? 'secondary-label external-label' : 'secondary-label' });
+        m = L.circleMarker(ll, { pane: 'vessel', radius: 6, color: '#ffffff', weight: 2, fillColor: '#7b3fbf', fillOpacity: 0.9, className: 'secondary-input' })
+          .bindTooltip(o.name, { permanent: true, direction: 'right', offset: [8, 0], className: 'secondary-label' });
         m.addTo(this.layers.others);
         this._others.set(o.name, m);
       } else {
@@ -531,6 +577,94 @@ export class MapView {
     }
     for (const [name, m] of this._others) {
       if (!seen.has(name)) { this.layers.others.removeLayer(m); this._others.delete(name); }
+    }
+  }
+
+  // ---------------------------------------------------------------- external inputs (0.43)
+  // Each external in use that shows on the map has a layer of its own in the menu ("<name> (external)"):
+  // its trail and its latest position (and name), in its own color and line, below all of the survey's own layers.
+  externalLabel(name) { return `${name} (external)`; }
+
+  // the inputs changed (or the app loaded): one layer per external shown on the map, styled as its input says
+  syncExternals(inputs) {
+    const want = new Map((inputs || []).filter((x) => x.role === 'external' && x.enabled !== false && x.show_on_map !== false).map((x) => [x.name, x]));
+    for (const [name, x] of this.externals) {
+      if (want.has(name)) continue;
+      this.layerControl.removeLayer(x.group);
+      delete this.overlays[this.externalLabel(name)];
+      if (this.map.hasLayer(x.group)) this.map.removeLayer(x.group);
+      this.externals.delete(name);
+    }
+    let ov = null, seen = null;
+    try { ov = JSON.parse(localStorage.getItem('wsr.overlays') || 'null'); seen = JSON.parse(localStorage.getItem('wsr.overlays.seen') || 'null'); } catch {}
+    for (const [name, inp] of want) {
+      let x = this.externals.get(name);
+      if (!x) {
+        const group = L.layerGroup();
+        group._group = 'offline';
+        x = { group, pts: x?.pts || [], style: inp,
+          line: L.polyline([], { pane: 'externals', interactive: false }).addTo(group),
+          dot: L.circleMarker([0, 0], { pane: 'externals', radius: 6, color: '#ffffff', weight: 2, fillOpacity: 0.95, className: 'external-input' }) };
+        this.externals.set(name, x);
+        const label = this.externalLabel(name);
+        this.overlays[label] = group;
+        this.layerControl.addOverlay(group, label);
+        const on = ov && seen?.includes(label) ? ov.includes(label) : true;
+        if (on) group.addTo(this.map);
+      }
+      x.style = inp;
+      this.styleExternal(name);
+    }
+    this.saveOverlayState();
+  }
+
+  styleExternal(name) {
+    const x = this.externals.get(name);
+    if (!x) return;
+    const s = x.style || {};
+    const w = +s.width || 2;
+    x.line.setStyle({ color: s.color || '#e07000', weight: w, dashArray: dashFor(s.line || 'solid', w), opacity: 0.9 });
+    x.dot.setStyle({ fillColor: s.color || '#e07000' });
+    if (s.label !== false) {
+      if (!x.dot.getTooltip()) x.dot.bindTooltip(name, { permanent: true, direction: 'right', offset: [8, 0], pane: 'externalLabels', className: 'secondary-label external-label' });
+    } else if (x.dot.getTooltip()) x.dot.unbindTooltip();
+    this.drawExternal(name);
+  }
+
+  // the trail: all of it, the last N minutes, or none (the point only)
+  drawExternal(name) {
+    const x = this.externals.get(name);
+    if (!x) return;
+    const t = x.style?.trail ?? 'all';
+    const from = t === 'all' ? -Infinity : t === 'none' ? Infinity : Date.now() - (+t) * 60000;
+    x.line.setLatLngs(x.pts.filter((p) => p[0] >= from).map((p) => [p[1], p[2]]));
+    const last = x.pts[x.pts.length - 1];
+    if (last) {
+      x.dot.setLatLng([last[1], last[2]]);
+      if (!x.group.hasLayer(x.dot)) x.dot.addTo(x.group);
+    } else if (x.group.hasLayer(x.dot)) x.group.removeLayer(x.dot);
+  }
+
+  // a new fix from an external (the 1 s vessel message)
+  updateExternal(o) {
+    const x = this.externals.get(o.name);
+    if (!x) return;
+    const last = x.pts[x.pts.length - 1];
+    if (!last || last[1] !== o.lat || last[2] !== o.lon) {
+      x.pts.push([Date.now() - (o.age || 0) * 1000, o.lat, o.lon]);
+      if (x.pts.length > 50000) x.pts.splice(0, x.pts.length - 50000);
+    }
+    this.drawExternal(o.name);
+  }
+
+  // the trails so far, from the server (at start, and when a survey is started, opened or closed)
+  async loadExternals() {
+    if (!this.externals?.size) return;
+    let r;
+    try { r = await api('/api/externals'); } catch { return; }
+    for (const [name, x] of this.externals) {
+      x.pts = (r.tracks || {})[name] || [];
+      this.drawExternal(name);
     }
   }
 
@@ -1167,7 +1301,7 @@ const GroupedLayers = L.Control.Layers.extend({
       const g = ovs[i]?.layer?._group === 'online' ? 'online' : 'offline';
       if (g !== lastOv) {
         const h = L.DomUtil.create('div', 'layers-heading');
-        h.textContent = g === 'online' ? 'Online overlays' : 'Offline overlays';
+        h.textContent = g === 'online' ? 'Online overlays' : 'Layers';
         this._overlaysList.insertBefore(h, lab);
         lastOv = g;
       }

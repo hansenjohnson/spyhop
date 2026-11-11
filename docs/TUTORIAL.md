@@ -5,7 +5,7 @@ Spyhop records a vessel-based whale survey: sightings, effort and conditions, ev
 ## Find your way around
 
 - **Map** (left): the vessel, its trackline (in the color of each effort value, thinner off effort), sightings, events and waypoints.
-  - The layers button (top right) switches base maps and overlays.
+  - The layers button (top right) switches what is drawn: the platform, track, sightings, events, externals and other overlays. The map tiles underneath are chosen in **Settings → Basemap**.
   - The buttons on the left: ⌖ follow the vessel, 📏 measure, ◎ range rings, ⤢ zoom to the whole survey.
   - Right-click the map for: add a sighting, event or waypoint here; measure from here.
 - **Tabs** (right):

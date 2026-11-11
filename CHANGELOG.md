@@ -6,6 +6,11 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.43.0 — 2026-11-11
+
+- **External tracks:** each external input's card has **On the map** settings: color, line (solid, dashed, dotted, dash-dot), width, **Trail** (whole survey, last 10 min – 3 h, or none), **Show the name**, and **Record its track**. While a survey is active a recorded external's fixes go to `<survey>_ext_<name>.csv` in the survey folder (DateTime, Lat, Lon, SOG, COG, Heading, GPSTime); its trail is drawn live and read back from the file when the survey is opened again. The files are in the separate-CSV export and survey packages. The settings travel in templates with the input.
+- **The map's layers menu:** map tiles moved to **Settings → Basemap → Map tiles** (online and offline). The menu's first section is now **Layers**, with **Platform icon**, **Effort** (the on-effort track) and **Track** (the off-effort track; the same switches as Settings → General → Map display) and a layer for each external, **<name> (external)**, drawn below everything of the survey's own.
+
 ## 0.42.0 — 2026-11-11
 
 - **Input roles:** each GPS / NMEA input has a role drop-down: **Primary** (one: the platform's position, course, speed and heading), **Secondary** (another of the platform's inputs: logged, fills in readings, can stand in for the primary) or **External** (a drone, drifting buoy or second vessel: logged and shown on the map as an orange point, never used for the platform's position, readings or fallback). External travels with the input in templates.

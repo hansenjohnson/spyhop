@@ -2954,3 +2954,39 @@ def test_external_inputs_and_failover_notice(rec, tmp_path):
     (sd / "S_nmea.csv").write_text("DateTime,Source,Primary,Key,Label,Unit,Value\nt,A,yes,lat,Latitude,°,41\nt,B,no,lat,Latitude,°,42\n")
     assert rename_instrument_files(tmp_path / "v041") == 1
     assert (sd / "S_nmea.csv").read_text().splitlines()[1:] == ["t,A,primary,lat,Latitude,°,41", "t,B,secondary,lat,Latitude,°,42"]
+
+
+def test_external_tracks_recorded_and_styled(rec):
+    """0.43: each external's fixes go to <survey>_ext_<name>.csv while a survey is active (if recording is
+    on), and into a trail for the map, read back when the survey is opened again; styles are cleaned."""
+    from spyhop.nmea import with_checksum as w
+    from spyhop.config import clean_inputs, input_definition
+    d = rec.decoder
+    d.primary, d.externals = "Ship", {"Drone 1", "Buoy"}
+    inputs = clean_inputs([{"name": "Ship", "type": "udp", "port": 1, "role": "primary"},
+                           {"name": "Drone 1", "type": "udp", "port": 2, "role": "external", "color": "nope", "line": "zigzag", "trail": "30"},
+                           {"name": "Buoy", "type": "udp", "port": 3, "role": "external", "record": False, "label": False}])
+    drone, buoy = inputs[1], inputs[2]
+    assert (drone["color"], drone["line"], drone["width"], drone["trail"], drone["label"], drone["record"]) == ("#e07000", "solid", 2.0, 30, True, True)
+    assert buoy["color"] == "#0097a7" and buoy["record"] is False and buoy["label"] is False
+    assert input_definition(drone)["color"] == "#e07000" and "color" not in inputs[0]        # styles travel in templates
+    for i, (lat, lon) in enumerate([(4200.0, 7000.0), (4200.5, 7000.5)]):
+        d.feed(w(f"GPRMC,12000{i},A,{lat:.3f},N,0{lon:.3f},W,8.0,45.0,111126,,"), "Drone 1")
+        d.feed(w(f"GPRMC,12000{i},A,4100.000,N,06900.000,W,1.0,0.0,111126,,"), "Buoy")
+        d.others["Drone 1"].updated += i             # a new fix each second
+        rec.tick_externals(d, inputs)
+        rec.tick_externals(d, inputs)                # no new fix: nothing added
+    p = rec._ext_path("Drone 1")
+    assert p.name == "Test_ext_Drone_1.csv"
+    lines = p.read_text().splitlines()
+    assert lines[0] == "DateTime,Lat,Lon,SOG,COG,Heading,GPSTime" and len(lines) == 3 and ",42.000000,-70.000000,8.0,45.0," in lines[1]
+    assert rec._ext_path("Buoy").exists() is False                                 # not recorded
+    tr = rec.external_tracks(inputs)
+    assert len(tr["Drone 1"]) == 2 and len(tr["Buoy"]) == 2
+    assert "Test_ext_Drone_1.csv" in {n.split("/")[-1] for n in zipfile.ZipFile(rec.export(["csv"])).namelist()}
+    prefix = rec.survey["prefix"]
+    rec.close_survey()
+    assert rec.external_tracks(inputs) == {}
+    rec.open_survey(prefix)
+    assert len(rec.external_tracks(inputs)["Drone 1"]) == 2                          # read back from the file
+    d.primary, d.externals = None, set()

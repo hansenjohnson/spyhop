@@ -587,3 +587,12 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 #failover-banner a { color: #fff; text-decoration: underline; font-weight: 600; }
 #failover-banner .fo-dot { animation: fo-blink 1s steps(2, start) infinite; }
 @keyframes fo-blink { to { visibility: hidden; } }
+
+/* 0.43: an external's style on its input card; the map-tiles choice in Settings → Basemap */
+.nmea-src-style { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; padding-left: 1.6em; }
+.nmea-src-style .lbl-inline { color: var(--muted); }
+.nmea-src-style .color-cell { display: inline-flex; gap: 0.3em; align-items: center; }
+.nmea-src-style input[type=color] { width: 2.2em; height: 1.7em; padding: 0; border: 1px solid var(--line); }
+.nmea-src.off .nmea-src-style { opacity: 0.6; }
+.basemap-group h4 { margin: 0.6em 0 0.2em; }
+.basemap-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(16em, 1fr)); gap: 0.2em 1.5em; }

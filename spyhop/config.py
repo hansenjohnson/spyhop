@@ -388,6 +388,35 @@ INPUT_ROLES = ("primary", "secondary", "external")
 INPUT_FLAGS = ("enabled", "role", "show_on_map", "primary")
 
 
+# 0.43: how an external is drawn and kept: its color, line (solid/dashed/dotted/dashdot) and width, how
+# much trail (all of it, the last N minutes, or none: a point only), whether its name shows on the map and
+# whether its fixes are recorded to <survey>_ext_<name>.csv. They belong to the device, so they travel in
+# templates with the input (preferences, never data).
+EXTERNAL_COLORS = ["#e07000", "#0097a7", "#c2185b", "#7cb342", "#5e35b1", "#6d4c41"]
+LINE_STYLES = ("solid", "dashed", "dotted", "dashdot")
+EXTERNAL_STYLE = ("color", "line", "width", "trail", "label", "record")
+
+
+def _clean_external(x: dict, i: int):
+    c = str(x.get("color") or "").strip()
+    x["color"] = c.lower() if re.fullmatch(r"#[0-9a-fA-F]{6}", c) else EXTERNAL_COLORS[i % len(EXTERNAL_COLORS)]
+    x["line"] = x.get("line") if x.get("line") in LINE_STYLES else "solid"
+    try:
+        w = float(x.get("width") or 2)
+    except (TypeError, ValueError):
+        w = 2
+    x["width"] = min(10.0, max(0.5, w))
+    t = x.get("trail", "all")
+    if t not in ("all", "none"):
+        try:
+            t = max(1, min(24 * 60, int(t)))
+        except (TypeError, ValueError):
+            t = "all"
+    x["trail"] = t
+    x["label"] = x.get("label", True) is not False
+    x["record"] = x.get("record", True) is not False
+
+
 def input_definition(src: dict) -> dict:
     """An input without this computer's choices: what a template holds (role only if external)."""
     d = {k: v for k, v in src.items() if k not in INPUT_FLAGS and k != "session"}
@@ -419,6 +448,11 @@ def clean_inputs(sources) -> list[dict]:
         x["role"] = role
         x.pop("primary", None)
         x["show_on_map"] = bool(x.get("show_on_map", role == "external"))
+        if role == "external":
+            _clean_external(x, sum(1 for y in out if y["role"] == "external"))
+        else:
+            for k in EXTERNAL_STYLE:
+                x.pop(k, None)
         out.append(x)
     platform = [x for x in out if x["enabled"] and x["role"] != "external"]
     prim = next((x for x in platform if x["role"] == "primary"), platform[0] if platform else None)

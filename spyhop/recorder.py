@@ -246,6 +246,7 @@ class Recorder:
             self._number_segments()
         self._raw_log_follow()
         self._load_instruments()
+        self._load_externals()
 
     def _survey_exists(self, prefix: str) -> bool:
         # explicit paths, not glob(): survey names may contain [ ] * etc.
@@ -720,6 +721,101 @@ class Recorder:
         import shutil
         if folder.is_dir() and folder.parent == self.cfg.data_dir:
             shutil.rmtree(folder, ignore_errors=True)
+
+    # -- external inputs (0.43): a drone, a drifting buoy, a second vessel ----------------------
+    # Each external's fixes: a trail kept in memory for the map (since the survey started, or since Spyhop
+    # started with no survey open) and, while a survey is active and the input's "record" is on, a file
+    # <survey>_ext_<name>.csv in the survey folder (DateTime, Lat, Lon, SOG, COG, Heading, GPSTime).
+    EXT_COLUMNS = ["DateTime", "Lat", "Lon", "SOG", "COG", "Heading", "GPSTime"]
+    EXT_MAX_POINTS = 50000          # per external, in memory (the file keeps them all)
+
+    @staticmethod
+    def ext_stem(name: str) -> str:
+        return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_.") or "external"
+
+    def _ext_path(self, name: str) -> Path | None:
+        return self._file(self.survey["prefix"], f"ext_{self.ext_stem(name)}") if self.survey else None
+
+    def _ext_files(self) -> list[Path]:
+        if not self.survey:
+            return []
+        folder = self.cfg.survey_dir(self.survey["prefix"])
+        try:
+            return sorted(folder.glob(f"{self.survey['prefix']}_ext_*.csv"))
+        except OSError:
+            return []
+
+    def _load_externals(self):
+        """The trails of a survey's recorded externals, from its files (so they survive a restart)."""
+        self.ext_tracks: dict[str, list] = {}
+        self._ext_seen: dict[str, float] = {}
+        self.ext_names: dict[str, str] = {}      # file stem → the input's name, as recorded
+        for p in self._ext_files():
+            stem = p.stem[len(self.survey["prefix"]) + len("_ext_"):]
+            pts = []
+            try:
+                with open(p, newline="", encoding="utf-8-sig") as fh:
+                    for r in csv.DictReader(fh):
+                        t = parse_time(r.get("DateTime", ""))
+                        try:
+                            pts.append((t.timestamp(), float(r["Lat"]), float(r["Lon"])))
+                        except (AttributeError, KeyError, TypeError, ValueError):
+                            continue
+            except OSError as e:
+                log.warning("couldn't read %s: %s", p, e)
+            if pts:
+                self.ext_tracks[stem] = pts[-self.EXT_MAX_POINTS:]
+
+    def tick_externals(self, decoder, inputs: list[dict]):
+        """Called every second: add each external's new fix to its trail, and to its file while a survey is
+        active and its recording is on."""
+        if not hasattr(self, "ext_tracks"):
+            self._load_externals()
+        for src in inputs:
+            if src.get("role") != "external" or src.get("enabled") is False:
+                continue
+            name = src.get("name") or ""
+            st = decoder.others.get(name)
+            if st is None or st.lat is None or st.updated is None or self._ext_seen.get(name) == st.updated:
+                continue
+            self._ext_seen[name] = st.updated
+            stem = self.ext_stem(name)
+            self.ext_names[stem] = name
+            pts = self.ext_tracks.setdefault(stem, [])
+            pts.append((st.updated, st.lat, st.lon))
+            if len(pts) > self.EXT_MAX_POINTS:
+                del pts[: len(pts) - self.EXT_MAX_POINTS]
+            if self.survey_active() and src.get("record", True) is not False:
+                p = self._ext_path(name)
+                hdg = st.heading if st.heading_updated and time.time() - st.heading_updated < 10 else None
+                row = [datetime.fromtimestamp(st.updated, timezone.utc).astimezone(self.tz()).isoformat(timespec="seconds"),
+                       f"{st.lat:.6f}", f"{st.lon:.6f}", "" if st.sog is None else round(st.sog, 2),
+                       "" if st.cog is None else round(st.cog, 1), "" if hdg is None else round(hdg, 1), st.gps_time or ""]
+                try:
+                    new = not p.exists()
+                    with open(p, "a", newline="", encoding="utf-8") as fh:
+                        w = csv.writer(fh)
+                        if new:
+                            w.writerow(self.EXT_COLUMNS)
+                        w.writerow(row)
+                except OSError as e:
+                    log.warning("couldn't save the track of %s: %s", name, e)
+
+    def external_tracks(self, inputs=None, max_points: int = 5000) -> dict:
+        """{input name: [[epoch ms, lat, lon], …]} for the map (thinned to max_points each)."""
+        if not hasattr(self, "ext_tracks"):
+            self._load_externals()
+        for src in inputs or []:
+            if src.get("role") == "external" and src.get("name"):
+                self.ext_names.setdefault(self.ext_stem(src["name"]), src["name"])
+        out = {}
+        for stem, pts in self.ext_tracks.items():
+            step = max(1, len(pts) // max_points)
+            sel = pts[::step]
+            if pts and sel[-1] is not pts[-1]:
+                sel.append(pts[-1])
+            out[self.ext_names.get(stem, stem)] = [[round(t * 1000), round(a, 6), round(b, 6)] for t, a, b in sel]
+        return out
 
     # -- instrument history (Tools → Instruments plots) ---------------------------------
     INST_SAMPLE_S = 5            # one value per reading every this many seconds
@@ -1658,6 +1754,8 @@ class Recorder:
             ip = self._inst_path()
             if ip and ip.exists():
                 files[ip.name] = ip.read_bytes()
+            for xp in self._ext_files():                     # 0.43: each recorded external's track
+                files[xp.name] = xp.read_bytes()
         if "merged" in formats:
             header, rows = self.merged_rows(pts)
             files[f"{prefix}_merged.csv"] = csv_bytes(header, rows)

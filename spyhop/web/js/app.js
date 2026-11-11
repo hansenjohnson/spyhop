@@ -50,6 +50,7 @@ class App {
     document.addEventListener('keydown', (e) => this.onShortcut(e), true);
     this.watchSlowness();
     watchHelp();
+    this.refreshExternals();
     this.watchErrors();
     const ab = this.S.about || {};
     if (ab.updated_from) toast(`Spyhop has been updated from ${ab.updated_from} to ${ab.spyhop}. See what's new in Settings → About.`, 'info', 12000);
@@ -139,6 +140,7 @@ class App {
     this.applyDisplay();
     this.renderAll();
     this.map.drawTrack();
+    this.map.loadExternals();                 // the trails start again with each survey
     this.map.loadOverlays(this.S.overlays);
     this.online?.applyPackDisplay();
     this.showTab(utilTab, { reveal: false });
@@ -685,6 +687,7 @@ class App {
         this.S.config.display = m.display;
         this.applyDisplay();
         this.map.restyleOverlays();
+        this.map.syncTrackToggles();
         this.map.redrawData();
         this.map.updateVessel(this.S.vessel);
         this.grids.sightings?.render();          // resights nested or in time order
@@ -2342,8 +2345,44 @@ class App {
   renderBasemap() {
     const pane = $('#pane-basemap');
     if (!pane) return;
-    pane.replaceChildren(this.mapSection());
+    pane.replaceChildren(this.basemapChoice(), this.mapSection());
     this.renderChartList();
+  }
+
+  // 0.43: which map tiles are under everything (moved here from the map's layers menu): online tiles,
+  // then offline ones (downloaded charts and the built-in coastline)
+  basemapChoice() {
+    const m = this.map, bases = m.bases || {};
+    const cur = Object.entries(bases).find(([, l]) => l === m.baseLayer)?.[0];
+    const groups = [['online', 'Online map tiles', 'These need the internet (what you view is kept for offline use too).'],
+      ['offline', 'Offline map tiles', 'Charts downloaded on this computer, and the built-in coastline.']];
+    const of = (l) => (l._group === 'online' ? 'online' : 'offline');
+    return el('section', { class: 'settings-sec', id: 'basemap-choice' }, el('h3', {}, 'Map tiles'),
+      el('p', { class: 'hint help' }, 'The map under the survey. Overlays (sightings, the track, imported files, online overlays…) are switched on and off in the map’s layers menu (the stack button on the map).'),
+      ...groups.map(([g, title, hint]) => {
+        const names = Object.entries(bases).filter(([, l]) => of(l) === g);
+        if (!names.length) return null;
+        return el('div', { class: 'basemap-group', 'data-group': g }, el('h4', {}, title), el('p', { class: 'hint help' }, hint),
+          el('div', { class: 'basemap-list' }, names.map(([name, layer]) => el('label', { class: 'check' },
+            el('input', { type: 'radio', name: 'basemap', value: name, checked: name === cur,
+              onchange: () => { m.setBase(layer, name); toast(`Map tiles: ${name}`, 'info', 2000); } }),
+            el('span', {}, name)))));
+      }));
+  }
+
+  renderBasemapChoice() {
+    const box = $('#basemap-choice');
+    if (box) box.replaceWith(this.basemapChoice());
+  }
+
+  // the external inputs' layers and trails (0.43), from the inputs as they run
+  async refreshExternals() {
+    try {
+      const r = await api('/api/nmea');
+      this.S.nmea = { ...(this.S.nmea || {}), ...r };
+      this.map.syncExternals(r.all_sources);
+      await this.map.loadExternals();
+    } catch {}
   }
 
   // ---------------------------------------------------------------- shortcuts tab
@@ -2665,6 +2704,8 @@ class App {
       try {
         const r = await api('/api/nmea/sources', { sources, failover: draft.failover });
         this.S.nmea = { ...(this.S.nmea || {}), all_sources: r.sources };
+        this.map.syncExternals(r.sources);
+        this.map.loadExternals();
         this.nmeaDraft = null;
         toast('GPS inputs applied');
         this.renderInputs();
@@ -2702,6 +2743,7 @@ class App {
             el('input', { type: 'checkbox', class: 'src-map', checked: !!s.show_on_map, onchange: (e) => { s.show_on_map = e.target.checked; markDirty(); } }), 'Show on the map') : null,
           s.session ? el('span', { class: 'hint', title: 'Started from the command line (e.g. --sim). Changes apply until Spyhop is closed.' }, 'this session only') : null,
           el('button', { class: 'icon', title: 'Remove', onclick: () => { sources.splice(i, 1); markDirty(); draw(); } }, '✕')),
+        s.role === 'external' ? this.externalStyleRow(s, markDirty) : null,
         el('div', { class: 'nmea-src-body' },
           el('select', { 'aria-label': 'Kind of input', onchange: (e) => { sources[i] = { name: s.name, type: e.target.value, enabled: inUse(s), role: s.role, show_on_map: !!s.show_on_map, ...defaults[e.target.value], ...(s.session ? { session: true } : {}) }; markDirty(); draw(); } },
             Object.keys(fields).map((t) => el('option', { value: t, selected: t === s.type }, t === 'sim' ? 'SIMULATOR' : t.toUpperCase()))),
@@ -2774,6 +2816,31 @@ class App {
     pane.replaceChildren(inst, raw);
     this.updateInstruments();
     this.updateRawLog();
+  }
+
+  // 0.43: an external's look on the map and whether it's recorded (on its input card)
+  externalStyleRow(s, markDirty) {
+    const set = (k, v) => { s[k] = v; markDirty(); };
+    s.color ??= '#e07000'; s.line ??= 'solid'; s.width ??= 2; s.trail ??= 'all'; s.label ??= true; s.record ??= true;
+    const hexBox = el('input', { type: 'text', class: 'src-color-text', value: s.color, size: 8, 'aria-label': 'Color',
+      onchange: (e) => { if (/^#[0-9a-f]{6}$/i.test(e.target.value.trim())) { set('color', e.target.value.trim()); pick.value = s.color; } } });
+    const pick = el('input', { type: 'color', class: 'src-color', value: /^#[0-9a-f]{6}$/i.test(s.color) ? s.color : '#e07000', title: 'Pick a color',
+      oninput: (e) => { set('color', e.target.value); hexBox.value = e.target.value; } });
+    const trails = [['all', 'Whole survey'], ['10', 'Last 10 min'], ['30', 'Last 30 min'], ['60', 'Last hour'], ['180', 'Last 3 hours'], ['none', 'None (position only)']];
+    if (!trails.some(([v]) => v === String(s.trail))) trails.splice(5, 0, [String(s.trail), `Last ${s.trail} min`]);
+    return el('div', { class: 'nmea-src-style' },
+      el('span', { class: 'lbl-inline' }, 'On the map:'),
+      el('span', { class: 'color-cell' }, pick, hexBox),
+      el('select', { class: 'src-line', 'aria-label': 'Line', onchange: (e) => set('line', e.target.value) },
+        LINE_STYLES.map(([v, l]) => el('option', { value: v, selected: s.line === v }, l))),
+      el('label', { class: 'inline' }, 'Width', el('input', { type: 'number', class: 'src-width', min: 0.5, max: 10, step: 0.5, value: s.width, style: { width: '4.5em' },
+        onchange: (e) => set('width', +e.target.value || 2) })),
+      el('label', { class: 'inline' }, 'Trail', el('select', { class: 'src-trail', onchange: (e) => set('trail', /^\d+$/.test(e.target.value) ? +e.target.value : e.target.value) },
+        trails.map(([v, l]) => el('option', { value: v, selected: String(s.trail) === v }, l)))),
+      el('label', { class: 'check', title: 'Write the input’s name beside its position on the map' },
+        el('input', { type: 'checkbox', class: 'src-label', checked: s.label !== false, onchange: (e) => set('label', e.target.checked) }), 'Show the name'),
+      el('label', { class: 'check', title: 'While a survey is active, save every fix to <survey>_ext_<name>.csv in the survey folder' },
+        el('input', { type: 'checkbox', class: 'src-record', checked: s.record !== false, onchange: (e) => set('record', e.target.checked) }), 'Record its track'));
   }
 
   // Settings → Inputs: the GPS / NMEA inputs

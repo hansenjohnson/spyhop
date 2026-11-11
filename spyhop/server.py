@@ -258,9 +258,10 @@ class App:
             n += 1
             try:
                 self.rec.tick_tracker()
+                self.rec.tick_externals(self.rec.decoder, getattr(self, "running_inputs", []))
                 msg = {"type": "vessel", "vessel": self.rec.vessel(), "t": time.time(),
                        "inst": self.rec.decoder.instruments(),
-                       "others": self.rec.decoder.secondaries(self.sources.on_map) if self.sources.on_map else [],
+                       "others": self.others_on_map(),
                        "failover": self.rec.decoder.failover_state()}
                 if n % 3 == 0:
                     msg["nmea"] = self.nmea_status(raw=False)
@@ -739,7 +740,20 @@ class App:
         return clean_inputs(saved + extra)
 
     async def start_inputs(self):
-        await self.sources.start(self.all_sources(), failover=bool(self.rec.cfg.settings.get("nmea_failover")))
+        self.running_inputs = self.all_sources()
+        await self.sources.start(self.running_inputs, failover=bool(self.rec.cfg.settings.get("nmea_failover")))
+
+    def others_on_map(self) -> list[dict]:
+        """The secondaries and externals to draw, with each external's style (0.43)."""
+        if not self.sources.on_map:
+            return []
+        style = {x["name"]: {k: x.get(k) for k in ("color", "line", "width", "trail", "label")}
+                 for x in getattr(self, "running_inputs", []) if x.get("role") == "external"}
+        return [{**o, **style.get(o["name"], {})} for o in self.rec.decoder.secondaries(self.sources.on_map)]
+
+    async def externals(self, request):
+        """The externals' trails so far: {name: [[epoch ms, lat, lon], …]} (0.43)."""
+        return json_ok(tracks=self.rec.external_tracks(getattr(self, "running_inputs", [])))
 
     # -- tiles ------------------------------------------------------------------------
     async def tile_online(self, request):
@@ -1568,6 +1582,7 @@ class App:
         r.add_post("/api/open", self.open)
         r.add_get("/api/nmea", self.nmea)
         r.add_post("/api/nmea/sources", self.nmea_sources)
+        r.add_get("/api/externals", self.externals)
         r.add_post("/api/nmea/log", self.nmea_log)
         r.add_get("/tiles/s/{i}/{z}/{x}/{y}", self.tile_online)
         r.add_get("/tiles/mb/{name}/{z}/{x}/{y}", self.tile_mb)
