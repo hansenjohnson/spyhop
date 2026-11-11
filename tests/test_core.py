@@ -1870,7 +1870,7 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
         names = set(z.namelist())
         doc = json.loads(z.read("spyhop-config.json"))
     assert names == {"spyhop-config.json", "species.csv", "event_types.csv", "observers.csv", "behaviors.csv", "shortcuts.csv",
-                     "visibility.csv", "weather.csv", "reticles.csv",
+                     "visibility.csv", "weather.csv", "reticles.csv", "effort.csv",
                      "waypoints.csv", "routes/Line 1.gpx", "overlays/zones.geojson"}      # no feed data, no display.csv
     assert doc["min_spyhop"] == "0.28.0" and doc["includes"] == ["waypoints", "routes", "overlays"] and doc["made_with"] == __version__
     assert doc["nmea_inputs"] == [{"type": "udp", "port": 2000}] and "data_dir" not in doc["settings"]
@@ -2355,19 +2355,19 @@ def test_effort_kinds_segments_and_insert(rec):
     from spyhop.recorder import parse_time
     from datetime import datetime, timedelta, timezone
     e = rec.tables["effort"]
-    a = rec.new_row("effort", {"Effort": "LINE"})["row"]
+    a = rec.new_row("effort", {"Effort": "TRANSECT"})["row"]
     rec.edit("effort", a["RowID"], {"DateTime": "2026-11-04T12:10:00+00:00"})
-    rec.new_row("effort", {"Effort": "LINE", "SeaState": "3"})
-    rec.toggle_effort()                                           # LINE → OFF
+    rec.new_row("effort", {"Effort": "TRANSECT", "SeaState": "3"})
+    rec.toggle_effort()                                           # TRANSECT → OFF
     assert e.rows[-1]["Effort"] == "OFF"
-    rec.toggle_effort()                                           # OFF → LINE (the last kind), not ON
-    assert e.rows[-1]["Effort"] == "LINE"
+    rec.toggle_effort()                                           # OFF → TRANSECT (the last kind), not ON
+    assert e.rows[-1]["Effort"] == "TRANSECT"
     rec.new_row("effort", {"Effort": "FOLLOW"})
     assert [r["Segment"] for r in e.rows] == ["1", "2", "2", "3", "4", "5"]
     assert rec._track_state(datetime.now(timezone.utc) + timedelta(seconds=5)) == "FOLLOW"
     with pytest.raises(ValueErrorMsg, match="filled in by Spyhop"):
         rec.edit("effort", e.rows[1]["RowID"], {"Segment": "9"})
-    rec.delete("effort", e.rows[3]["RowID"])                      # OFF gone: LINE, LINE, LINE merge
+    rec.delete("effort", e.rows[3]["RowID"])                      # OFF gone: TRANSECT ×3 merge
     assert [r["Segment"] for r in e.rows] == ["1", "2", "2", "2", "3"]
     rec.undo("effort")
     assert [r["Segment"] for r in e.rows] == ["1", "2", "2", "3", "4", "5"]
@@ -2745,3 +2745,39 @@ def test_calves_na_reports_without_resights_and_undo_keys(tmp_path):
     assert {c["code"]: c["n"] for c in reports.counts(rec, "sightings")}["RIWH"] == 1
     keys = {r[1]: r[0] for r in DEFAULT_SHORTCUTS[1]}
     assert keys["undo"] == "Mod+Z" and keys["redo"] == "Mod+Shift+Z"
+
+
+def test_effort_list_status_definition_color(tmp_path):
+    from datetime import datetime, timedelta, timezone
+    """0.39: Effort values come from the effort list; status decides on effort; Start/End/ERROR required."""
+    from spyhop import schema, qc
+    from spyhop.config import LOCKED_LISTS
+    rec = Recorder(tmp_path)
+    _sim_fix(rec)
+    cfg = rec.cfg
+    assert [r["name"] for r in cfg.lists["effort"]] == ["Start", "ON", "TRANSECT", "DIRECTED", "PHOTO-ID", "FOLLOW", "OFF", "End", "ERROR"]
+    assert schema.ON_EFFORT == ("ON", "TRANSECT", "DIRECTED", "PHOTO-ID", "FOLLOW") and "effort" in LOCKED_LISTS
+    with pytest.raises(ValueError, match="must include End, ERROR"):
+        cfg.save_list("effort", [{"name": "Start", "status": "off"}, {"name": "ON", "status": "on"}])
+    with pytest.raises(ValueError, match="Status must be on or off"):
+        cfg.save_list("effort", [*cfg.lists["effort"], {"name": "X", "status": "maybe"}])
+    rows = [dict(r) for r in cfg.lists["effort"] if r["name"] != "FOLLOW"]
+    rows.insert(1, {"name": "AERIAL", "status": "on", "definition": "Aerial leg.", "color": "#123456"})
+    rows[0]["status"] = "on"                                      # Start is always off effort
+    cfg.save_list("effort", rows)
+    assert cfg.lists["effort"][0]["status"] == "off" and "AERIAL" in schema.ON_EFFORT and "FOLLOW" not in schema.EFFORT_NAMES
+    rec.start_survey("E", meta={"platform_type": "Shipboard"})
+    rec.new_row("effort", {"Effort": "aerial"})                  # matched case-insensitively
+    assert rec.tables["effort"].rows[-1]["Effort"] == "AERIAL"
+    with pytest.raises(ValueErrorMsg, match="choose one of"):
+        rec.new_row("effort", {"Effort": "LINE"})
+    rec.toggle_effort()
+    assert rec.tables["effort"].rows[-1]["Effort"] == "OFF"
+    rec.toggle_effort()
+    assert rec.tables["effort"].rows[-1]["Effort"] == "AERIAL"    # back as it was last on
+    assert schema.is_on(rec._track_state(datetime.now(timezone.utc) + timedelta(seconds=5)))
+    rep = qc.run_qc(rec)
+    assert not any(i["check"] == "Values from the lists" and i["column"] == "Effort" for i in rep["issues"])
+    cfg.lists["effort"] = []
+    schema.set_effort_list(None)                                  # back to the defaults for the other tests
+    assert schema.ON_EFFORT == schema.DEFAULT_ON_EFFORT

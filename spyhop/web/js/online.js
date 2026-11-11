@@ -446,7 +446,7 @@ export class OnlineOverlays {
     } }, 'Add feed');
     return el('div', { class: 'feeds' },
       el('h4', {}, 'Map feeds'),
-      el('p', { class: 'hint' }, 'Areas, lines or points from the web, such as management zones, drawn as map overlays. Spyhop keeps the last copy of each, so they still show offline (marked if it couldn’t update).'),
+      el('p', { class: 'hint help' }, 'Areas, lines or points from the web, such as management zones, drawn as map overlays. Spyhop keeps the last copy of each, so they still show offline (marked if it couldn’t update).'),
       rows.length ? el('div', { class: 'table-scroll' }, el('table', { class: 'summary feeds-table' },
         el('thead', {}, el('tr', {}, ['Show', '', 'Feed'].map((h) => el('th', {}, h)))), el('tbody', {}, rows)))
         : el('p', { class: 'hint' }, 'No feeds yet.'),
@@ -455,7 +455,7 @@ export class OnlineOverlays {
           el('button', { onclick: (e) => { e.target.disabled = true; this.addFeed({ name: p.name, url: p.url, color: p.color, refresh_min: p.refresh_min }).finally(() => { e.target.disabled = false; }); } }, `+ ${p.name}`),
           el('span', { class: 'hint' }, ` ${p.about}`)))) : null,
       el('div', { class: 'btnrow feed-add' }, el('b', {}, 'Or any feed:'), nameIn, urlIn, colorIn, add),
-      el('p', { class: 'hint' }, 'An ArcGIS Online or ArcGIS Server address ending in /FeatureServer/<number> (one layer), /FeatureServer (every layer of the service) or /MapServer/<number>, or a link to a GeoJSON file. Areas whose attributes give a season (st_mo, st_day, end_mo, end_day, as NOAA’s Seasonal Management Areas) are drawn solid while in effect and dashed otherwise.'));
+      el('p', { class: 'hint help' }, 'An ArcGIS Online or ArcGIS Server address ending in /FeatureServer/<number> (one layer), /FeatureServer (every layer of the service) or /MapServer/<number>, or a link to a GeoJSON file. Areas whose attributes give a season (st_mo, st_day, end_mo, end_day, as NOAA’s Seasonal Management Areas) are drawn solid while in effect and dashed otherwise.'));
   }
 
   // ------------------------------------------------------------------ Tools → Overlays
@@ -469,7 +469,7 @@ export class OnlineOverlays {
     if (this.isOn('ais')) status.push(this.state.ais || (this.state.aisAt ? `AIS: ${this.state.aisCount} vessels in view, updated ${timeParts(this.state.aisAt, this.app.clock()).time.slice(0, 5)}.` : 'AIS: loading…'));
     if (this.isOn('world') && this.state.worldTime) status.push(`Worldwide radar frame: ${this.state.worldTime}.`);
     return el('section', { class: 'settings-sec', id: 'online-overlays' }, el('h3', {}, 'Online overlays'),
-      el('p', { class: 'hint' }, 'Live data from the internet, drawn over the map; each is also in the map’s layers menu. AIS and radar aren’t kept for offline use.'),
+      el('p', { class: 'hint help' }, 'Live data from the internet, drawn over the map; each is also in the map’s layers menu. AIS and radar aren’t kept for offline use.'),
       el('div', { class: 'grid2 checks' },
         chk('ais', 'AIS vessels', 'Open Waters AIS (openwaters.io/ais): free, from coastal authorities and volunteer receivers. Updated every 30 s for the area in view; zoom in if nothing shows. Coverage depends on the receivers nearby.'),
         chk('us', 'Weather radar, US', 'NOAA NEXRAD base reflectivity mosaic for the US, via the Iowa Environmental Mesonet. Updated every 5 minutes.'),
@@ -479,7 +479,7 @@ export class OnlineOverlays {
         el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: !!this.prefs.hideStopped,
           onchange: (e) => { this.prefs.hideStopped = e.target.checked; this.savePrefs(); this.loadAis(); } }), el('span', {}, 'Hide AIS vessels that aren’t moving'))),
       status.length ? el('p', { class: 'hint', id: 'online-status' }, status.join(' ')) : null,
-      el('p', { class: 'hint' }, 'AIS colors: cargo green, tanker red, passenger blue, fishing orange, sailing and pleasure purple, tugs and special craft teal, other gray; a triangle points the way a moving vessel is heading, a dot is a vessel that isn’t moving, a diamond an aid to navigation. AIS from the internet can be minutes old and misses vessels without AIS or out of receiver range: not for navigation or collision avoidance.'),
+      el('p', { class: 'hint help' }, 'AIS colors: cargo green, tanker red, passenger blue, fishing orange, sailing and pleasure purple, tugs and special craft teal, other gray; a triangle points the way a moving vessel is heading, a dot is a vessel that isn’t moving, a diamond an aid to navigation. AIS from the internet can be minutes old and misses vessels without AIS or out of receiver range: not for navigation or collision avoidance.'),
       this.feedsBlock());
   }
 }

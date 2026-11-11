@@ -4,15 +4,16 @@ Spyhop records a vessel-based whale survey: sightings, effort and conditions, ev
 
 ## Find your way around
 
-- **Map** (left): the vessel, its trackline (green on effort, a thinner gray line off effort), sightings, events and waypoints.
+- **Map** (left): the vessel, its trackline (in the color of each effort value, thinner off effort), sightings, events and waypoints.
   - The layers button (top right) switches base maps and overlays.
   - The buttons on the left: ⌖ follow the vessel, 📏 measure, ◎ range rings, ⤢ zoom to the whole survey.
-  - Right-click the map for: add a sighting, event or waypoint here; measure from here; **Start route here**.
+  - Right-click the map for: add a sighting, event or waypoint here; measure from here.
 - **Tabs** (right):
   - **Sightings**, **Effort** and **Events** are the data tables.
   - **Survey** starts, ends, opens and exports surveys.
   - **Tools** holds Waypoints, Overlays, Routes, Instruments, Resights, Error check, Summary and Reports.
-  - **Settings** holds General, Basemap, Inputs, Shortcuts, Dropdowns, Templates and About.
+  - **Settings** holds General, Basemap, Inputs, Shortcuts, Dropdowns, Templates, Guide and About.
+  - The **?** beside a heading explains that section: hover to read it, click to keep it open.
 - **Status bar** (top): time, position, speed, survey name, tracking and effort state.
   - If the GPS fix is lost, it says **NO GPS** or **GPS LOST**.
   - Click the version number to come back here.
@@ -51,7 +52,7 @@ From a terminal you can also run `python -m spyhop --sim` (add `--sim-heading 27
 
 ## Set up your lists (config files)
 
-Edit the drop-down lists in **Settings → Dropdowns** (Species, Events, Behaviors, Observers) and the keyboard shortcuts in **Settings → Shortcuts**, then press **Save**. The lists can't be changed while a survey is under way.
+Edit the drop-down lists in **Settings → Dropdowns** (Species, Events, Behaviors, Observers, Effort, Visibility, Weather, Reticles) and the keyboard shortcuts in **Settings → Shortcuts**, then press **Save**. The lists can't be changed while a survey is under way.
 
 Behind the scenes they are plain CSV files in `templates/current` in Spyhop's folder, which you can also edit in Excel, Numbers or a text editor for big changes. Each editor has an **Open** button for its file and a **Reload from the file** button:
 
@@ -59,6 +60,7 @@ Behind the scenes they are plain CSV files in `templates/current` in Spyhop's fo
 - **observers.csv:** observer codes and full names. `NA` (None) is a placeholder for an empty watch position, and can fill several positions at once.
 - **event_types.csv:** event names, colors and codes (e.g. `CTD` for CTD cast).
 - **behaviors.csv:** behavior names, codes and definitions (shown in the Behaviors checklist).
+- **effort.csv:** the Effort values: name, status (`on` or `off` effort), definition and track color. Start, End and ERROR must stay.
 - **spyhop-config.json:** the map display, saved reports and shared settings (set in Settings and Tools → Reports; best left to Spyhop).
 - **shortcuts.csv:** keyboard shortcuts.
   - Each row has a key (e.g. `Mod+Shift+R`; Mod is Ctrl on Windows and ⌘ on a Mac), an action, and optional prefills.
@@ -71,14 +73,14 @@ If your team shares a template, use **Settings → Templates** instead. Paste th
 
 ## Plan a route
 
-1. Open **Tools → Routes**, or right-click the map and choose **Start route here**.
+1. Open **Tools → Routes**. Saved routes are at the top; design a new one under **Create New Route**.
 2. Set the **survey speed**, and choose **Manual**, **Systematic — parallel legs** or **Systematic — sawtooth**:
-   - **Manual:** press **Add points on the map** and click each waypoint. Drag them to adjust.
+   - **Manual:** set the **start point** (type it, **Pick on the map**, or **Use the vessel position now**), press **Add points on the map** and click each waypoint. Drag them to adjust.
    - **Systematic — parallel legs:** set the start, the direction of the first leg, the number of legs, leg length and spacing. Spyhop draws back-and-forth lines.
    - **Systematic — sawtooth:** set the start, the survey direction (the way the pattern advances), leg length, the angle between legs and the number of legs, one way or with a return back through it. Spyhop draws a zig-zag.
 3. The tables show each leg's course, distance and time, the totals and the finish time.
 4. Press **Activate route**. The waypoints lock, the route stays on the map from every tab, and clicking a waypoint shows its distance and bearing from the vessel.
-5. **Save route** keeps it in the routes folder. **Saved routes**, at the top of the tab, lists every saved route: **Show** puts one on the map, **Open** brings it back to edit or activate, and **Close** puts it away again. **Export GPX…** downloads a copy for a chart plotter.
+5. **Save route** (at the bottom) keeps it in the routes folder. **Saved Routes**, at the top of the tab, lists every saved route: **Show** puts one on the map, **Open** brings it back to edit or activate, and **Close** puts it away again. **Export GPX…** downloads a copy for a chart plotter.
 
 ## Start a survey
 
@@ -91,7 +93,7 @@ If Spyhop is closed or crashes during a survey, it reopens the survey the next t
 ## Record data
 
 - **Effort:**
-  - add a row with Ctrl/⌘+Shift+F, which toggles effort ON and OFF and copies the current conditions
+  - choose the effort value (ON, TRANSECT, DIRECTED, PHOTO-ID, FOLLOW or OFF, from Settings → Dropdowns → Effort), or add a row with Ctrl/⌘+Shift+F, which toggles between on effort and OFF and copies the current conditions
   - fill in visibility, sea state, weather, glare and who is at Port, Recorder and Starboard
   - a countdown in the status bar reminds you to update the conditions
 - **Sightings:**

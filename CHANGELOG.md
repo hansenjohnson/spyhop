@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.39.0 — 2026-11-11
+
+- **Effort is a list** (Settings → Dropdowns → Effort, `effort.csv` in the template; locked during a survey like the other lists). Each value has a **name**, a **status** (on or off effort: used for the track, the Summary, reports and the Error check), a **definition** (shown in the Effort drop-down) and a **color** (the track's color while it's in force). The defaults are **ON** (observers are on watch), **TRANSECT** (systematic line-transect survey), **DIRECTED** (directed survey/activity), **PHOTO-ID** (photo-ID survey) and **FOLLOW** (focal follow), on effort, and **OFF** (observers off watch). **Start** and **End**, and **ERROR** (added by Error check → Fix), are always there, always off effort, and can't be renamed or removed. LINE and PHOTO from earlier versions are gone: rows that still have them are flagged by the Error check.
+- **The trackline colors** come from the effort list; Settings → General → Map display → Trackline keeps show, width and line style for on and off effort.
+- **Help behind ? buttons:** the explanations in Survey, Tools and Settings are behind a small **?** beside each heading. Hover to read one; click to keep it open (Esc, a click elsewhere or another click closes it).
+- **The Guide has a contents list** beside it (above it in a narrow pane); click a section to jump to it, and the section you're reading is highlighted.
+- **Routes:** the page is in two parts, **Saved Routes** at the top and **Create New Route** below, with **Save** at the bottom. Every mode, manual too, has a **Start point** (type it, **Pick on the map**, or **Use the vessel position now**); in a manual route it's the first waypoint, and switching modes keeps it. The "vessel's current position / fixed point" choice (a route that moved with the vessel) and the map's right-click **Start route here** are gone.
+- The tab bars (Survey | Tools | Settings and Sightings | Effort | Events) no longer scroll up and down a pixel under the mouse wheel.
+
 ## 0.38.0 — 2026-11-10
 
 - **Calibrated marks** (Settings → Dropdowns → Reticles) are evenly spaced: *Degrees per division* is the angle between marks, counted down from the horizontal, so mark *n* is *n* × that angle (magnification isn't used). The reticles list's marks column is gone. A position picked on the map now gives a mark reading too.

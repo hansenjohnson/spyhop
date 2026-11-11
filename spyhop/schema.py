@@ -31,9 +31,6 @@ FIXED_LISTS = {
     "idrel": ["Definite", "Probable", "Possible"],
     "seastate": [str(i) for i in range(0, 10)],
     "glare": ["None", "Slight", "Moderate", "Severe"],
-    # on effort: ON (plain on/off effort) or a kind of on effort (LINE transect, FOLLOW a focal whale or
-    # group, PHOTO a directed photo-ID approach); ERROR: a trackline break (GPS jump or loss)
-    "effort": ["Start", "ON", "LINE", "FOLLOW", "PHOTO", "OFF", "End", "ERROR"],
     "images": ["None", "Photo", "Video", "Photo + Video", "Drone"],
     "brgref": ["M", "T", "R", "C"],              # C: clock bearing (1–12) relative to the heading
     # plus one "reticles-<name>" for each entry of the reticles list (Settings → Dropdowns → Reticles)
@@ -120,7 +117,7 @@ TABS = {
             col("Lat", "lat", "Lat", auto=True, copy=False, help="Platform latitude from GPS when the row was added."),
             col("Lon", "lon", "Lon", auto=True, copy=False, help="Platform longitude from GPS when the row was added."),
             col("Effort", "choice", "Effort", list="effort", width=60,
-                help="Start = survey began (first row only) · ON = on effort, searching · LINE = on effort, line transect · FOLLOW = on effort, focal follow of one whale or group · PHOTO = on effort, directed photo-ID approach · OFF = not searching · End = survey ended (last row only; use End survey in the Survey tab)."),
+                help="The effort status. Start = survey began (first row only) · End = survey ended (last row only; use End survey in the Survey tab) · the others, and whether each counts as on or off effort: Settings → Dropdowns → Effort."),
             col("Segment", "int", "Seg", width=45, copy=False, skip=True, readonly=True, optional="segment",
                 help="Effort segment: numbered by Spyhop, a new number each time the effort status changes from the row before (e.g. ON → OFF). Rows with the same status in a row share it."),
             col("Visibility", "choice", "Vis", list="visibility", help="Estimated visibility. List: Settings → Dropdowns → Visibility."),
@@ -182,11 +179,43 @@ MARKER_POS = {
     "marks": [("Lat", "Lon")],
 }
 
-ON_EFFORT = ("ON", "LINE", "FOLLOW", "PHOTO")     # every Effort value that counts as on effort
+# The Effort values come from the effort list (Settings → Dropdowns → Effort, 0.39): each is on or off
+# effort. Config sets these from the list whenever it is read (set_effort_list).
+EFFORT_REQUIRED = ("Start", "End", "ERROR")      # Start/End: first/last row; ERROR: added by Error check → Fix
+DEFAULT_ON_EFFORT = ("ON", "TRANSECT", "DIRECTED", "PHOTO-ID", "FOLLOW")
+ON_EFFORT: tuple = DEFAULT_ON_EFFORT              # every Effort value that counts as on effort
+OFF_EFFORT: tuple = ("OFF",)                      # off-effort values a user chooses (not Start/End/ERROR)
+EFFORT_NAMES: tuple = ("Start", *DEFAULT_ON_EFFORT, "OFF", "End", "ERROR")
+
+
+def set_effort_list(rows) -> None:
+    """Take the on-effort values and all names from the effort list's rows ({name, status, …})."""
+    global ON_EFFORT, OFF_EFFORT, EFFORT_NAMES
+    rows = [r for r in rows or [] if r.get("name")]
+    if not rows:
+        ON_EFFORT, OFF_EFFORT, EFFORT_NAMES = DEFAULT_ON_EFFORT, ("OFF",), ("Start", *DEFAULT_ON_EFFORT, "OFF", "End", "ERROR")
+        return
+    ON_EFFORT = tuple(r["name"] for r in rows if r.get("status", "").lower() == "on" and r["name"] not in EFFORT_REQUIRED)
+    OFF_EFFORT = tuple(r["name"] for r in rows if r.get("status", "").lower() != "on" and r["name"] not in EFFORT_REQUIRED)
+    EFFORT_NAMES = tuple(dict.fromkeys([*(r["name"] for r in rows), *EFFORT_REQUIRED]))
 
 
 def is_on(effort) -> bool:
     return effort in ON_EFFORT
+
+
+def is_effort_choice(effort) -> bool:
+    """An on- or off-effort value a user picks (not Start, End or ERROR)."""
+    return effort in ON_EFFORT or effort in OFF_EFFORT
+
+
+def default_off() -> str:
+    return "OFF" if "OFF" in OFF_EFFORT else (OFF_EFFORT[0] if OFF_EFFORT else "OFF")
+
+
+def strict_list(name: str) -> bool:
+    """Lists whose values must be in the list (refused otherwise): the fixed lists and the effort list."""
+    return name in FIXED_LISTS or name == "effort"
 
 
 TRACK_COLUMNS = ["DateTime", "Lat", "Lon", "SOG", "COG", "Effort"]

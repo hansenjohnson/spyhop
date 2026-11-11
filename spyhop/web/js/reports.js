@@ -153,7 +153,7 @@ export class ReportsTool {
       el('summary', {}, el('b', {}, 'Columns'), ` (${chosen.length})`,
         el('span', { class: 'flt-colnames' }, chosen.length ? chosen.map((c) => c.label).join(' · ') : 'none')),
       el('div', { class: 'flt-cols' }, chosen.map((c, i) => colRow(c, i)), rest.length && chosen.length ? el('hr') : null, rest.map((c) => colRow(c, -1))),
-      el('p', { class: 'hint' }, 'Time, Position, Latitude and Longitude use the clock and lat/lon format in Settings → General. Position is the animals’ (SigLat/SigLon) for sightings, or the vessel’s if there is none.'));
+      el('p', { class: 'hint help' }, 'Time, Position, Latitude and Longitude use the clock and lat/lon format in Settings → General. Position is the animals’ (SigLat/SigLon) for sightings, or the vessel’s if there is none.'));
 
     // more conditions
     const tableCols = (this.app.S.schema.tabs[f.table]?.columns || []).filter((c) => !c.hidden && !['RowID', 'Map'].includes(c.key));
@@ -176,7 +176,7 @@ export class ReportsTool {
       el('div', { class: 'flt-time' },
         el('label', {}, 'From ', el('input', { type: 'datetime-local', value: f.time_from, onchange: (e) => this.set({ time_from: e.target.value }) })),
         el('label', {}, 'to ', el('input', { type: 'datetime-local', value: f.time_to, onchange: (e) => this.set({ time_to: e.target.value }) }))),
-      el('p', { class: 'hint' }, 'Times in the survey clock. Leave blank for the whole survey.'),
+      el('p', { class: 'hint help' }, 'Times in the survey clock. Leave blank for the whole survey.'),
       rules,
       el('button', { type: 'button', onclick: () => { this.moreOpen = true; this.set({ rules: [...f.rules, { column: tableCols.find((c) => c.key === 'Notes')?.key || tableCols[0].key, op: 'contains', value: '' }] }); } }, '+ Add a condition'));
 

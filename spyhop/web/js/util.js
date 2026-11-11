@@ -259,10 +259,23 @@ export function isTrackBreak(a, b, st = {}) {
   return dt <= 0 || d / 1852 / (dt / 3600) > kn;
 }
 
-// Effort values that count as on effort: plain ON, or a kind of on effort (line transect,
-// focal follow, photo-ID approach). The same list is schema.ON_EFFORT.
-export const ON_EFFORT = ['ON', 'LINE', 'FOLLOW', 'PHOTO'];
+// The Effort values come from the effort list (Settings → Dropdowns → Effort, 0.39): each has a
+// status (on or off effort), a definition and a color (its track color). setEffortList is called when
+// the app loads; schema.set_effort_list does the same on the server.
+export const EFFORT_REQUIRED = ['Start', 'End', 'ERROR'];
+export let ON_EFFORT = ['ON', 'TRANSECT', 'DIRECTED', 'PHOTO-ID', 'FOLLOW'];
+let EFFORT = {};
+export function setEffortList(rows) {
+  rows = (rows || []).filter((r) => r.name);
+  if (!rows.length) return;
+  EFFORT = Object.fromEntries(rows.map((r) => [r.name, r]));
+  ON_EFFORT = rows.filter((r) => (r.status || '').toLowerCase() === 'on' && !EFFORT_REQUIRED.includes(r.name)).map((r) => r.name);
+}
 export const isOn = (e) => ON_EFFORT.includes(e);
+// an Effort value's entry in the list ({name, status, definition, color}), or {} if not in it
+export const effortInfo = (e) => EFFORT[e] || {};
+// the track / pill color of an Effort value
+export const effortColor = (e) => EFFORT[e]?.color || (isOn(e) ? '#00a000' : '#7a7a7a');
 
 // Effort state of each track point from the Effort table as it is now (so an ERROR row added
 // later by Error check → Fix applies). A point in the same second as an Effort row keeps the
@@ -291,4 +304,98 @@ export const LINE_STYLES = [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted',
 export function dashFor(line, w) {
   w = Math.max(1, +w || 3);
   return { solid: null, dashed: `${w * 3} ${w * 2}`, dotted: `1 ${w * 2}`, dashdot: `${w * 4} ${w * 2} 1 ${w * 2}` }[line] ?? null;
+}
+
+// ---------------------------------------------------------------- help behind ? buttons (0.39)
+// Explanations in Survey, Tools and Settings are marked class "help". helpify() takes each out of the
+// page and puts it behind a small ? button on its section's heading (or where it was, if there is no
+// heading): hover to read it, click to keep it open (click again, Esc or click elsewhere to close).
+let helpPop = null, helpPinned = null, helpTimer = null;
+function helpShow(btn, pin = false) {
+  clearTimeout(helpTimer);
+  if (!helpPop) {
+    helpPop = el('div', { id: 'help-pop', role: 'tooltip' });
+    helpPop.addEventListener('mouseenter', () => clearTimeout(helpTimer));
+    helpPop.addEventListener('mouseleave', () => { if (!helpPinned) helpHideSoon(); });
+    document.body.append(helpPop);
+    document.addEventListener('mousedown', (e) => {
+      if (helpPinned && !helpPop.contains(e.target) && !e.target.closest?.('.help-btn')) helpHide(true);
+    }, true);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && helpPop.style.display === 'block') helpHide(true); });
+  }
+  if (helpPinned && helpPinned !== btn && !pin) return;          // another one is pinned open
+  if (pin) { helpPinned?.setAttribute('aria-expanded', 'false'); helpPinned = btn; }
+  helpPop.replaceChildren(btn._help);
+  helpPop.style.display = 'block';
+  btn.setAttribute('aria-expanded', 'true');
+  const r = btn.getBoundingClientRect(), w = Math.min(460, window.innerWidth - 16);
+  helpPop.style.maxWidth = `${w}px`;
+  helpPop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
+  const h = helpPop.offsetHeight, below = window.innerHeight - r.bottom;
+  helpPop.style.top = `${below < h + 12 && r.top > below ? Math.max(8, r.top - h - 6) : r.bottom + 6}px`;
+}
+function helpHide(force = false) {
+  if (!helpPop || (helpPinned && !force)) return;
+  helpPop.style.display = 'none';
+  helpPinned?.setAttribute('aria-expanded', 'false');
+  document.querySelectorAll('.help-btn[aria-expanded=true]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+  helpPinned = null;
+}
+function helpHideSoon() { clearTimeout(helpTimer); helpTimer = setTimeout(() => helpHide(), 250); }
+
+export function helpButton(title = 'Help') {
+  const btn = el('button', { type: 'button', class: 'help-btn', 'aria-label': title, 'aria-expanded': 'false', title: '' });   // the ? is drawn by CSS, so it isn't part of the heading's text
+  btn._help = el('div', { class: 'help-body' });
+  btn.addEventListener('mouseenter', () => helpShow(btn));
+  btn.addEventListener('mouseleave', () => { if (helpPinned !== btn) helpHideSoon(); });
+  btn.addEventListener('focus', () => helpShow(btn));
+  btn.addEventListener('blur', () => { if (helpPinned !== btn) helpHideSoon(); });
+  btn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (helpPinned === btn) helpHide(true); else helpShow(btn, true);
+  });
+  return btn;
+}
+
+function helpHeading(p) {
+  for (let node = p, up = 0; node && up < 3; node = node.parentElement, up++) {
+    for (let s = node.previousElementSibling; s; s = s.previousElementSibling) {
+      if (/^H[1-4]$/.test(s.tagName)) return s;
+      if (s.matches('section, .settings-sec')) break;           // the end of this section
+    }
+    if (node.parentElement?.matches('section, .settings-sec, details')) {
+      const h = node.parentElement.querySelector(':scope > h2, :scope > h3, :scope > h4');
+      if (h) return h;
+      break;
+    }
+  }
+  return null;
+}
+
+export function helpify(root = document) {
+  for (const p of root.querySelectorAll('.help:not(.help-body *)')) {
+    if (helpPop?.contains(p)) continue;
+    const h = helpHeading(p);
+    let btn = h && [...h.children].find((c) => c.classList.contains('help-btn'));
+    if (!btn) {
+      btn = helpButton(h ? `About ${h.textContent.trim()}` : 'Help');
+      if (h) h.append(btn); else p.before(btn);
+    }
+    const part = el('p', {});
+    part.append(...p.childNodes);
+    btn._help.append(part);
+    p.remove();
+    if (helpPinned === btn) helpShow(btn, true);
+  }
+}
+
+// keep every new help paragraph behind its ? button, whichever part of the app drew it
+export function watchHelp() {
+  let queued = false;
+  helpify(document);
+  new MutationObserver(() => {
+    if (queued) return;
+    queued = true;
+    queueMicrotask(() => { queued = false; helpify(document); });
+  }).observe(document.body, { childList: true, subtree: true });
 }

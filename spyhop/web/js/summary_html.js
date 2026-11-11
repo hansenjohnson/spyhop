@@ -6,7 +6,7 @@
 // the survey, on Esri Ocean when its tiles load (else the offline coastline), with no point
 // labels or map buttons, and a legend of the point symbols under the map.
 /* global topojson */
-import { esc, timeParts, isTrackBreak, trackStates, dashFor, isOn } from './util.js';
+import { esc, timeParts, isTrackBreak, trackStates, dashFor, isOn, effortColor } from './util.js';
 import { shapeSvg } from './map.js';
 import { Resights } from './resights.js';
 
@@ -88,7 +88,7 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
       ves: tab === 'sightings' && r.Lat && r.SigLat && (r.Lat !== r.SigLat || r.Lon !== r.SigLon) ? [+r.Lat, +r.Lon] : null };
   }).filter(Boolean);
   const data = {
-    // [lat, lon, on effort?, break before this point?]; ERROR stretches are left out
+    // [lat, lon, on effort?, break before this point?, color]; ERROR stretches are left out
     track: (() => {
       const st = trackStates(S.track, S.tables.effort.rows), out = [];
       let prev = null, prevSt = null;
@@ -96,7 +96,7 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
         if (isNaN(+p.Lat)) return;
         if (st[i] === 'ERROR') { prev = p; prevSt = 'ERROR'; return; }
         const brk = !prev || prevSt === 'ERROR' || isTrackBreak(prev, p, S.config.settings);
-        out.push([+p.Lat, +p.Lon, isOn(st[i]) ? 1 : 0, brk ? 1 : 0]);
+        out.push([+p.Lat, +p.Lon, isOn(st[i]) ? 1 : 0, brk ? 1 : 0, effortColor(st[i])]);
         prev = p; prevSt = st[i];
       });
       return out;
@@ -106,7 +106,7 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
     resightLines: disp.resight_lines === '0' ? [] : rs.groups().map((g) => [app.map.markerColor('sightings', g[0]),
       g.filter((r) => r.Map !== '0').sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)).map((r) => app.map.rowPos('sightings', r)).filter(Boolean)])
       .filter(([, pts]) => pts.length > 1),
-    style: { on: disp.track_on_effort_color, off: disp.track_off_effort_color, width: +disp.track_width || 3,
+    style: { width: +disp.track_width || 3,
       offWidth: +disp.track_off_width || 1.5,
       onDash: dashFor(disp.track_on_style || 'solid', +disp.track_width || 3), offDash: dashFor(disp.track_off_style || 'solid', +disp.track_off_width || 1.5),
       showOn: disp.show_track_on !== '0', showOff: disp.show_track_off !== '0', lines: disp.sighting_lines !== '0',
@@ -178,11 +178,11 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
   D.track.forEach(function (p) {
     var on = p[2] === 1;
     if (p[3] === 1) seg = null;
-    if (!seg || seg.on !== on) {
+    if (!seg || seg.on !== on || seg.color !== p[4]) {
       var start = seg ? [seg.last] : [];
       var show = on ? D.style.showOn : D.style.showOff;
-      seg = { on: on, last: [p[0], p[1]], line: show ? L.polyline(start.concat([[p[0], p[1]]]), {
-        color: on ? D.style.on : D.style.off, weight: on ? D.style.width : D.style.offWidth, dashArray: on ? D.style.onDash : D.style.offDash }).addTo(track) : null };
+      seg = { on: on, color: p[4], last: [p[0], p[1]], line: show ? L.polyline(start.concat([[p[0], p[1]]]), {
+        color: p[4], weight: on ? D.style.width : D.style.offWidth, dashArray: on ? D.style.onDash : D.style.offDash }).addTo(track) : null };
     } else { if (seg.line) seg.line.addLatLng([p[0], p[1]]); seg.last = [p[0], p[1]]; }
   });
   function markers(list) {

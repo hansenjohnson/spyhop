@@ -1,11 +1,10 @@
 // Main controller: layout, status bar, tabs, shortcuts, settings, summary, live updates.
-import { $, $$, el, esc, api, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, isTrackBreak, trackStates, isPlaceholderObs, LINE_STYLES, isOn, ON_EFFORT } from './util.js';
+import { $, $$, el, esc, api, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, isTrackBreak, trackStates, isPlaceholderObs, LINE_STYLES, isOn, ON_EFFORT, setEffortList, effortInfo, effortColor, EFFORT_REQUIRED, watchHelp } from './util.js';
 import { Grid } from './grid.js';
 import { Resights, groupCounts } from './resights.js';
 import { ResightTool } from './resight_tool.js';
 
 // what each Effort value means (the Effort column's help, the Summary)
-const EFFORT_LABEL = { ON: 'ON (on effort)', LINE: 'LINE (line transect)', FOLLOW: 'FOLLOW (focal follow)', PHOTO: 'PHOTO (photo-ID approach)' };
 import { MapView, SHAPES } from './map.js';
 import { buildSummaryHtml } from './summary_html.js';
 import { openInstrumentPlot } from './plot.js';
@@ -50,6 +49,7 @@ class App {
     }, 1000);
     document.addEventListener('keydown', (e) => this.onShortcut(e), true);
     this.watchSlowness();
+    watchHelp();
     this.watchErrors();
     const ab = this.S.about || {};
     if (ab.updated_from) toast(`Spyhop has been updated from ${ab.updated_from} to ${ab.spyhop}. See what's new in Settings → About.`, 'info', 12000);
@@ -113,6 +113,7 @@ class App {
 
   async load() {
     this.S = await api('/api/bootstrap');
+    setEffortList(this.S.config.lists.effort);
   }
 
   // the Refresh buttons of the survey list and the overlays: read those folders again
@@ -759,7 +760,7 @@ class App {
     tr.title = still ? 'A stationary platform doesn’t move, so Spyhop records only its Start and End positions, not a trackline.' : '';
     tr.classList.toggle('on', !!st.tracking_enabled);
     const eff = last?.Effort || '—';
-    $('#sf-effort').replaceChildren('Effort ', el('span', { class: `pill ${isOn(eff) ? 'on' : 'off'}` }, eff));
+    $('#sf-effort').replaceChildren('Effort ', el('span', { class: `pill ${isOn(eff) ? 'on' : 'off'}`, style: eff !== '—' ? { background: effortColor(eff), color: '#fff' } : null }, eff));
   }
 
   // Re-draw tables, popups and summary when the lat/lon format or clock (local/UTC) changes.
@@ -992,7 +993,7 @@ class App {
       el('textarea', { id: 'survey-notes', class: 'meta-notes', placeholder: notesHint, value: notesVal,
         oninput: (e) => { this.metaDraft.survey_notes = e.target.value; },
         onchange: (e) => save('survey_notes', e.target.value) }),
-      el('p', { class: 'hint' }, 'Saved when you click away. Shown in the Summary and its HTML and PDF files.'));
+      el('p', { class: 'hint help' }, 'Saved when you click away. Shown in the Summary and its HTML and PDF files.'));
   }
 
   // ---------------------------------------------------------------- survey tab
@@ -1045,7 +1046,7 @@ class App {
         el('button', { id: 'btn-open-package', title: 'Open a survey saved with Save Survey Package (a .spyhop-survey.zip file): it is added to this data folder with its template', onclick: () => this.openPackage() }, 'Open Survey Package…'),
         el('button', { id: 'btn-surveys-refresh', title: 'Read the survey data folder again (e.g. after copying survey folders into it)',
           onclick: () => this.refreshFolders() }, 'Refresh')),
-      el('p', { class: 'hint' }, 'Each survey is a folder in the data folder, holding its tables, survey details, instrument readings, a copy of the template it was started with, its raw NMEA logs and its exports.'));
+      el('p', { class: 'hint help' }, 'Each survey is a folder in the data folder, holding its tables, survey details, instrument readings, a copy of the template it was started with, its raw NMEA logs and its exports.'));
     const folder = sec('Folders',
       el('p', { id: 'survey-folder-link' }, 'Surveys are saved in ', el('span', { class: 'mono' }, S.config.data_dir), '. ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('datafolder'); } }, 'Open folder'), ' · ',
@@ -1070,11 +1071,11 @@ class App {
         isDefault ? null : el('button', { onclick: () => this.chooseDataFolder('') }, 'Use the default')),
       el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Or type a path:', pathBox),
         el('button', { onclick: () => this.chooseDataFolder(pathBox.value) }, 'Use this folder')),
-      el('p', { class: 'hint' }, 'Pick a backed-up folder if you like. Spyhop remembers it between sessions. Your lists (species, observers…), settings and templates stay in Spyhop’s own folder.'),
+      el('p', { class: 'hint help' }, 'Pick a backed-up folder if you like. Spyhop remembers it between sessions. Your lists (species, observers…), settings and templates stay in Spyhop’s own folder.'),
       el('h4', {}, 'Spyhop folder'),
       el('p', {}, 'Spyhop’s own files are in ', el('span', { class: 'mono' }, S.config.root), '. ',
         el('a', { href: '#', id: 'open-app-folder', onclick: (e) => { e.preventDefault(); this.open('app'); } }, 'Open folder')),
-      el('p', { class: 'hint' }, 'It holds templates/ (current: the current template, i.e. the lists, shortcuts and spyhop-config.json with the shared settings, map display and saved reports; saved: your saved templates; backups), spyhop-local.json (this computer’s own settings), offline charts, map overlays, routes, map feeds, the tile cache and logs. Spyhop always uses this folder.'));
+      el('p', { class: 'hint help' }, 'It holds templates/ (current: the current template, i.e. the lists, shortcuts and spyhop-config.json with the shared settings, map display and saved reports; saved: your saved templates; backups), spyhop-local.json (this computer’s own settings), offline charts, map overlays, routes, map feeds, the tile cache and logs. Spyhop always uses this folder.'));
   }
 
   // the template a survey was recorded with (a copy is kept in its folder since 0.36)
@@ -1110,7 +1111,7 @@ class App {
         ': its tables, survey details, instrument readings and the template it was recorded with, ready to open in Spyhop on another computer (Survey → Open Survey Package…). ',
         sv.active ? 'The survey is still active: the package holds it as it is now.' : ''),
       el('label', { class: 'check' }, logs, el('span', {}, 'Include the raw NMEA logs (they can be large)')),
-      el('p', { class: 'hint' }, 'Exports aren’t included. For analysis, use Export Data instead.')),
+      el('p', { class: 'hint help' }, 'Exports aren’t included. For analysis, use Export Data instead.')),
     buttons: [{ label: 'Cancel', value: false }, { label: 'Save', value: true, primary: true }] });
     if (!ok) return;
     let r;
@@ -1239,7 +1240,7 @@ class App {
     const rep = this.qcReport?.survey === sv.prefix ? this.qcReport : null;
     const f = this.qcFilter || (this.qcFilter = { error: true, warning: true, info: true });
     const LEVEL = { error: 'Error', warning: 'Warning', info: 'Note' };
-    const kids = [el('p', { class: 'hint' }, 'Checks this survey for missing survey details, blank required fields and values that look wrong. It doesn’t change anything — click Show to go to a row and fix it there.'),
+    const kids = [el('p', { class: 'hint help' }, 'Checks this survey for missing survey details, blank required fields and values that look wrong. It doesn’t change anything — click Show to go to a row and fix it there.'),
       el('div', { class: 'btnrow' }, el('button', { class: 'primary', onclick: () => this.runQc() }, rep ? 'Run the check again' : 'Run error check'),
         rep ? el('button', { onclick: () => this.saveQcReport() }, 'Save report…') : null)];
     if (rep) {
@@ -1326,14 +1327,47 @@ class App {
   // Settings → Guide: the tutorial (docs/TUTORIAL.md); it doesn't change, so it's drawn once
   renderGuide() {
     const pane = $('#pane-guide');
-    if (!pane || pane.querySelector('#tutorial-section .tutorial h1, #tutorial-section .tutorial h2')) return;
+    if (!pane || pane.querySelector('#tutorial-section .tutorial h3, #tutorial-section .tutorial h4')) return;
     const tut = el('div', { class: 'tutorial' }, el('p', { class: 'hint' }, 'Loading the guide…'));
     pane.replaceChildren(el('section', { class: 'settings-sec', id: 'tutorial-section' }, tut));
     fetch('/api/tutorial').then((r) => r.text()).then((md) => {
       // drop the sentence that points back to this tab
       const nodes = renderMarkdown(md.replace(/ It's also in Spyhop itself, under \*\*Settings → (?:Guide|About)\*\*\./, ''));
       tut.replaceChildren(...(nodes.length ? nodes : [el('p', { class: 'hint' }, 'The guide (docs/TUTORIAL.md) is missing.')]));
+      this.guideContents(tut);
     }).catch(() => {});
+  }
+
+  // the Guide's contents (0.39): a list of its sections beside it (above it in a narrow pane);
+  // the section being read is highlighted
+  guideContents(tut) {
+    const heads = [...tut.querySelectorAll('h4')];
+    if (heads.length < 2) return;
+    const links = heads.map((h, i) => {
+      h.id = `guide-${i + 1}`;
+      return el('a', { href: `#${h.id}`, 'data-sec': h.id, onclick: (e) => {
+        e.preventDefault();
+        h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        mark(h.id);
+      } }, h.textContent);
+    });
+    const top = el('a', { href: '#', class: 'guide-top', onclick: (e) => { e.preventDefault(); wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, '↑ Top');
+    const nav = el('nav', { class: 'guide-toc', 'aria-label': 'Guide contents' }, el('b', {}, 'Contents'), el('ol', {}, links.map((a) => el('li', {}, a))), top);
+    const mark = (id) => links.forEach((a) => a.classList.toggle('active', a.dataset.sec === id));
+    const wrap = el('div', { class: 'guide-wrap' }, nav, tut.cloneNode(false));
+    const body = wrap.lastChild;
+    body.append(...tut.childNodes);
+    tut.replaceWith(wrap);
+    mark(heads[0].id);
+    try {
+      const seen = new Map();
+      const io = new IntersectionObserver((ents) => {
+        ents.forEach((e) => seen.set(e.target.id, e.isIntersecting ? e.boundingClientRect.top : null));
+        const vis = heads.filter((h) => seen.get(h.id) != null);
+        if (vis.length) mark(vis[0].id);
+      }, { rootMargin: '0px 0px -60% 0px' });
+      heads.forEach((h) => io.observe(h));
+    } catch { /* no IntersectionObserver: no highlight */ }
   }
 
   aboutSection() {
@@ -1352,7 +1386,7 @@ class App {
         kv('Spyhop’s folder', el('span', { class: 'mono' }, a.spyhop_folder || '')),
         kv('Diagnostic logs', el('span', {}, el('span', { class: 'mono' }, a.log_folder || ''), ' ',
           el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('logs'); } }, 'Open folder'))))),
-      el('p', { class: 'hint' }, 'Spyhop keeps diagnostic logs of what it did, how fast it was and any errors, never survey data. If something goes wrong, Save diagnostics… makes a zip of the logs, settings, a listing of Spyhop’s folders and system details (no survey data, team or observer names) to send with a bug report.'),
+      el('p', { class: 'hint help' }, 'Spyhop keeps diagnostic logs of what it did, how fast it was and any errors, never survey data. If something goes wrong, Save diagnostics… makes a zip of the logs, settings, a listing of Spyhop’s folders and system details (no survey data, team or observer names) to send with a bug report.'),
       el('div', { class: 'btnrow' }, el('button', { onclick: () => this.saveDiagnostics() }, 'Save diagnostics…')),
       det,
       this.updatesSection(),
@@ -1606,7 +1640,7 @@ class App {
     // effort time from the Effort table (the current ON stretch counts up to now)
     const eff = [...S.tables.effort.rows].filter((r) => r.DateTime).sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime));
     let onSec = 0;
-    const byKind = {};                 // time in each kind of on effort (ON, LINE, FOLLOW, PHOTO)
+    const byKind = {};                 // time in each kind of on effort (the on-effort entries of the effort list)
     eff.forEach((r, i) => {
       if (!isOn(r.Effort)) return;
       const t0 = new Date(r.DateTime).getTime();
@@ -1728,7 +1762,7 @@ class App {
       meta.survey_notes ? el('h3', {}, 'Survey notes') : null,
       meta.survey_notes ? el('p', { class: 'survey-notes' }, meta.survey_notes) : null,
       Object.keys(byKind).some((k) => k !== 'ON') ? el('h3', {}, 'Time on effort by type') : null,
-      Object.keys(byKind).some((k) => k !== 'ON') ? tbl(['Effort', 'Time'], ON_EFFORT.filter((k) => byKind[k]).map((k) => [EFFORT_LABEL[k] || k, fmtDuration(byKind[k])])) : null,
+      Object.keys(byKind).some((k) => k !== 'ON') ? tbl(['Effort', 'Time'], ON_EFFORT.filter((k) => byKind[k]).map((k) => [effortInfo(k).definition ? `${k} (${effortInfo(k).definition.replace(/\.$/, '')})` : k, fmtDuration(byKind[k])])) : null,
       el('h3', {}, 'Sightings by species'),
       spRows.length ? tbl(['Species', 'Sightings', 'Number', 'Calves', 'Resights'], spRows) : el('p', { class: 'hint' }, 'No sightings yet.'),
       spRows.length && nResights ? el('p', { class: 'hint' }, 'Resights aren’t counted as sightings; Number and Calves are the largest seen on any look at the same animals.') : null,
@@ -1737,7 +1771,7 @@ class App {
       riwhTable ? el('p', { class: 'hint' }, riwhTotals) : null,
       el('h3', {}, 'Observers on watch'),
       obsRows.length ? tbl(['Observer', 'Port', 'Recorder', 'Stbd', 'Total'], obsRows) : el('p', { class: 'hint' }, 'No observers logged on effort yet (Port / Recorder / Stbd in the Effort tab).'),
-      obsRows.length ? el('p', { class: 'hint' }, 'Time in each position while on effort (ON, LINE, FOLLOW or PHOTO), from the Effort tab.') : null,
+      obsRows.length ? el('p', { class: 'hint' }, `Time in each position while on effort (${ON_EFFORT.join(', ')}), from the Effort tab.`) : null,
       el('h3', {}, 'Environmental conditions'),
       condRows.length ? tbl(['Condition', 'Whole survey', 'On effort'], condRows) : el('p', { class: 'hint' }, 'No conditions logged yet.'),
       el('h3', {}, 'Events by type'),
@@ -1862,7 +1896,7 @@ class App {
     // ---- backups
     const bk = L?.backups || [];
     kids.push(el('h4', {}, 'Backups'),
-      el('p', { class: 'hint' }, 'Spyhop saves a backup of the current template before using another (unless you untick it), in ',
+      el('p', { class: 'hint help' }, 'Spyhop saves a backup of the current template before using another (unless you untick it), in ',
         el('span', { class: 'mono' }, L?.backups_folder || 'templates/backups'), '. A backup is itself a template.'),
       bk.length ? el('table', { class: 'summary', id: 'tpl-backups' }, el('tbody', {}, bk.slice(0, 5).map((b) => el('tr', {},
         el('td', {}, when(b.modified)), el('td', { class: 'mono' }, b.name),
@@ -2078,9 +2112,8 @@ class App {
     return sec('Altitude and reticles',
       el('div', { class: 'grid2' },
         el('label', { class: 'row' }, 'Altitude column in Sightings', sel('altitude_column', [['auto', 'Automatic'], ['show', 'Always shown'], ['hide', 'Hidden']]))),
-      el('p', { class: 'hint' }, 'Automatic shows the Alt column for aerial surveys and hides it for shipboard and stationary ones (Survey tab → Platform type). It is always kept in the file. How reticle readings become distances (binoculars, calibrated marks, an inclinometer) is set up in ',
-        el('a', { href: '#', id: 'link-reticles', onclick: (e) => { e.preventDefault(); this.ddTab = 'reticles'; this.showTab('dropdowns'); } }, 'Settings → Dropdowns → Reticles'),
-        ': each entry becomes a Unit, reticles-<name>, in Sightings.'));
+      el('p', { class: 'hint help' }, 'Automatic shows the Alt column for aerial surveys and hides it for shipboard and stationary ones (Survey tab → Platform type). It is always kept in the file. How reticle readings become distances (binoculars, calibrated marks, an inclinometer) is set up in Settings → Dropdowns → Reticles: each entry becomes a Unit, reticles-<name>, in Sightings.'),
+      el('p', {}, 'Reticles: ', el('a', { href: '#', id: 'link-reticles', onclick: (e) => { e.preventDefault(); this.ddTab = 'reticles'; this.showTab('dropdowns'); } }, 'Settings → Dropdowns → Reticles')));
   }
 
 
@@ -2094,8 +2127,9 @@ class App {
           [['none', 'None'], ['alternate', 'Alternating'], ['resights', 'Highlight resights'], ['groups', 'Group resights']]
             .map(([v, l]) => el('option', { value: v, selected: (d.sightings_row_colors || 'resights') === v }, l)))),
         el('label', { class: 'row' }, 'Effort segment column', sel('segment_column', [['show', 'Shown'], ['hide', 'Hidden']]))),
-      el('p', { class: 'hint' }, 'Group resights gives each sighting that has resights, and its resights, a color of their own. The effort segment (Seg) is numbered by Spyhop: a new number each time the effort status changes. ',
-        'Drag a column header to move it, or the edge of a header to change its width; the order and widths are kept on this computer only. Double-click the bar between two panes to put it back where it started. ',
+      el('p', { class: 'hint help' }, 'Group resights gives each sighting that has resights, and its resights, a color of their own. The effort segment (Seg) is numbered by Spyhop: a new number each time the effort status changes. ',
+        'Drag a column header to move it, or the edge of a header to change its width; the order and widths are kept on this computer only. Double-click the bar between two panes to put it back where it started.'),
+      el('div', { class: 'btnrow' },
         Object.keys(lay).length ? el('button', { id: 'cols-reset-all', onclick: async () => { await this.saveColumnLayout({}); for (const g of Object.values(this.grids)) g.refreshColumns?.(); this.renderSettings(); } }, 'Reset all column orders and widths') : null,
         ' ', el('button', { id: 'btn-reset-panes', title: 'Put the map, Survey/Tools/Settings and the data tables back to their starting sizes', onclick: () => this.resetPanes() }, 'Reset the pane sizes')));
   }
@@ -2106,7 +2140,7 @@ class App {
     const dsel = (key, opts, id) => el('select', { id, onchange: (e) => this.saveDisplay({ [key]: e.target.value }) },
       opts.map(([v, l]) => el('option', { value: v, selected: (d[key] || '') === v }, l)));
     return sec('Resights',
-      el('p', { class: 'hint' }, 'A resight is a later sighting of animals already recorded, e.g. on the approach for photos or during a focal follow. Select the sighting and use Add resight: the new row’s ResNo holds the first sighting’s SigNo, and its species, numbers, confidence and FieldID are filled in. Resights aren’t counted again in the Summary, which uses the largest number and calves seen on any resight. Time order lists rows as recorded; Resights nested puts each sighting’s resights straight under it. The marker size is a percentage of the sightings’ marker size.'),
+      el('p', { class: 'hint help' }, 'A resight is a later sighting of animals already recorded, e.g. on the approach for photos or during a focal follow. Select the sighting and use Add resight: the new row’s ResNo holds the first sighting’s SigNo, and its species, numbers, confidence and FieldID are filled in. Resights aren’t counted again in the Summary, which uses the largest number and calves seen on any resight. Time order lists rows as recorded; Resights nested puts each sighting’s resights straight under it. The marker size is a percentage of the sightings’ marker size.'),
       el('div', { class: 'grid2' },
         el('label', { class: 'row' }, 'Sightings table', dsel('resight_order', [['time', 'Time order'], ['nested', 'Resights nested']], 'resight-order')),
         el('label', { class: 'row' }, 'Resight marker', dsel('resight_marker_shape', [['same', 'Same shape'], ...SHAPES.map((x) => [x, x]), ['hidden', 'Not shown']], 'resight-shape')),
@@ -2158,13 +2192,13 @@ class App {
           el('label', { class: 'row' }, 'Break the trackline above (kn)', lockNum('track_break_kn', 0, 2000)),
           el('label', { class: 'row' }, '… or after no GPS for (s)', lockNum('track_break_gap_s', 0, 86400))),
         lockNote,
-        el('p', { class: 'hint' }, 'The trackline on the map, and the distances in the summary, are broken where the platform would have moved faster than this between two points (a GPS jump; 30 kn suits a vessel, use about 200 for aerial surveys), or where no position came in for that long. 0 turns either off. Tools → Error check lists each jump or gap, and its Fix button marks it in the Effort table with an ERROR row.')),
+        el('p', { class: 'hint help' }, 'The trackline on the map, and the distances in the summary, are broken where the platform would have moved faster than this between two points (a GPS jump; 30 kn suits a vessel, use about 200 for aerial surveys), or where no position came in for that long. 0 turns either off. Tools → Error check lists each jump or gap, and its Fix button marks it in the Effort table with an ERROR row.')),
       sec('Sleep',
         el('div', { class: 'grid2' },
           el('label', { class: 'row' }, 'Keep the computer awake', sel('keep_awake', [['survey', 'During a survey'], ['always', 'Always'], ['off', 'Never']]))),
         el('div', { class: 'grid2 checks' }, chk('keep_screen_on', 'Keep the screen on too')),
         el('p', { class: 'hint', id: 'awake-status' }, this.awakeText()),
-        el('p', { class: 'hint' }, '“During a survey” means from Start until End (or until the survey is closed); “Always” means whenever Spyhop is open. A computer that sleeps stops recording the trackline and NMEA data. This stops it sleeping when it is left alone; closing a laptop’s lid still puts most laptops to sleep, and a laptop on battery runs down faster. When Spyhop quits, the computer’s own sleep settings apply again.')),
+        el('p', { class: 'hint help' }, '“During a survey” means from Start until End (or until the survey is closed); “Always” means whenever Spyhop is open. A computer that sleeps stops recording the trackline and NMEA data. This stops it sleeping when it is left alone; closing a laptop’s lid still puts most laptops to sleep, and a laptop on battery runs down faster. When Spyhop quits, the computer’s own sleep settings apply again.')),
       sec('Bearings, distances and time',
         el('div', { class: 'grid2' },
           el('label', { class: 'row' }, 'Default bearing reference', sel('bearing_reference', [['M', 'Magnetic (compass)'], ['T', 'True'], ['R', 'Relative to bow'], ['C', 'Clock (1–12, relative to bow)']])),
@@ -2175,7 +2209,7 @@ class App {
             el('span', { class: 'hint' }, ` now ${this.variation() === null ? '—' : this.variation().toFixed(1) + '°'}`)),
           el('label', { class: 'row' }, 'Lat/lon format', sel('latlon_format', [['DDM', 'Deg + decimal min'], ['DD', 'Decimal degrees'], ['DMS', 'Deg min sec']])),
           el('label', { class: 'row' }, 'Clock', sel('timezone', this.clockOptions()), this.clockHint())),
-        el('p', { class: 'hint' }, 'The map distance unit is used for the measuring tool, popups, routes and the Summary’s distances; the Sightings default is the Unit of new sightings. A clock bearing (Ref C) is picked from 1 to 12 o’clock, each hour 30° from the bow (3 = starboard beam). Each sighting row stores its own bearing reference and distance unit, so changing these defaults never changes old rows. “auto” variation uses the World Magnetic Model if installed, otherwise the GPS. The clock setting changes how all times are shown; the files always store the UTC offset with each time.')),
+        el('p', { class: 'hint help' }, 'The map distance unit is used for the measuring tool, popups, routes and the Summary’s distances; the Sightings default is the Unit of new sightings. A clock bearing (Ref C) is picked from 1 to 12 o’clock, each hour 30° from the bow (3 = starboard beam). Each sighting row stores its own bearing reference and distance unit, so changing these defaults never changes old rows. “auto” variation uses the World Magnetic Model if installed, otherwise the GPS. The clock setting changes how all times are shown; the files always store the UTC offset with each time.')),
       this.altitudeSection(sec, sel),
       sec('GPS / NMEA inputs', el('p', {}, 'GPS and instrument inputs are in ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('inputs'); } }, 'Settings → Inputs'),
@@ -2198,14 +2232,14 @@ class App {
           dnum('marker_radius', 'Marker size', 3, 24), dnum('label_size', 'Marker label size', 8, 24)),
         el('div', { class: 'grid2 checks' }, dchk('use_species_colors', 'Color markers by species/event')),
         el('h4', {}, 'Trackline'),
+        el('p', { class: 'hint help' }, 'The track is drawn in the color of each Effort value (Settings → Dropdowns → Effort); here, whether it shows and how wide it is, on and off effort.'),
         el('table', { class: 'track-style' },
-          el('thead', {}, el('tr', {}, ['', 'Show', 'Color', 'Width (px)', 'Line'].map((h) => el('th', {}, h)))),
-          el('tbody', {}, [['on', 'On effort', 'show_track_on', 'track_on_effort_color', 'track_width', 'track_on_style', 3],
-            ['off', 'Off effort', 'show_track_off', 'track_off_effort_color', 'track_off_width', 'track_off_style', 1.5]].map(([, label, show, color, width, style, dw]) =>
+          el('thead', {}, el('tr', {}, ['', 'Show', 'Width (px)', 'Line'].map((h) => el('th', {}, h)))),
+          el('tbody', {}, [['on', 'On effort', 'show_track_on', 'track_width', 'track_on_style', 3],
+            ['off', 'Off effort', 'show_track_off', 'track_off_width', 'track_off_style', 1.5]].map(([, label, show, width, style, dw]) =>
             el('tr', {},
               el('th', {}, label),
               el('td', {}, el('input', { type: 'checkbox', checked: d[show] !== '0', title: `Show the ${label.toLowerCase()} track`, onchange: (e) => this.saveDisplay({ [show]: e.target.checked ? '1' : '0' }) })),
-              el('td', {}, el('input', { type: 'color', value: toHex(d[color]), onchange: (e) => this.saveDisplay({ [color]: e.target.value }) })),
               el('td', {}, el('input', { type: 'number', min: 0.5, max: 10, step: 0.5, value: d[width] || dw, style: 'width:4.5em',
                 onchange: (e) => { const v = +e.target.value; if (v >= 0.5 && v <= 10) this.saveDisplay({ [width]: String(v) }); else { toast('Must be 0.5–10', 'warn'); e.target.value = d[width] || dw; } } })),
               el('td', {}, el('select', { onchange: (e) => this.saveDisplay({ [style]: e.target.value }) },
@@ -2360,7 +2394,7 @@ class App {
       el('div', { class: 'btnrow' },
         el('button', { id: 'btn-sc-save', class: `primary${dirty ? ' dirty' : ''}`, onclick: () => this.saveShortcuts() }, dirty ? 'Save — unsaved changes' : 'Save'),
         el('button', { onclick: () => { this.scDraft = null; this.renderShortcuts(); } }, 'Revert')),
-      el('p', { class: 'hint' }, `Some ${MOD}+key combinations are taken by web browsers; the app window (the default launch) avoids most of them.`),
+      el('p', { class: 'hint help' }, `Some ${MOD}+key combinations are taken by web browsers; the app window (the default launch) avoids most of them.`),
       this.fileBox('shortcuts.csv', 'config:shortcuts', () => { this.scDraft = null; })));
   }
 
@@ -2395,7 +2429,7 @@ class App {
 
   // ---------------------------------------------------------------- Settings → Dropdowns: the drop-down lists
   dropdownLists() { return [['species', 'Species'], ['event_types', 'Events'], ['behaviors', 'Behaviors'], ['observers', 'Observers'],
-    ['visibility', 'Visibility'], ['weather', 'Weather'], ['reticles', 'Reticles']]; }
+    ['effort', 'Effort'], ['visibility', 'Visibility'], ['weather', 'Weather'], ['reticles', 'Reticles']]; }
 
   renderDropdowns() {
     const pane = $('#pane-dropdowns');
@@ -2421,7 +2455,18 @@ class App {
     const okColor = (v) => !v || (typeof CSS !== 'undefined' && CSS.supports ? CSS.supports('color', v) : true);
     const toHex = (v) => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = '#000'; c.fillStyle = v || '#000'; return c.fillStyle.startsWith('#') ? c.fillStyle : '#000000'; };
     const R = S.schema.reticle || { methods: {}, presets: {} };
+    const required = (r) => cur === 'effort' && EFFORT_REQUIRED.includes(r.name);   // Start, End, ERROR: always there
     const cell = (r, i, c) => {
+      if (cur === 'effort' && c === 'status') {
+        return el('td', {}, el('select', { disabled: locked || required(r), 'data-col': c,
+          title: required(r) ? `${r.name} always counts as off effort` : 'On effort: drawn and counted as on effort (Summary, reports, Error check)',
+          onchange: (e) => { edit()[i].status = e.target.value; markDirty(); } },
+          el('option', { value: '', selected: !r.status }, '—'),
+          [['on', 'on effort'], ['off', 'off effort']].map(([v, l]) => el('option', { value: v, selected: r.status === v }, l))));
+      }
+      if (cur === 'effort' && c === 'name' && required(r)) {
+        return el('td', {}, el('input', { type: 'text', value: r.name, disabled: true, 'data-col': c, size: 26, title: 'Needed by Spyhop: can’t be renamed or removed' }));
+      }
       if (cur === 'reticles' && c === 'method') {
         return el('td', {}, el('select', { disabled: locked, 'data-col': c, onchange: (e) => { edit()[i].method = e.target.value; this.renderDropdowns(); } },
           el('option', { value: '', selected: !r.method }, '—'),
@@ -2462,7 +2507,7 @@ class App {
       el('td', { class: 'rowbtns' },
         el('button', { title: 'Move up', disabled: locked || i === 0, onclick: () => { const d = edit(); [d[i - 1], d[i]] = [d[i], d[i - 1]]; this.renderDropdowns(); } }, '↑'),
         el('button', { title: 'Move down', disabled: locked || i === rows.length - 1, onclick: () => { const d = edit(); [d[i + 1], d[i]] = [d[i], d[i + 1]]; this.renderDropdowns(); } }, '↓'),
-        el('button', { title: 'Delete', class: 'danger-outline', disabled: locked, onclick: () => { edit().splice(i, 1); this.renderDropdowns(); } }, '✕'))));
+        el('button', { title: required(r) ? 'Needed by Spyhop: can’t be removed' : 'Delete', class: 'danger-outline', disabled: locked || required(r), onclick: () => { edit().splice(i, 1); this.renderDropdowns(); } }, '✕'))));
     const pills = el('div', { class: 'report-tabs', id: 'dd-tabs' }, lists.map(([k, l]) => el('button', {
       class: `report-tab${k === cur ? ' active' : ''}${this.ddDrafts[k] ? ' has-draft' : ''}`, 'data-list': k,
       onclick: () => { this.ddTab = k; try { localStorage.setItem('wsr.ddtab', k); } catch {} this.renderDropdowns(); } },
@@ -2473,23 +2518,25 @@ class App {
       observers: 'The observer drop-downs (Obs in Sightings; Port, Recorder and Stbd in Effort). The initials are what’s recorded; NA means nobody in that position.',
       visibility: 'The Vis drop-down in Effort. The Error check reads distances from the names (e.g. “1-2 nm” is at most 2 nm, “<0.5 nm” at most 0.5; km, m and mi are understood) to flag sightings beyond the visibility.',
       weather: 'The Weather drop-down in Effort.',
+      effort: 'The Effort drop-down in Effort. Status decides whether a value counts as on or off effort: for the track on the map (drawn in the value’s color, with the on- or off-effort width and line from Settings → General → Map display), the Summary’s time on effort and distances, reports and the Error check. Start, End and ERROR are needed by Spyhop and can’t be renamed or removed: Start and End are the first and last rows (Start / End survey in the Survey tab), and Error check → Fix adds ERROR rows to mark a trackline break.',
       reticles: 'How reticle readings are turned into distances. Each entry is a Unit in Sightings, reticles-<name> (e.g. reticles-binos): type the reading in Dist and the animals’ position comes from the bearing, the reading and the platform altitude (the row’s Alt), allowing for the curvature of the earth (Lerczak & Hobbs 1998). Binocular reticles: divisions counted down from the horizon, each a fixed angle (the magnification suggests one, but check the binoculars’ manual or calibrate them: many 7×50 and 10× marine binoculars have a 10-mil scale, 0.573° per division; Fujinon 25×150 big-eyes are 0.0771°, Kinzey & Gerrodette 2001). Calibrated marks: evenly spaced marks (e.g. on an aircraft’s window or strut), counted down from the horizontal (mark 0); Degrees per division is the angle between one mark and the next, so mark n is n × that angle below the horizontal (no magnification). Inclinometer degrees: the reading is the angle below the horizontal (90 = straight down). Names may use letters, digits, - _ and . (no spaces).' }[cur];
     pane.replaceChildren(pills, el('section', { class: `settings-sec dd-sec${locked ? ' dd-locked' : ''}` },
+      el('h3', {}, Object.fromEntries(lists)[cur]),
       locked ? el('p', { class: 'warnbox', id: 'dd-locked' }, el('b', {}, 'A survey is under way, so the drop-down lists can’t be changed. '),
         'End the survey (in Survey) to edit them.') : null,
-      el('p', {}, what),
+      el('p', { class: 'hint help' }, what),
       el('table', { class: 'summary edit-table dd-edit', 'data-list': cur },
         el('thead', {}, el('tr', {}, ...cols.map((c) => el('th', {}, labels[c] || c)), el('th', {}, ''))),
         el('tbody', {}, body)),
       el('div', { class: 'btnrow' },
-        el('button', { disabled: locked, onclick: () => { edit().push({ ...Object.fromEntries(cols.map((c) => [c, ''])), ...(cur === 'reticles' ? { method: 'binoculars' } : {}) }); this.renderDropdowns();
+        el('button', { disabled: locked, onclick: () => { edit().push({ ...Object.fromEntries(cols.map((c) => [c, ''])), ...(cur === 'reticles' ? { method: 'binoculars' } : cur === 'effort' ? { status: 'on' } : {}) }); this.renderDropdowns();
           const ins = $$('#pane-dropdowns tbody tr:last-child input[type=text]'); ins[0]?.focus(); } }, 'Add entry'),
         el('button', { disabled: locked, onclick: () => { edit().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })); this.renderDropdowns(); } }, 'Sort A–Z')),
       el('div', { id: 'dd-errors' }),
       el('div', { class: 'btnrow' },
         el('button', { id: 'btn-dd-save', class: `primary${dirty ? ' dirty' : ''}`, disabled: locked, onclick: () => this.saveDropdown(cur) }, dirty ? 'Save — unsaved changes' : 'Save'),
         el('button', { disabled: locked || !this.ddDrafts[cur], onclick: () => { delete this.ddDrafts[cur]; this.renderDropdowns(); } }, 'Revert')),
-      el('p', { class: 'hint' }, 'The order here is the order in the drop-down. Renaming or removing an entry doesn’t change rows already recorded; the Error check flags values that are no longer in the list.'),
+      el('p', { class: 'hint help' }, 'The order here is the order in the drop-down. Renaming or removing an entry doesn’t change rows already recorded; the Error check flags values that are no longer in the list.'),
       this.fileBox(`${cur}.csv`, `config:${cur}`, () => { delete this.ddDrafts[cur]; }, locked)));
   }
 
@@ -2597,7 +2644,7 @@ class App {
       }
     }).catch(() => {});
     return el('section', { class: 'settings-sec' }, el('h3', {}, 'GPS / NMEA inputs'),
-      el('p', { class: 'hint' }, 'Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS; the readings in Tools → Instruments from the other sentences, from any talker. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
+      el('p', { class: 'hint help' }, 'Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS; the readings in Tools → Instruments from the other sentences, from any talker. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
       list, ports,
       el('div', { class: 'btnrow' },
         el('button', { onclick: () => { sources.push({ type: 'serial', enabled: true, ...defaults.serial }); markDirty(); draw(); } }, '+ Add input'),
@@ -2615,7 +2662,7 @@ class App {
     const st = this.S.config.settings;
     const sec = (title, ...kids) => el('section', { class: 'settings-sec' }, el('h3', {}, title), ...kids);
     const inst = sec('Instruments',
-      el('p', { class: 'hint' }, 'Latest readings from every NMEA input: speed, depth, wind, weather, engines and other transducers. A reading turns gray when it hasn’t been updated for 15 seconds. Click a reading to plot it since the start of the survey (readings are saved every 5 seconds while a survey is active).'),
+      el('p', { class: 'hint help' }, 'Latest readings from every NMEA input: speed, depth, wind, weather, engines and other transducers. A reading turns gray when it hasn’t been updated for 15 seconds. Click a reading to plot it since the start of the survey (readings are saved every 5 seconds while a survey is active).'),
       el('p', { id: 'inst-inputs-link' }, 'The GPS / NMEA inputs (serial, UDP, TCP, gpsd, file replay, simulator) are set up in ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('inputs'); } }, 'Settings → Inputs'), '.'),
       el('div', { id: 'inst-grid' }));
@@ -2629,7 +2676,7 @@ class App {
         el('label', { class: 'check' }, logChk, el('span', {}, el('b', {}, 'Record raw NMEA to a file'), ' — every sentence from every input, as received')),
         el('label', { class: 'check' }, tsChk, el('span', {}, 'Start each line with the UTC time and the input name (untick for plain NMEA)'))),
       el('p', { id: 'rawlog-status', class: 'hint' }),
-      el('p', { class: 'hint' }, 'Logs are saved in the open survey’s folder (nmea_logs), or in the data folder’s nmea_logs when no survey is open; a new file starts when you start, open or close a survey. Recording carries on after a restart until you switch it off. A log can be played back as a “file” input (Settings → Inputs). ',
+      el('p', { class: 'hint help' }, 'Logs are saved in the open survey’s folder (nmea_logs), or in the data folder’s nmea_logs when no survey is open; a new file starts when you start, open or close a survey. Recording carries on after a restart until you switch it off. A log can be played back as a “file” input (Settings → Inputs). ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('nmealogs'); } }, 'Open the log folder')));
     pane.replaceChildren(inst, raw);
     this.updateInstruments();
@@ -2717,7 +2764,7 @@ class App {
     const allOn = m.map.hasLayer(m.layers.imported);
     const remove = async (n) => { if (await confirmBox('Remove overlay?', `Remove ${n} from Spyhop’s overlays folder? It can be imported again.`, 'Remove', true)) api(`/api/overlays/${encodeURIComponent(n)}`, undefined, 'DELETE').catch(() => {}); };
     const panel = el('div', { id: 'overlay-panel' }, el('section', { class: 'settings-sec' }, el('h3', {}, 'Offline overlays'),
-      el('p', { class: 'hint' }, 'GeoJSON, GPX or KML files: planned transects, management areas, other surveys. They are kept in Spyhop’s overlays folder. Click an overlay’s color to change it (↺ goes back to its own colors); the colors are kept with the map display, so they travel in templates too.'),
+      el('p', { class: 'hint help' }, 'GeoJSON, GPX or KML files: planned transects, management areas, other surveys. They are kept in Spyhop’s overlays folder. Click an overlay’s color to change it (↺ goes back to its own colors); the colors are kept with the map display, so they travel in templates too.'),
       el('div', { class: 'btnrow' }, el('button', { class: 'primary', onclick: () => this.importOverlay() }, 'Import…'),
         list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, true)); this.renderOverlays(); } }, 'Show all') : null,
         list.length ? el('button', { onclick: () => { list.forEach((n) => m.setOverlayVisible(n, false)); this.renderOverlays(); } }, 'Hide all') : null,
@@ -2773,7 +2820,7 @@ class App {
               : el('button', { onclick: () => add(sv) }, 'Add as overlay')));
         })))
         : el('p', { class: 'hint' }, 'No other surveys in this data folder.'),
-      surveys.length ? el('p', { class: 'hint' }, 'Draws the survey’s trackline (solid on effort, dashed off effort), sightings and events. The overlay is a snapshot: press Update after changing that survey.') : null);
+      surveys.length ? el('p', { class: 'hint help' }, 'Draws the survey’s trackline (solid on effort, dashed off effort), sightings and events. The overlay is a snapshot: press Update after changing that survey.') : null);
   }
 
   mapSection() {
@@ -2838,7 +2885,7 @@ class App {
         } }, 'Download'),
         el('button', { onclick: () => api('/api/tiles/prefetch', { cancel: true }).catch(() => {}) }, 'Stop'), est),
       el('div', { id: 'prefetch-status' }),
-      el('p', { class: 'hint' }, 'Each zoom level has four times the tiles of the one before, so keep the highest zoom modest for a big area (12–13 suits a day’s survey area; 14–15 a harbor). ',
+      el('p', { class: 'hint help' }, 'Each zoom level has four times the tiles of the one before, so keep the highest zoom modest for a big area (12–13 suits a day’s survey area; 14–15 a harbor). ',
         'Zooming in past what was downloaded shows the nearest saved tiles enlarged. OpenStreetMap doesn’t allow bulk downloads (for Seascape, its land background isn’t saved).'),
       el('h4', {}, 'In the charts folder'),
       el('div', { id: 'chart-list' }),
@@ -2847,9 +2894,9 @@ class App {
         el('button', { title: 'Look again for .mbtiles files copied into the charts folder', onclick: () => api('/api/tiles/rescan', {}).then((r) => {
           this.S.mbtiles = r.mbtiles; this.map.syncCharts(r.mbtiles); this.renderChartList(); toast('Charts folder checked');
         }).catch(() => {}) }, 'Refresh')),
-      el('p', { class: 'hint' }, 'Spyhop uses a downloaded area automatically when the map layer it came from is chosen, before going online. Each file is also listed under “Offline map tiles” in the map’s layers menu; Select puts it on the map on its own, so you can see what you’ll have at sea. NOAA ENC charts (.mbtiles from charts.noaa.gov) can be put in the folder too.'),
+      el('p', { class: 'hint help' }, 'Spyhop uses a downloaded area automatically when the map layer it came from is chosen, before going online. Each file is also listed under “Offline map tiles” in the map’s layers menu; Select puts it on the map on its own, so you can see what you’ll have at sea. NOAA ENC charts (.mbtiles from charts.noaa.gov) can be put in the folder too.'),
       el('p', {}, cacheInfo),
-      el('p', { class: 'hint' }, 'Map overlays (transects, management areas…) are in Tools → ',
+      el('p', { class: 'hint help' }, 'Map overlays (transects, management areas…) are in Tools → ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('overlays'); } }, 'Overlays'), '.'));
   }
 

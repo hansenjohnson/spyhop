@@ -78,7 +78,7 @@ export class ResightTool {
     const sec = (title, ...kids) => el('section', { class: 'settings-sec' }, el('h3', {}, title), ...kids);
 
     const setup = sec('Dive and surfacing behaviors',
-      el('p', { class: 'hint' }, 'A dive time runs from a resight with a dive behavior to the next resight with the first-surfacing behavior (the latest dive, if several come first). The behaviors come from Settings → Dropdowns → Behaviors.'),
+      el('p', { class: 'hint help' }, 'A dive time runs from a resight with a dive behavior to the next resight with the first-surfacing behavior (the latest dive, if several come first). The behaviors come from Settings → Dropdowns → Behaviors.'),
       el('div', { class: 'grid2' },
         el('label', { class: 'row' }, 'First surfacing behavior', el('select', { id: 'rs-surface', onchange: (e) => app.saveDisplay({ resight_surface_behavior: e.target.value }) },
           ['', ...beh].map((b) => el('option', { value: b, selected: b === surface }, b || '—'))))),

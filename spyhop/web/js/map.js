@@ -1,7 +1,7 @@
 // Interactive chart: base layers, vessel, track, data markers, popups, measure tool.
 /* global L, topojson */
 import { Resights } from './resights.js';
-import { el, esc, fmtCoord, fmtPos, distM, bearing, destination, fmtDist, fmtBrg, timeParts, toast, api, isTrackBreak, trackStates, dashFor, isOn } from './util.js';
+import { el, esc, fmtCoord, fmtPos, distM, bearing, destination, fmtDist, fmtBrg, timeParts, toast, api, isTrackBreak, trackStates, dashFor, isOn, effortColor } from './util.js';
 import { DepthProbe } from './depth.js';
 
 const SHAPES = ['Diamond', 'Square', 'Triangle', 'Circle', 'Star'];
@@ -676,7 +676,7 @@ export class MapView {
     if (state === 'ERROR') { this.trackSeg = null; return; }
     const brk = prev && (prev.state === 'ERROR' || isTrackBreak(prev.p, p, this.app.S.config.settings));
     if (brk) this.trackSeg = null;
-    const on = isOn(state), old = this.isOld(p.DateTime), key = `${on}|${old}`;
+    const on = isOn(state), old = this.isOld(p.DateTime), color = effortColor(state), key = `${on}|${color}|${old}`;
     if (!this.trackSeg || this.trackSeg.key !== key) {
       const start = this.trackSeg ? [this.trackSeg.last] : [];
       let line = null;
@@ -684,7 +684,7 @@ export class MapView {
         const w = on ? (+disp.track_width || 3) : (+disp.track_off_width || 1.5);
         const style = (on ? disp.track_on_style : disp.track_off_style) || 'solid';
         line = L.polyline([...start, ll], {
-          color: on ? disp.track_on_effort_color : disp.track_off_effort_color,
+          color,              // the Effort value's color (Settings → Dropdowns → Effort)
           weight: w, pane: 'tracks', dashArray: dashFor(style, w), lineCap: style === 'dotted' ? 'round' : 'butt',
           opacity: old ? 0.3 : 1 }).addTo(this.layers.track);
         line.on('click', (e) => this.trackPopup(e));
@@ -954,7 +954,6 @@ export class MapView {
       item('Add sighting here', () => this.app.addRow('sightings', {}, ll)),
       item('Add event here', () => this.app.addRow('events', {}, ll)),
       item('Add waypoint here', () => this.app.addRow('marks', {}, ll)),
-      item('Start route here', () => this.app.planner.startHere(ll)),
       item('Measure from here', () => this.startMeasure(ll)),
       item('Center map here', () => this.map.panTo(ll)),
       item('Copy position', () => navigator.clipboard?.writeText(fmtPos(ll.lat, ll.lng, fmt)).then(() => toast('Position copied'))));

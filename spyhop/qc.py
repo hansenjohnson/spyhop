@@ -271,7 +271,7 @@ def run_qc(rec) -> dict:
                     vals = [x.strip() for x in v.split(";")] if c["type"] == "multi" else [v]
                     for x in vals:
                         if x and x not in allowed:
-                            fixed = c["list"] in schema.FIXED_LISTS
+                            fixed = schema.strict_list(c["list"])
                             add("error" if fixed else "warning", "Values from the lists",
                                 f"{c['label']} “{x}” isn't in the {'allowed values' if fixed else c['list'] + '.csv list'}.",
                                 tab, r, c["key"], name)
@@ -460,7 +460,7 @@ def run_qc(rec) -> dict:
         if i in skip:
             continue
         st = (state_at(t0) or {}).get("Effort")
-        can_fix = schema.is_on(st) or st in ("OFF", "Start", "")
+        can_fix = schema.is_effort_choice(st) or st in ("Start", "")
         if i in paired:
             j = paired[i]
             tb = tp[j + 1][0]
@@ -479,7 +479,7 @@ def run_qc(rec) -> dict:
                 f"at {t1.astimezone(tz).strftime('%H:%M:%S')} — a GPS glitch? Fix adds an ERROR row to the Effort table for the jump.",
                 "track", label="Trackline", fix=fix if can_fix else None)
         elif dt > gap_limit:
-            if schema.is_on(st) or st in ("OFF", "Start"):
+            if schema.is_effort_choice(st) or st == "Start":
                 add("warning" if schema.is_on(st) else "info", "Trackline plausible",
                     f"No track points for {_fmt_dur(dt)} from {t0.astimezone(tz).strftime('%H:%M:%S')} "
                     f"({'on' if schema.is_on(st) else 'off'} effort) — was tracking paused or the GPS lost?"

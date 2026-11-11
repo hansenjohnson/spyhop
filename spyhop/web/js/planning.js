@@ -161,12 +161,8 @@ export class Planner {
   route() {
     const s = this.state;
     if (s.active && Array.isArray(s.locked)) return s.locked.map((p) => ({ ...p }));
-    const vessel = s.start === 'vessel' ? this.vesselLL() : null;
-    if (s.mode === 'manual') {
-      const pts = s.manual.points.map((ll, i) => ({ ll, name: `WP${i + 1}`, index: i }));
-      return vessel ? [{ ll: vessel, name: 'Start (vessel)', fixed: true }, ...pts] : pts;
-    }
-    const start = vessel || s.sys.start;
+    if (s.mode === 'manual') return s.manual.points.map((ll, i) => ({ ll, name: `WP${i + 1}`, index: i }));
+    const start = s.sys.start;
     if (!start) return [];
     if (s.mode === 'sawtooth') {
       const w = s.saw;
@@ -217,9 +213,9 @@ export class Planner {
   onMapClick(ll) {
     const p = [+ll.lat.toFixed(6), +ll.lng.toFixed(6)];
     if (this.picking) {
-      this.state.sys.start = p;
+      this.setStart(p);
       this.picking = false;
-      if (this.state.start === 'vessel') this.state.start = 'first';
+      this.updateClickMode();
       this.changed(true);
       return;
     }
@@ -242,7 +238,7 @@ export class Planner {
     const editable = this.inTab && !this.state.active;
     const size = Math.max(4, Math.min(48, +st.point || 22));
     r.forEach((p, i) => {
-      const draggable = editable && ((manual && !p.fixed) || (!manual && i === 0 && this.state.start !== 'vessel'));
+      const draggable = editable && ((manual && !p.fixed) || (!manual && i === 0));
       const label = p.fixed ? '⛴' : i + (r[0]?.fixed ? 0 : 1);
       const m = L.marker(p.ll, {
         draggable, keyboard: false,
@@ -337,12 +333,16 @@ export class Planner {
       const now = Date.now();
       if (!this._lastPop || now - this._lastPop > 1000) { this._lastPop = now; this._popup.m.setPopupContent(this.waypointPopup(this.route(), this._popup.i)); }
     }
-    if (!this.inTab || this.state.active || this.state.start !== 'vessel') return;
-    const now = Date.now();
-    if (this._lastVessel && now - this._lastVessel < 2000) return;
-    this._lastVessel = now;
-    this.draw();
-    this.renderTables();
+    // "Use the vessel position now" needs a position: enable it when the first fix arrives
+    if (this.inTab && !this.state.active && !this._hadFix && this.vesselLL()) { this._hadFix = true; this.render(); }
+  }
+
+  // the route's start point: the first waypoint of a manual route, or where a systematic pattern starts
+  startPoint() { return this.state.mode === 'manual' ? this.state.manual.points[0] || null : this.state.sys.start; }
+  setStart(p) {
+    const s = this.state;
+    if (s.mode === 'manual') { if (s.manual.points.length) s.manual.points[0] = p; else s.manual.points.push(p); }
+    else s.sys.start = p;
   }
 
   changed() {
@@ -444,7 +444,7 @@ export class Planner {
     const s = this.state;
     Object.assign(s, {
       mode: MODE_LABELS[d.mode] ? d.mode : 'manual', speed: +d.speed > 0 ? +d.speed : s.speed,
-      start: d.start === 'vessel' ? 'vessel' : 'first', name: d.name || s.name,
+      start: 'first', name: d.name || s.name,
       manual: { points: (d.manual?.points || []).filter((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite)) },
       sys: { ...DEFAULTS.sys, ...(d.sys || {}) },
       saw: { ...DEFAULTS.saw, ...(d.saw || {}) },
@@ -544,7 +544,7 @@ export class Planner {
   savedSection() {
     const s = this.state;
     const list = this.saved;
-    const sec = el('section', { class: 'settings-sec routes-saved' }, el('h3', {}, 'Saved routes'));
+    const sec = el('section', { class: 'settings-sec routes-saved' }, el('h2', { class: 'route-group' }, 'Saved Routes'));
     if (!list) { sec.append(el('p', { class: 'hint' }, 'Loading…')); return sec; }
     const fmtDate = (iso) => { const t = timeParts(new Date(iso), this.app.clock()); return `${t.date} ${t.time.slice(0, 5)}`; };
     const body = list.length ? el('div', { class: 'table-scroll' }, el('table', { class: 'summary routes-table' },
@@ -567,7 +567,7 @@ export class Planner {
             el('button', { disabled: !!r.error, onclick: () => this.zoomSaved(r.file) }, 'Zoom to'),
             el('button', { class: 'danger-outline', onclick: () => this.deleteSaved(r.file) }, 'Delete')));
       }))))
-      : el('p', { class: 'hint' }, 'No saved routes yet. Design one below and press Save route.');
+      : el('p', { class: 'hint' }, 'No saved routes yet. Design one under Create New Route and press Save route.');
     sec.append(body,
       el('div', { class: 'btnrow' },
         el('button', { onclick: () => this.newRoute() }, 'New route'),
@@ -576,7 +576,7 @@ export class Planner {
         this.shown.size ? el('button', { onclick: () => { this.shown.clear(); this.saveShown(); this.drawSaved(); this.render(); } }, 'Hide all') : null,
         el('button', { onclick: () => this.app.open('routes') }, 'Open the routes folder'),
         el('button', { onclick: () => this.loadSaved() }, 'Refresh')),
-      el('p', { class: 'hint' }, 'Each route is a GPX file in the routes folder in Spyhop’s folder, so it can also go straight to a chart plotter or OpenCPN. Show puts a route on the map on every tab (Routes in the layers menu switches all routes on or off). Open loads it below to edit or activate. GPX files copied into the folder are listed after Refresh.'));
+      el('p', { class: 'hint help' }, 'Each route is a GPX file in the routes folder in Spyhop’s folder, so it can also go straight to a chart plotter or OpenCPN. Show puts a route on the map on every tab (Routes in the layers menu switches all routes on or off). Open loads it below to edit or activate. GPX files copied into the folder are listed after Refresh.'));
     return sec;
   }
 
@@ -597,43 +597,41 @@ export class Planner {
     const design = el('section', { class: 'settings-sec', id: 'route-design' }, el('h3', {}, 'Design'),
       el('div', { class: 'btnrow' }, el('b', {}, 'Mode:'),
         ...[['manual', 'Manual — click points on the map'], ['systematic', 'Systematic — parallel legs'], ['sawtooth', 'Systematic — sawtooth (zig-zag)']]
-          .map(([v, l]) => radio('plan-mode', v, l, s.mode, (m) => { s.mode = m; this.adding = false; this.picking = false; this.updateClickMode(); this.changed(true); }))),
+          .map(([v, l]) => radio('plan-mode', v, l, s.mode, (m) => { const p0 = this.startPoint(); s.mode = m; if (p0 && !this.startPoint()) this.setStart([...p0]); this.adding = false; this.picking = false; this.updateClickMode(); this.changed(true); }))),
       el('div', { class: 'grid2' },
         num('Survey speed', () => s.speed, (v) => { s.speed = Math.max(0.1, +v || 10); }, { step: 0.5, min: 0.1, unit: 'kn' })));
 
-    // where the route starts: the vessel (the route follows it until activated) or a fixed point
-    const startRow = (fixedLabel) => el('div', { class: 'route-start' }, el('b', {}, 'Start position: '),
-      radio('plan-start', 'vessel', 'The vessel’s current position', s.start === 'vessel' ? 'vessel' : 'first', () => { s.start = 'vessel'; this.picking = false; this.updateClickMode(); this.changed(true); }),
-      radio('plan-start', 'first', fixedLabel, s.start === 'vessel' ? 'vessel' : 'first', () => { s.start = 'first'; this.changed(true); }));
+    // where the route starts (0.39: always a point, typed, picked on the map or the vessel's position now)
+    const st0 = this.startPoint();
+    const latIn = el('input', { type: 'text', style: 'width:9em', placeholder: 'latitude', 'aria-label': 'Start latitude', value: st0 ? fmtCoord(st0[0], true, fmt) : '' });
+    const lonIn = el('input', { type: 'text', style: 'width:10em', placeholder: 'longitude', 'aria-label': 'Start longitude', value: st0 ? fmtCoord(st0[1], false, fmt) : '' });
+    const setTyped = () => {
+      const a = parseCoord(latIn.value, true), b = parseCoord(lonIn.value, false);
+      if (a === null || b === null) { toast('Type the start as e.g. 41 54.0 N and 70 20.0 W, or 41.9 and -70.33', 'warn'); return; }
+      this.setStart([a, b]); this.changed(true);
+    };
+    latIn.onchange = lonIn.onchange = () => { if (latIn.value && lonIn.value) setTyped(); };
+    const startBox = el('div', { class: 'route-fixed' },
+      el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Start point'), latIn, lonIn),
+      el('div', { class: 'btnrow' },
+        el('button', { class: this.picking ? 'primary' : '', id: 'route-pick-start',
+          onclick: () => { this.picking = !this.picking; if (this.picking) this.adding = false; this.updateClickMode(); this.render(); } }, this.picking ? 'Click the map…' : 'Pick on the map'),
+        el('button', { disabled: !this.vesselLL(), id: 'route-vessel-start', title: this.vesselLL() ? '' : 'No vessel position yet',
+          onclick: () => { const v = this.vesselLL(); if (v) { this.setStart(v.map((x) => +x.toFixed(6))); this.changed(true); } } }, 'Use the vessel position now')));
 
     let modeBox;
     if (s.mode === 'manual') {
-      const toggle = el('button', { class: this.adding ? 'primary' : '', onclick: () => { this.adding = !this.adding; this.updateClickMode(); this.render(); } },
+      const toggle = el('button', { class: this.adding ? 'primary' : '', onclick: () => { this.adding = !this.adding; if (this.adding) this.picking = false; this.updateClickMode(); this.render(); } },
         this.adding ? 'Stop adding points' : 'Add points on the map');
       modeBox = sec('Manual trackline',
-        startRow('The first point I click'),
-        el('p', { class: 'hint' }, s.start === 'vessel' ? 'The route runs from the vessel to the points you click, and moves with the vessel until you activate it. ' : '',
-          this.adding ? 'Click the map to add waypoints in order. Drag a waypoint to move it.' : 'Press Add points, then click the map where each waypoint should go. Drag a waypoint to move it.'),
+        startBox,
+        el('p', { class: 'hint' }, this.adding ? 'Click the map to add waypoints in order. Drag a waypoint to move it.'
+          : s.manual.points.length ? 'The start point is the first waypoint. Press Add points on the map to add more; drag a waypoint to move it.'
+            : 'Set the start point, or press Add points on the map and click where each waypoint should go (the first is the start). Drag a waypoint to move it.'),
         el('div', { class: 'btnrow' }, toggle,
           el('button', { disabled: !s.manual.points.length, onclick: () => { s.manual.points.pop(); this.changed(true); } }, 'Undo last point')));
     } else {
-      const latIn = el('input', { type: 'text', style: 'width:9em', placeholder: 'latitude', value: s.sys.start ? fmtCoord(s.sys.start[0], true, fmt) : '' });
-      const lonIn = el('input', { type: 'text', style: 'width:10em', placeholder: 'longitude', value: s.sys.start ? fmtCoord(s.sys.start[1], false, fmt) : '' });
-      const setTyped = () => {
-        const a = parseCoord(latIn.value, true), b = parseCoord(lonIn.value, false);
-        if (a === null || b === null) { toast('Type the start as e.g. 41 54.0 N and 70 20.0 W, or 41.9 and -70.33', 'warn'); return; }
-        s.sys.start = [a, b]; s.start = 'first'; this.changed(true);
-      };
-      latIn.onchange = lonIn.onchange = () => { if (latIn.value && lonIn.value) setTyped(); };
-      const fixed = s.start !== 'vessel';
-      if (!fixed) { latIn.disabled = true; lonIn.disabled = true; }
-      const startBox = el('div', { class: `route-fixed${fixed ? '' : ' off'}` },
-        el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Start point'), latIn, lonIn),
-        el('div', { class: 'btnrow' },
-          el('button', { disabled: !fixed, class: this.picking ? 'primary' : '', onclick: () => { this.picking = !this.picking; this.updateClickMode(); this.render(); } }, this.picking ? 'Click the map…' : 'Pick on the map'),
-          el('button', { disabled: !fixed || !this.vesselLL(), onclick: () => { const v = this.vesselLL(); if (v) { s.sys.start = v.map((x) => +x.toFixed(6)); s.start = 'first'; this.changed(true); } } }, 'Use the vessel position now')));
-      const startHint = el('p', { class: 'hint' }, s.start === 'vessel' ? 'Starting from the vessel’s current position; the route moves with the vessel until you choose a fixed start or activate it.'
-        : s.sys.start ? 'Drag the first waypoint on the map to move the whole pattern.' : 'Choose a start point: pick it on the map, type it, or use the vessel position.');
+      const startHint = el('p', { class: 'hint' }, s.sys.start ? 'Drag the first waypoint on the map to move the whole pattern.' : 'Choose a start point: pick it on the map, type it, or use the vessel position.');
       if (s.mode === 'sawtooth') {
         const w = s.saw;
         const n3 = (v) => Math.round((((+v || 0) % 360) + 360) % 360).toString().padStart(3, '0');
@@ -641,7 +639,7 @@ export class Planner {
         const width = Math.sin(th * Math.PI / 180) * (+w.legNm || 0);
         const along = Math.cos(th * Math.PI / 180) * (+w.legNm || 0) * Math.max(1, Math.round(+w.legs || 1));
         modeBox = sec('Sawtooth trackline',
-          startRow('A fixed point'), startBox,
+          startBox,
           el('div', { class: 'grid2' },
             num('Survey direction', () => w.direction, (v) => { w.direction = ((+v || 0) % 360 + 360) % 360; }, { step: 1, min: -360, max: 360, unit: '°T (the way the pattern advances)' }),
             num('Leg length', () => w.legNm, (v) => { w.legNm = Math.max(0, +v || 0); }, { step: 0.5, unit: 'nm' }),
@@ -661,7 +659,7 @@ export class Planner {
           startHint);
       } else {
       modeBox = sec('Systematic trackline',
-        startRow('A fixed point'), startBox,
+        startBox,
         el('div', { class: 'grid2' },
           num('Survey direction', () => s.sys.bearing, (v) => { s.sys.bearing = ((+v || 0) % 360 + 360) % 360; }, { step: 1, min: -360, max: 360, unit: '°T (bearing of leg 1)' }),
           num('Number of legs', () => s.sys.legs, (v) => { s.sys.legs = Math.max(1, Math.min(200, Math.round(+v || 1))); }, { step: 1, min: 1, max: 200 }),
@@ -709,13 +707,13 @@ export class Planner {
           el('input', { type: 'number', min: 4, max: 48, step: 2, value: st.point, style: 'width:5em',
             oninput: (e) => { const v = Math.max(4, Math.min(48, +e.target.value || 22)); setStyle('point', v); } }), el('span', { class: 'hint' }, 'px (numbers show from 14)'))),
       el('div', { class: 'btnrow' }, el('button', { onclick: () => { s.style = { ...STYLE_DEFAULTS }; this.save(); this.draw(); this.render(); } }, 'Reset appearance')),
-      el('p', { class: 'hint' }, 'Used on the map and in the saved GPX file.'));
+      el('p', { class: 'hint help' }, 'Used on the map and in the saved GPX file.'));
     const out = sec('Save',
       el('div', { class: 'btnrow' }, el('label', { class: 'inline' }, 'Name ', nameIn),
         el('button', { class: 'primary', disabled: n < 2 || (!!s.file && !unsaved && s.file === `${s.name}.gpx`), onclick: () => this.saveRoute(false) }, s.file ? 'Save route' : 'Save route…'),
         s.file ? el('button', { disabled: n < 2, onclick: () => this.saveRoute(true) }, 'Save as new…') : null,
         el('button', { disabled: n < 2, onclick: () => this.exportGpx() }, 'Export GPX…')),
-      el('p', { class: 'hint' }, 'Save route keeps it in the routes folder (listed under Saved routes); renaming it and saving renames the file. Export GPX… downloads a copy and keeps one in the exports folder, for a chart plotter or OpenCPN. A route saved or exported by Spyhop opens again exactly as designed (mode, legs, speed and appearance); any other GPX file opens as a manual route of its route points (or else its waypoints, or its track).'));
+      el('p', { class: 'hint help' }, 'Save route keeps it in the routes folder (listed under Saved Routes); renaming it and saving renames the file. Export GPX… downloads a copy and keeps one in the exports folder, for a chart plotter or OpenCPN. A route saved or exported by Spyhop opens again exactly as designed (mode, legs, speed and appearance); any other GPX file opens as a manual route of its route points (or else its waypoints, or its track).'));
 
     if (s.active) {
       for (const box of [design, modeBox]) {
@@ -723,7 +721,9 @@ export class Planner {
         box.querySelectorAll('input, select, button').forEach((x) => { x.disabled = true; });
       }
     }
-    pane.replaceChildren(this.savedSection(), status, out, design, modeBox, el('section', { class: 'settings-sec', id: 'plan-tables' }), looks);
+    pane.replaceChildren(this.savedSection(),
+      el('div', { class: 'route-create', id: 'route-create' }, el('h2', { class: 'route-group' }, 'Create New Route'),
+        status, design, modeBox, el('section', { class: 'settings-sec', id: 'plan-tables' }), looks, out));
     this.renderTables();
   }
 
@@ -753,34 +753,10 @@ export class Planner {
     const s = this.state;
     s.active = false; s.locked = null;
     s.manual.points = []; s.sys.start = null;
-    if (s.start === 'vessel') s.start = 'first';
     this.adding = false; this.picking = false;
     this.updateClickMode();
     this.save(); this.sync();
     if (this.inTab) this.render();
-  }
-
-  // the map's right-click "Start route here": open the Route tab with that point as the start
-  async startHere(ll) {
-    const s = this.state;
-    if (s.active) {
-      if (!await confirmBox('Change the active route?', 'The route is active (locked). Deactivate it and start it from this point?', 'Deactivate and change')) return;
-      s.active = false; s.locked = null;
-    }
-    const p = [+ll.lat.toFixed(6), +ll.lng.toFixed(6)];
-    s.start = 'first';
-    if (s.mode === 'systematic') {
-      s.sys.start = p;
-    } else {
-      s.manual.points.unshift(p);
-      this.adding = true;     // carry on clicking the rest of the route
-    }
-    this.save();
-    this.app.showTab('route');
-    this.updateClickMode();
-    this.render();
-    toast(s.mode === 'systematic' ? 'Start point set; adjust the legs in the Routes tab.'
-      : s.manual.points.length > 1 ? 'Added as the route’s first waypoint.' : 'Route started here: click the map to add the next waypoints.', 'info', 5000);
   }
 
   renderTables() {
@@ -856,12 +832,6 @@ ${r.map((p, i) => '  ' + pt('rtept', p, i)).join('\n')}
     const s = this.state;
     const d = { spyhop: 1, mode: s.mode, speed: s.speed, start: s.start, name: s.name, manual: s.manual, sys: s.sys, style: s.style };
     if (s.mode === 'sawtooth') d.saw = s.saw;
-    // an activated route that started at the vessel is saved where it was frozen
-    if (s.active && Array.isArray(s.locked) && s.start === 'vessel') {
-      if (s.mode === 'manual') d.manual = { points: s.locked.map((p) => p.ll) };
-      else d.sys = { ...s.sys, start: s.locked[0].ll };
-      d.start = 'first';
-    }
     return JSON.parse(JSON.stringify(d));
   }
 

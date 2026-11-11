@@ -87,9 +87,11 @@ body.pane-resizing { user-select: none; }
 body.pane-resizing .pane { pointer-events: none; }
 
 /* ------------------------------------------------------------ tabs */
-.pane-tabs { display: flex; gap: 2px; flex: none; overflow-x: auto; }
+/* the strip reaches 1px over the head's bottom border, so the active tab covers it; no vertical scroll (0.39) */
+.pane-tabs { display: flex; gap: 2px; flex: none; overflow-x: auto; overflow-y: hidden; margin-bottom: -1px; scrollbar-width: none; }
+.pane-tabs::-webkit-scrollbar { display: none; }
 .pane-tabs button { border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; background: transparent; padding: 0.35em 0.9em; color: var(--muted); white-space: nowrap; }
-.pane-tabs button.active { background: var(--panel); border-color: var(--line); color: var(--text); font-weight: 600; margin-bottom: -1px; }
+.pane-tabs button.active { background: var(--panel); border-color: var(--line); color: var(--text); font-weight: 600; }
 .pane-tabs button.overdue { color: var(--alert); }
 /* the Survey tab stands apart: a tinted, outlined tab */
 #util-tabs button[data-tab="survey"] { background: #e3eff7; border-color: #9cc3dc; color: #0b5f86; font-weight: 600; }
@@ -440,9 +442,6 @@ table.dd-edit input[data-col=name], table.dd-edit input[data-col=full_name] { mi
 table.charts-table td { vertical-align: top; }
 table.charts-table tfoot td { font-weight: 600; border-top: 1px solid var(--line); }
 
-.route-start { display: flex; flex-wrap: wrap; gap: 0.4em 1.2em; align-items: center; margin: 0.2em 0 0.6em; }
-.route-fixed { margin: 0 0 0.6em 1.2em; }
-.route-fixed.off { opacity: 0.5; }
 
 .leaflet-control-layers .layers-heading { font-weight: 600; font-size: 0.85em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0.5em 0 0.15em; }
 .leaflet-control-layers .layers-heading:first-child { margin-top: 0; }
@@ -524,3 +523,37 @@ table.overlay-table td { vertical-align: middle; }
 .uninstall-plan .mono { font-size: 0.85em; word-break: break-all; }
 .modal-back.closing { z-index: 6000; }
 .rs-dives { columns: 14em auto; column-gap: 2em; } .rs-dives label.check { break-inside: avoid; display: flex; }
+
+/* help behind ? buttons (0.39) */
+.help-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.35em; height: 1.35em; padding: 0;
+  margin-left: 0.45em; border-radius: 50%; border: 1px solid var(--muted); background: var(--panel); color: var(--muted);
+  font-size: 0.78rem; font-weight: 700; line-height: 1; vertical-align: 0.15em; cursor: help; }
+.help-btn:hover, .help-btn[aria-expanded=true] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+h2 .help-btn, h3 .help-btn, h4 .help-btn { font-size: 0.72rem; }
+.help-btn::before { content: "?"; }
+#help-pop { display: none; position: fixed; z-index: 5000; background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: 6px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18); padding: 0.55em 0.8em; font-size: var(--ui-font); font-weight: 400;
+  max-height: 60vh; overflow: auto; }
+#help-pop p { margin: 0.35em 0; }
+#help-pop p:first-child { margin-top: 0; }
+#help-pop p:last-child { margin-bottom: 0; }
+
+/* Settings → Guide: contents beside the guide, or above it in a narrow pane (0.39) */
+#tutorial-section { container-type: inline-size; max-width: none; }
+.guide-wrap { display: flex; flex-wrap: wrap; gap: 1em 2em; align-items: flex-start; }
+.guide-wrap .tutorial { flex: 1 1 30em; min-width: 0; }
+.guide-toc { flex: 0 0 15em; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); padding: 0.6em 0.9em; }
+.guide-toc ol { margin: 0.4em 0 0.5em; padding-left: 1.5em; }
+.guide-toc li { margin: 0.2em 0; }
+.guide-toc a { color: var(--accent); text-decoration: none; }
+.guide-toc a:hover { text-decoration: underline; }
+.guide-toc a.active { font-weight: 700; }
+.guide-toc .guide-top { font-size: 0.9em; }
+@container (min-width: 50em) { .guide-toc { position: sticky; top: 0.5em; max-height: calc(100vh - 6em); overflow: auto; } }
+@container (max-width: 49.99em) { .guide-toc { flex-basis: 100%; } .guide-toc .guide-top { display: none; } }
+
+/* Tools → Routes: Saved Routes, then Create New Route (0.39) */
+.route-fixed { margin: 0.2em 0 0.6em; }
+h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
+.route-create { border-top: 2px solid var(--line); padding-top: 0.6em; }
+.route-create > .settings-sec:last-child { border-bottom: 0; }

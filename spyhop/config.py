@@ -8,6 +8,8 @@ import platform
 import re
 from pathlib import Path
 
+from . import schema
+
 APP_DIR_NAME = "Spyhop"
 
 
@@ -97,6 +99,19 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
         ["OBS4", "Observer 4"],
         ["NA", "None"],             # an empty watch position: may fill several positions at once
     ]),
+    # Effort values (0.39): status on/off decides plotting, reporting and the Error check; color = the track.
+    # Start, End and ERROR are required (Start/End begin and end a survey; ERROR is added by Error check → Fix).
+    "effort": (["name", "status", "definition", "color"], [
+        ["Start", "off", "Survey began (the first row only).", "#7a7a7a"],
+        ["ON", "on", "Observers are on watch.", "#00a000"],
+        ["TRANSECT", "on", "Conducting a systematic line-transect survey.", "#1f6fd1"],
+        ["DIRECTED", "on", "Conducting a directed survey or activity.", "#d97a00"],
+        ["PHOTO-ID", "on", "Conducting a photo-ID survey.", "#9b30d9"],
+        ["FOLLOW", "on", "Conducting a focal follow.", "#c0306a"],
+        ["OFF", "off", "Observers are off watch.", "#7a7a7a"],
+        ["End", "off", "Survey ended (the last row only; use End survey in the Survey tab).", "#7a7a7a"],
+        ["ERROR", "off", "A trackline break (GPS jump or loss), added by Error check → Fix; not drawn or counted.", "#d00000"],
+    ]),
     "visibility": (["name"], [["<0.5 nm"], ["0.5-1 nm"], ["1-2 nm"], ["2-5 nm"], ["5-10 nm"], [">10 nm"]]),
     "weather": (["name"], [["Clear"], ["Partly cloudy"], ["Overcast"], ["Haze"], ["Fog"], ["Mist"],
                            ["Drizzle"], ["Rain"], ["Showers"], ["Snow"]]),
@@ -164,13 +179,14 @@ LIST_COLUMNS = {
     "event_types": {"name": "Name", "event_code": "Code", "color": "Color"},
     "behaviors": {"name": "Name", "behavior_code": "Code", "definition": "Definition"},
     "observers": {"name": "Initials", "full_name": "Full name"},
+    "effort": {"name": "Name", "status": "Status", "definition": "Definition", "color": "Color"},
     "visibility": {"name": "Visibility"},
     "weather": {"name": "Weather"},
     "reticles": {"name": "Name", "method": "How readings are taken", "magnification": "Magnification",
                  "deg_per_division": "Degrees per division"},
 }
 # lists that define what recorded values mean: none can change during an active survey
-LOCKED_LISTS = ("species", "event_types", "observers", "behaviors", "visibility", "weather", "reticles")
+LOCKED_LISTS = ("species", "event_types", "observers", "behaviors", "effort", "visibility", "weather", "reticles")
 # settings that change recorded or calculated data: locked during an active survey too
 LOCKED_SETTINGS = {"mag_variation": "Magnetic variation", "tracking_interval": "Track point every (s)",
                    "track_break_kn": "Break the track above (kn)", "track_break_gap_s": "Break the track after a gap of (s)"}
@@ -243,8 +259,6 @@ DEFAULT_DISPLAY = {
     "events_marker_color": "royalblue",
     "marks_marker_shape": "Circle",
     "marks_marker_color": "purple",
-    "track_on_effort_color": "#00a000",
-    "track_off_effort_color": "#7a7a7a",
     "vessel_color": "#d00000",
     "use_species_colors": "1",
     "heading_vector": "1",          # draw the vessel heading vector
@@ -568,6 +582,16 @@ class Config:
                     row.update(_clean_reticle(row))
                 except ValueError as e:
                     problems.append(f"Row {i} ({row['name']}): {e}")
+            if name == "effort" and row["name"]:
+                req = next((x for x in schema.EFFORT_REQUIRED if x.lower() == row["name"].lower()), None)
+                if req:
+                    row["name"], row["status"] = req, "off"          # always these names, never on effort
+                st = row.get("status", "").strip().lower()
+                if st not in ("on", "off"):
+                    problems.append(f"Row {i} ({row['name']}): Status must be on or off.")
+                row["status"] = st
+                if re.search(r"[,;|]", row["name"]):
+                    problems.append(f"Row {i}: the name can't contain , ; or |.")
             if row.get("color") and not _COLOR.match(row["color"]):
                 problems.append(f"Row {i}: “{row['color']}” isn't a color (use a name like red, or #rrggbb).")
             for c, prev in seen.items():
@@ -579,6 +603,13 @@ class Config:
             out.append(row)
         if not out:
             problems.append("The list can't be empty.")
+        if name == "effort":
+            have = {r["name"] for r in out}
+            miss = [x for x in schema.EFFORT_REQUIRED if x not in have]
+            if miss:
+                problems.append(f"The effort list must include {', '.join(miss)} ({'they are' if len(miss) > 1 else 'it is'} needed to start and end a survey and to mark trackline breaks).")
+            if not any(r["status"] == "on" for r in out):
+                problems.append("At least one entry must be on effort (Status on).")
         if problems:
             raise ValueError("\n".join(problems[:12]) + (f"\n… and {len(problems) - 12} more." if len(problems) > 12 else ""))
         _write_csv(self.list_path(name), hdr, [[r[c] for c in hdr] for r in out])
@@ -634,6 +665,7 @@ class Config:
                 self.lists[name] = [r for r in _read_csv(self.list_path(name)) if r.get("name")]
             except FileNotFoundError:
                 self.lists[name] = []
+        schema.set_effort_list(self.lists.get("effort"))
         try:
             self.shortcuts = [r for r in _read_csv(self.shortcuts_path) if r.get("combo")]
         except FileNotFoundError:

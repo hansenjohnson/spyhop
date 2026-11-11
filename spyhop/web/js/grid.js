@@ -1,5 +1,5 @@
 // Spreadsheet-style editable grid for one data tab.
-import { el, fmtCoord, timeParts, api, modal, confirmBox, isModalOpen, isOn } from './util.js';
+import { el, fmtCoord, timeParts, api, modal, confirmBox, isModalOpen, isOn, effortInfo } from './util.js';
 import { shapeSvg } from './map.js';
 import { Resights } from './resights.js';
 
@@ -152,6 +152,10 @@ export class Grid {
       return [...S.schema.fixed_lists.distunit.map((n) => ({ name: n, extra: UNITS[n] || '' })),
         ...(S.config.lists.reticles || []).map((r) => ({ name: `reticles-${r.name}`, extra: ret(r) }))];
     }
+    if (name === 'effort') {          // Start and End are set by Start/End survey, ERROR by Error check → Fix
+      return (S.config.lists.effort || []).filter((r) => !['Start', 'End', 'ERROR'].includes(r.name))
+        .map((r) => ({ name: r.name, extra: `${r.status === 'on' ? 'on' : 'off'} effort${r.definition ? ': ' + r.definition : ''}`, color: r.color }));
+    }
     if (S.schema.fixed_lists[name]) return S.schema.fixed_lists[name].map((n) => ({ name: n, color: name === 'colors' ? n : undefined }));
     return (S.config.lists[name] || []).map((r) => ({
       name: r.name, code: r.species_code || r.behavior_code || r.event_code || '', extra: r.full_name || '', color: r.color, definition: r.definition || '' }));
@@ -224,7 +228,7 @@ export class Grid {
           td.textContent = `↳ ${v}`;
           if (!re) { td.classList.add('dangling'); td.title = `There is no sighting ${v}: this row is counted as a sighting of its own`; }
         } else if (c.key === 'Effort' && v) {
-          td.append(el('span', { class: `pill ${isOn(v) ? 'on' : v === 'ERROR' ? 'err' : 'off'}` }, v));
+          td.append(el('span', { class: `pill ${isOn(v) ? 'on' : v === 'ERROR' ? 'err' : 'off'}`, style: effortInfo(v).color ? { background: effortInfo(v).color, color: '#fff' } : null }, v));
         } else {
           td.textContent = this.display(c, v);
         }

@@ -885,7 +885,7 @@ class Recorder:
             for o in opts:
                 if o.lower() == s.lower():
                     return o, None
-            if c["list"] in schema.FIXED_LISTS:
+            if schema.strict_list(c["list"]):
                 raise ValueErrorMsg(f"{c['label']}: choose one of {', '.join(opts)}")
             return s, f"'{s}' isn't in {c['list']}.csv — saved anyway."
         if t == "multi":
@@ -1140,7 +1140,7 @@ class Recorder:
             for c in spec["columns"]:
                 if c["copy"] and c["type"] != "id":
                     row[c["key"]] = prev.get(c["key"], "")
-            if not (schema.is_on(row.get("Effort")) or row.get("Effort") == "OFF"):
+            if not schema.is_effort_choice(row.get("Effort")):
                 row["Effort"] = ""          # after Start, choose ON (or a kind of on effort) or OFF
         if tab == "effort" and not t.rows:
             row["Effort"] = "Start"
@@ -1322,9 +1322,10 @@ class Recorder:
         t = self.table("effort")
         last = t.rows[-1].get("Effort") if t.rows else ""
         if schema.is_on(last):
-            return self.new_row("effort", {"Effort": "OFF"})
-        # back on effort the way it was last on (ON, LINE, FOLLOW or PHOTO)
-        kind = next((r.get("Effort") for r in reversed(t.rows) if schema.is_on(r.get("Effort"))), "ON")
+            return self.new_row("effort", {"Effort": schema.default_off()})
+        # back on effort the way it was last on (ON, TRANSECT, … : the on-effort entries of the effort list)
+        first = "ON" if "ON" in schema.ON_EFFORT else (schema.ON_EFFORT[0] if schema.ON_EFFORT else "ON")
+        kind = next((r.get("Effort") for r in reversed(t.rows) if schema.is_on(r.get("Effort"))), first)
         return self.new_row("effort", {"Effort": kind})
 
     def edit(self, tab: str, row_id: str, updates: dict) -> dict:
@@ -1448,9 +1449,9 @@ class Recorder:
         self._record_point()
 
     def _track_state(self, when: datetime) -> str:
-        """Effort state in force at a time: Start, ON (or LINE/FOLLOW/PHOTO), OFF, End or ERROR (OFF if unknown)."""
+        """Effort state in force at a time: Start, an on- or off-effort value, End or ERROR (OFF if unknown)."""
         st = self.effort_at(when)
-        return st if st in schema.FIXED_LISTS["effort"] else "OFF"
+        return st if st in schema.EFFORT_NAMES else schema.default_off()
 
     # -- trackline breaks (QC → Fix) ----------------------------------------------------
     def insert_track_break(self, t0_iso: str, t1_iso: str) -> dict:
@@ -1527,7 +1528,7 @@ class Recorder:
             added.append(r)
         follows = any(x[0] is not None and t0 < x[0] <= t1 for x in timed)
         if not follows:
-            back = make(t1, st if schema.is_on(st) or st == "OFF" else "", f"Back after the trackline break from {hhmm(t0)}.")
+            back = make(t1, st if schema.is_effort_choice(st) else "", f"Back after the trackline break from {hhmm(t0)}.")
             r = self._write(lambda: t.add(back, index_for(t1)))
             if r:
                 added.append(r)
@@ -1572,7 +1573,7 @@ class Recorder:
             try:
                 when = datetime.fromisoformat(p["DateTime"])
                 # a point in the same second as an effort row keeps the state recorded at the time
-                if not (when in row_times and q.get("Effort") in ("Start", "OFF", "End", *schema.ON_EFFORT)):
+                if not (when in row_times and q.get("Effort") in ("Start", "End", *schema.ON_EFFORT, *schema.OFF_EFFORT)):
                     q["Effort"] = self._track_state(when)
             except ValueError:
                 pass
