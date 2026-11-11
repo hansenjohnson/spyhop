@@ -6,6 +6,7 @@ and computed fields (sighting position) stay in step.
 from __future__ import annotations
 
 import csv
+import glob
 import io
 import json
 import logging
@@ -722,26 +723,26 @@ class Recorder:
         if folder.is_dir() and folder.parent == self.cfg.data_dir:
             shutil.rmtree(folder, ignore_errors=True)
 
-    # -- external inputs (0.43): a drone, a drifting buoy, a second vessel ----------------------
-    # Each external's fixes: a trail kept in memory for the map (since the survey started, or since Spyhop
+    # -- "other" inputs (0.43; called external before 0.44): a drone, a drifting buoy, a second vessel --
+    # (internal names still say ext/external.) Each one's fixes: a trail kept in memory for the map (since the survey started, or since Spyhop
     # started with no survey open) and, while a survey is active and the input's "record" is on, a file
-    # <survey>_ext_<name>.csv in the survey folder (DateTime, Lat, Lon, SOG, COG, Heading, GPSTime).
+    # <survey>_<name>_gps.csv in the survey folder (0.44; _ext_<name> in 0.43) (DateTime, Lat, Lon, SOG, COG, Heading, GPSTime).
     EXT_COLUMNS = ["DateTime", "Lat", "Lon", "SOG", "COG", "Heading", "GPSTime"]
     EXT_MAX_POINTS = 50000          # per external, in memory (the file keeps them all)
 
     @staticmethod
     def ext_stem(name: str) -> str:
-        return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_.") or "external"
+        return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_.") or "other"
 
     def _ext_path(self, name: str) -> Path | None:
-        return self._file(self.survey["prefix"], f"ext_{self.ext_stem(name)}") if self.survey else None
+        return self._file(self.survey["prefix"], f"{self.ext_stem(name)}_gps") if self.survey else None
 
     def _ext_files(self) -> list[Path]:
         if not self.survey:
             return []
         folder = self.cfg.survey_dir(self.survey["prefix"])
         try:
-            return sorted(folder.glob(f"{self.survey['prefix']}_ext_*.csv"))
+            return sorted(folder.glob(f"{glob.escape(self.survey['prefix'])}_*_gps.csv"))
         except OSError:
             return []
 
@@ -751,7 +752,7 @@ class Recorder:
         self._ext_seen: dict[str, float] = {}
         self.ext_names: dict[str, str] = {}      # file stem → the input's name, as recorded
         for p in self._ext_files():
-            stem = p.stem[len(self.survey["prefix"]) + len("_ext_"):]
+            stem = p.stem[len(self.survey["prefix"]) + 1: -len("_gps")]
             pts = []
             try:
                 with open(p, newline="", encoding="utf-8-sig") as fh:
@@ -772,7 +773,7 @@ class Recorder:
         if not hasattr(self, "ext_tracks"):
             self._load_externals()
         for src in inputs:
-            if src.get("role") != "external" or src.get("enabled") is False:
+            if src.get("role") != "other" or src.get("enabled") is False:
                 continue
             name = src.get("name") or ""
             st = decoder.others.get(name)
@@ -806,7 +807,7 @@ class Recorder:
         if not hasattr(self, "ext_tracks"):
             self._load_externals()
         for src in inputs or []:
-            if src.get("role") == "external" and src.get("name"):
+            if src.get("role") == "other" and src.get("name"):
                 self.ext_names.setdefault(self.ext_stem(src["name"]), src["name"])
         out = {}
         for stem, pts in self.ext_tracks.items():
@@ -840,7 +841,7 @@ class Recorder:
                 # one value per reading and time: the primary's, else another input's
                 rows = [r for r in csv.DictReader(fh) if r.get("Key") not in self.NO_PLOT]
             role = lambda r: r.get("Role") or ("secondary" if r.get("Primary") == "no" else "primary")  # noqa: E731
-            rows = [r for r in rows if role(r) != "external"]      # not the platform's readings
+            rows = [r for r in rows if role(r) not in ("other", "external")]      # not the platform's readings
             has_prim = {(r["Key"], r.get("DateTime")) for r in rows if role(r) == "primary"}
             taken = set()
             for r in rows:
@@ -875,7 +876,7 @@ class Recorder:
         for src, readings in self.decoder.inst_src.items():
             for k, r in readings.items():
                 if fresh(r):
-                    rl = "external" if src in self.decoder.externals else "primary" if prim is None or src == prim else "secondary"
+                    rl = "other" if src in self.decoder.externals else "primary" if prim is None or src == prim else "secondary"
                     rows.append([stamp, src, rl, k, r["label"], r["unit"], r["value"]])
         for k, r in self.decoder.inst.items():          # the plotted value: the one Instruments shows
             if fresh(r) and k not in self.NO_PLOT:

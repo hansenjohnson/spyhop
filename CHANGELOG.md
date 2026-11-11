@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.44.0 — 2026-11-11
+
+- **"Other" instead of "external":** the role for a drone, buoy or second vessel is now **Other**, so it isn't confused with an external GPS device; its map layer is **<name> (other)**. Inputs saved as external become other.
+- **Settings → Inputs** is two tables: the inputs (in use, name, role, kind, connection), then **On the map** (show on the map for secondaries and others; color, line, width, trail, show name and record track for others).
+- **Recorded tracks** of other sources are now `<survey>_<name>_gps.csv` (0.43's `<survey>_ext_<name>.csv` files aren't read).
+- **Not recording yet:** a warning under On the map when an other source is set to record but no survey is active.
+- **Popup on an other source's point:** name, position, speed, heading, and bearing and distance from the platform.
+- Fixed: switching the **Platform icon** layer off and on drew the icon pointing north instead of its heading.
+
 ## 0.43.0 — 2026-11-11
 
 - **External tracks:** each external input's card has **On the map** settings: color, line (solid, dashed, dotted, dash-dot), width, **Trail** (whole survey, last 10 min – 3 h, or none), **Show the name**, and **Record its track**. While a survey is active a recorded external's fixes go to `<survey>_ext_<name>.csv` in the survey folder (DateTime, Lat, Lon, SOG, COG, Heading, GPSTime); its trail is drawn live and read back from the file when the survey is opened again. The files are in the separate-CSV export and survey packages. The settings travel in templates with the input.

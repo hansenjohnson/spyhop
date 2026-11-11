@@ -104,12 +104,12 @@ class SourceManager:
         self.decoder.priority = {label(s): i for i, s in enumerate(on)}
         prim = next((s for s in on if s.get("role") == "primary" or (s.get("role") is None and s.get("primary"))), None)
         self.decoder.primary = label(prim) if prim else None
-        self.decoder.externals = {label(s) for s in on if s.get("role") == "external"}
+        self.decoder.externals = {label(s) for s in on if s.get("role") == "other"}
         self.decoder.failover = bool(failover)
         self.decoder.others = {}
         self.decoder.inst_src = {}
         self.on_map = {label(s) for s in on if s is not prim and s.get("show_on_map")}
-        role = lambda s: "external" if s.get("role") == "external" else "primary" if s is prim or prim is None else "secondary"  # noqa: E731
+        role = lambda s: "other" if s.get("role") == "other" else "primary" if s is prim or prim is None else "secondary"  # noqa: E731
         for i, src in enumerate(sources):
             if not src.get("enabled", True):
                 continue

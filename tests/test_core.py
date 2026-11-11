@@ -2934,21 +2934,21 @@ def test_external_inputs_and_failover_notice(rec, tmp_path):
     d.feed(w("SDDPT,99.0,0.5,"), "Drone")
     assert abs(d.state.lat - 41.9) < 1e-6 and d.failover_state() is None     # a drone never stands in
     assert "depth" not in d.inst and d.inst_src["Drone"]["depth"]["value"] == 99.5
-    assert [o["external"] for o in d.secondaries({"Drone"})] == [True]
+    assert [o["other"] for o in d.secondaries({"Drone"})] == [True]
     d.feed(w("GPRMC,120001,A,4200.000,N,07000.000,W,5.0,180.0,111126,,"), "Backup GPS")
     f = d.failover_state()
     assert d.state.lat == 42.0 and f["from"] == "Backup GPS" and f["primary"] == "Ship GPS" and f["quiet_s"] >= 29
     rec.sample_instruments()
-    assert ",Drone,external,depth," in rec._inst_path().read_text()
+    assert ",Drone,other,depth," in rec._inst_path().read_text()
     d.primary, d.externals = None, set()
     # roles: one primary among platform inputs; externals stay external, also through a template
-    c = clean_inputs([{"type": "udp", "port": 1, "role": "external"}, {"type": "udp", "port": 2, "role": "primary"},
+    c = clean_inputs([{"type": "udp", "port": 1, "role": "other"}, {"type": "udp", "port": 2, "role": "primary"},
                       {"type": "udp", "port": 3, "role": "primary"}])
-    assert [x["role"] for x in c] == ["external", "primary", "secondary"] and c[0]["show_on_map"] is True
-    assert input_definition(c[0])["role"] == "external" and "role" not in input_definition(c[1])
+    assert [x["role"] for x in c] == ["other", "primary", "secondary"] and c[0]["show_on_map"] is True
+    assert input_definition(c[0])["role"] == "other" and "role" not in input_definition(c[1])
     m = merge_inputs([{"name": "Ship", "type": "udp", "port": 2, "role": "primary"}],
-                     [{"name": "Ship", "type": "udp", "port": 2}, {"name": "Drone", "type": "udp", "port": 9, "role": "external"}])
-    assert [(x["name"], x["enabled"], x["role"]) for x in m] == [("Ship", True, "primary"), ("Drone", False, "external")]
+                     [{"name": "Ship", "type": "udp", "port": 2}, {"name": "Drone", "type": "udp", "port": 9, "role": "other"}])
+    assert [(x["name"], x["enabled"], x["role"]) for x in m] == [("Ship", True, "primary"), ("Drone", False, "other")]
     sd = tmp_path / "v041" / "S"
     sd.mkdir(parents=True)
     (sd / "S_nmea.csv").write_text("DateTime,Source,Primary,Key,Label,Unit,Value\nt,A,yes,lat,Latitude,°,41\nt,B,no,lat,Latitude,°,42\n")
@@ -2957,17 +2957,18 @@ def test_external_inputs_and_failover_notice(rec, tmp_path):
 
 
 def test_external_tracks_recorded_and_styled(rec):
-    """0.43: each external's fixes go to <survey>_ext_<name>.csv while a survey is active (if recording is
+    """0.43: each external's fixes go to <survey>_<name>_gps.csv (0.44) while a survey is active (if recording is
     on), and into a trail for the map, read back when the survey is opened again; styles are cleaned."""
     from spyhop.nmea import with_checksum as w
     from spyhop.config import clean_inputs, input_definition
     d = rec.decoder
     d.primary, d.externals = "Ship", {"Drone 1", "Buoy"}
     inputs = clean_inputs([{"name": "Ship", "type": "udp", "port": 1, "role": "primary"},
-                           {"name": "Drone 1", "type": "udp", "port": 2, "role": "external", "color": "nope", "line": "zigzag", "trail": "30"},
-                           {"name": "Buoy", "type": "udp", "port": 3, "role": "external", "record": False, "label": False}])
+                           {"name": "Drone 1", "type": "udp", "port": 2, "role": "other", "color": "nope", "line": "zigzag", "trail": "30"},
+                           {"name": "Buoy", "type": "udp", "port": 3, "role": "other", "record": False, "label": False}])
     drone, buoy = inputs[1], inputs[2]
     assert (drone["color"], drone["line"], drone["width"], drone["trail"], drone["label"], drone["record"]) == ("#e07000", "solid", 2.0, 30, True, True)
+    assert clean_inputs([{"type": "udp", "port": 9, "role": "external"}])[0]["role"] == "other"   # 0.43's name
     assert buoy["color"] == "#0097a7" and buoy["record"] is False and buoy["label"] is False
     assert input_definition(drone)["color"] == "#e07000" and "color" not in inputs[0]        # styles travel in templates
     for i, (lat, lon) in enumerate([(4200.0, 7000.0), (4200.5, 7000.5)]):
@@ -2977,13 +2978,13 @@ def test_external_tracks_recorded_and_styled(rec):
         rec.tick_externals(d, inputs)
         rec.tick_externals(d, inputs)                # no new fix: nothing added
     p = rec._ext_path("Drone 1")
-    assert p.name == "Test_ext_Drone_1.csv"
+    assert p.name == "Test_Drone_1_gps.csv"
     lines = p.read_text().splitlines()
     assert lines[0] == "DateTime,Lat,Lon,SOG,COG,Heading,GPSTime" and len(lines) == 3 and ",42.000000,-70.000000,8.0,45.0," in lines[1]
     assert rec._ext_path("Buoy").exists() is False                                 # not recorded
     tr = rec.external_tracks(inputs)
     assert len(tr["Drone 1"]) == 2 and len(tr["Buoy"]) == 2
-    assert "Test_ext_Drone_1.csv" in {n.split("/")[-1] for n in zipfile.ZipFile(rec.export(["csv"])).namelist()}
+    assert "Test_Drone_1_gps.csv" in {n.split("/")[-1] for n in zipfile.ZipFile(rec.export(["csv"])).namelist()}
     prefix = rec.survey["prefix"]
     rec.close_survey()
     assert rec.external_tracks(inputs) == {}

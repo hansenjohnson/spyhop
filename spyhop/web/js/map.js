@@ -554,15 +554,15 @@ export class MapView {
   // they're drawn to the new fix instead of hopping. Only the drawing is smoothed: the data, popups,
   // measurements and Follow vessel all use the real latest fix.
   // the secondary GPS / NMEA inputs chosen to show on the map (0.41): a point and its name each, where
-  // that input says it is (drawing only; nothing is recorded in the tables). Externals (0.43) have their
-  // own layers instead: see updateExternal.
+  // that input says it is (drawing only; nothing is recorded in the tables). "Other" sources (0.43; "external" before 0.44) have
+  // their own layers instead: see updateExternal.
   updateOthers(list) {
     if (!this.layers.others) this.layers.others = L.layerGroup().addTo(this.map);
     this._others = this._others || new Map();
     const seen = new Set();
     for (const o of list || []) {
       if (o.lat == null || o.lon == null) continue;
-      if (o.external) { this.updateExternal(o); continue; }
+      if (o.other) { this.updateExternal(o); continue; }
       seen.add(o.name);
       let m = this._others.get(o.name);
       const ll = [o.lat, o.lon];
@@ -580,14 +580,15 @@ export class MapView {
     }
   }
 
-  // ---------------------------------------------------------------- external inputs (0.43)
-  // Each external in use that shows on the map has a layer of its own in the menu ("<name> (external)"):
+  // ---------------------------------------------------------------- "other" inputs (0.43)
+  // (a drone, a buoy, a second vessel: "external" before 0.44; the code still says external.) Each one in use
+  // that shows on the map has a layer of its own in the menu ("<name> (other)"):
   // its trail and its latest position (and name), in its own color and line, below all of the survey's own layers.
-  externalLabel(name) { return `${name} (external)`; }
+  externalLabel(name) { return `${name} (other)`; }
 
   // the inputs changed (or the app loaded): one layer per external shown on the map, styled as its input says
   syncExternals(inputs) {
-    const want = new Map((inputs || []).filter((x) => x.role === 'external' && x.enabled !== false && x.show_on_map !== false).map((x) => [x.name, x]));
+    const want = new Map((inputs || []).filter((x) => x.role === 'other' && x.enabled !== false && x.show_on_map !== false).map((x) => [x.name, x]));
     for (const [name, x] of this.externals) {
       if (want.has(name)) continue;
       this.layerControl.removeLayer(x.group);
@@ -605,6 +606,7 @@ export class MapView {
         x = { group, pts: x?.pts || [], style: inp,
           line: L.polyline([], { pane: 'externals', interactive: false }).addTo(group),
           dot: L.circleMarker([0, 0], { pane: 'externals', radius: 6, color: '#ffffff', weight: 2, fillOpacity: 0.95, className: 'external-input' }) };
+        x.dot.bindPopup(() => this.externalPopup(name), { className: 'external-popup' });     // 0.44
         this.externals.set(name, x);
         const label = this.externalLabel(name);
         this.overlays[label] = group;
@@ -654,7 +656,33 @@ export class MapView {
       x.pts.push([Date.now() - (o.age || 0) * 1000, o.lat, o.lon]);
       if (x.pts.length > 50000) x.pts.splice(0, x.pts.length - 50000);
     }
+    x.fix = o;
     this.drawExternal(o.name);
+    if (x.dot.isPopupOpen()) x.dot.setPopupContent(this.externalPopup(o.name));
+  }
+
+  // 0.44: click an "other" source's point: its name, position, speed, heading, and bearing and distance
+  // from the platform (live while the popup is open)
+  externalPopup(name) {
+    const x = this.externals.get(name);
+    if (!x) return '';
+    const f = x.fix || {}, last = x.pts[x.pts.length - 1];
+    const lat = f.lat ?? last?.[1], lon = f.lon ?? last?.[2];
+    const fmt = this.app.S.config.settings.latlon_format, v = this.app.S.vessel;
+    const num = (n, d) => (n === null || n === undefined || isNaN(n) ? '—' : (+n).toFixed(d));
+    let rel = '<tr><th>From platform</th><td>— (no platform position)</td></tr>';
+    if (lat != null && v?.lat != null) {
+      const b = bearing([v.lat, v.lon], [lat, lon]), d = distM([v.lat, v.lon], [lat, lon]);
+      rel = `<tr><th>Bearing from platform</th><td>${fmtBrg(b)}T ${this.magText(b)}</td></tr>
+      <tr><th>Distance from platform</th><td>${fmtDist(d, this.app.unit())}</td></tr>`;
+    }
+    const age = f.age != null ? `${f.age} s ago` : last ? `${Math.round((Date.now() - last[0]) / 1000)} s ago (recorded)` : '—';
+    return `<b>${esc(name)}</b> <span class="hint">(other source)</span><table class="pop">
+      <tr><th>Position</th><td>${lat != null ? fmtPos(lat, lon, fmt) : '—'}</td></tr>
+      <tr><th>Speed</th><td>${num(f.sog, 1)} kn</td></tr>
+      <tr><th>Heading</th><td>${fmtBrg(f.heading ?? f.cog)}T</td></tr>
+      ${rel}
+      <tr><th>Fix</th><td>${age}</td></tr></table>`;
   }
 
   // the trails so far, from the server (at start, and when a survey is started, opened or closed)
@@ -681,6 +709,12 @@ export class MapView {
         html: `<div class="vessel-rot" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center">${PLATFORM_SVG[k](c)}</div>` });
       this.vessel = L.marker(ll, { icon: this.vesselIcon(color, kind), pane: 'vessel', keyboard: false })
         .addTo(this.layers.vessel).bindPopup(() => this.vesselPopup());
+      // 0.44: Leaflet makes the icon afresh (unrotated) when the Platform icon layer is switched back on,
+      // so set its rotation again then
+      this.vessel.on('add', () => {
+        this._drawnHdg = null;
+        if (this._drawn && this._lastTo) this.placeVessel(this._drawn.ll, this._drawn.hdg, this._lastTo);
+      });
       this.predictor = L.polyline([ll, ll], { color, weight: 2, dashArray: '6 4', pane: 'vessel', interactive: false }).addTo(this.layers.vessel);
       this._lastIcon = `${color}${kind}`;
       if (this.app.S.config.settings.follow_vessel) this.map.setView(ll, Math.max(this.map.getZoom(), 11));
@@ -707,6 +741,7 @@ export class MapView {
   // glitch), a lost GPS or while the window is hidden.
   glideVessel(to) {
     const now = performance.now();
+    this._lastTo = to;
     const gap = this._lastFixAt ? now - this._lastFixAt : Infinity;
     this._lastFixAt = now;
     cancelAnimationFrame(this._glideRaf);

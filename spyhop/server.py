@@ -728,12 +728,12 @@ class App:
         from .config import clean_inputs
         saved = [dict(x) for x in self.rec.cfg.settings.get("nmea_sources") or []]
         extra = [{**x, "session": True} for x in self.extra_sources]
-        on = [x for x in extra if x.get("enabled", True) is not False and x.get("role") != "external"]
+        on = [x for x in extra if x.get("enabled", True) is not False and x.get("role") != "other"]
         chosen = [x for x in on if x.get("role") == "primary" or x.get("primary")]
         if on and (chosen or not any("role" in x or "primary" in x for x in self.extra_sources)):
             # an input from the command line (e.g. --sim) is the primary for this session, until another is chosen
             for x in saved + extra:
-                if x.get("role") != "external":
+                if x.get("role") != "other":
                     x["role"] = "secondary"
                 x.pop("primary", None)
             (chosen or on)[0]["role"] = "primary"
@@ -748,7 +748,7 @@ class App:
         if not self.sources.on_map:
             return []
         style = {x["name"]: {k: x.get(k) for k in ("color", "line", "width", "trail", "label")}
-                 for x in getattr(self, "running_inputs", []) if x.get("role") == "external"}
+                 for x in getattr(self, "running_inputs", []) if x.get("role") == "other"}
         return [{**o, **style.get(o["name"], {})} for o in self.rec.decoder.secondaries(self.sources.on_map)]
 
     async def externals(self, request):

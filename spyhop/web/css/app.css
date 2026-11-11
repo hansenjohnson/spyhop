@@ -578,9 +578,7 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 .leaflet-tooltip.secondary-label::before { display: none; }
 
 /* 0.42: input roles, and the GPS fallback banner */
-.nmea-src.role-primary { border-left: 3px solid var(--accent); }
-.nmea-src.role-external { border-left: 3px solid #e07000; }
-.role-tag.external { border-color: #e07000; color: #a04f00; }
+.role-tag.other { border-color: #e07000; color: #a04f00; }
 .leaflet-tooltip.external-label { border-color: #e07000; color: #7a3c00; }
 #failover-banner { flex: none; z-index: 6000; background: #c62828; color: #fff; padding: 0.45em 1em;
   font-size: 1.02em; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); text-align: center; }
@@ -596,3 +594,23 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 .nmea-src.off .nmea-src-style { opacity: 0.6; }
 .basemap-group h4 { margin: 0.6em 0 0.2em; }
 .basemap-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(16em, 1fr)); gap: 0.2em 1.5em; }
+
+/* 0.44: Settings → Inputs as two tables: the inputs, then On the map */
+.nmea-table, .nmea-map-table { border-collapse: collapse; margin: 0.3em 0 0.6em; }
+.nmea-table th, .nmea-map-table th { text-align: left; font-weight: 600; font-size: 0.88em; color: var(--muted); padding: 0.2em 0.5em; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.nmea-table td, .nmea-map-table td { padding: 0.3em 0.5em; border-bottom: 1px dashed var(--line); vertical-align: middle; }
+.nmea-table td.c, .nmea-map-table td.c { text-align: center; }
+.nmea-table tr.nmea-src { display: table-row; }
+.nmea-table tr.nmea-src > td:first-child { border-left: 3px solid transparent; }
+.nmea-table tr.role-primary > td:first-child { border-left-color: var(--accent); }
+.nmea-table tr.role-other > td:first-child, .nmea-map-table tr.role-other > td:first-child { border-left: 3px solid #e07000; }
+.nmea-table tr.session { background: var(--panel2); }
+.nmea-table tr.off td:not(:first-child) { opacity: 0.6; }
+.nmea-table .nmea-src-body { padding-left: 0; }
+.nmea-map-table .color-cell { display: inline-flex; gap: 0.3em; align-items: center; }
+.nmea-map-table input[type=color] { width: 2.2em; height: 1.7em; padding: 0; border: 1px solid var(--line); }
+#nmea-map h4 { margin: 0.8em 0 0.2em; }
+#other-record-warn.warnbox { margin: 0.3em 0 0.6em; }
+.nmea-map-table td:first-child b { white-space: nowrap; }
+.nmea-table .nmea-src-body { flex-wrap: nowrap; white-space: nowrap; }
+.nmea-table .session-tag { display: block; }

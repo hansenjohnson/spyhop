@@ -269,7 +269,7 @@ class NmeaDecoder:
             age = now - st.updated
             if age > lost_after:
                 continue
-            out.append({"name": name, "external": name in self.externals, "lat": st.lat, "lon": st.lon, "sog": st.sog, "cog": st.cog,
+            out.append({"name": name, "other": name in self.externals, "lat": st.lat, "lon": st.lon, "sog": st.sog, "cog": st.cog,
                         "heading": st.heading if st.heading_updated and now - st.heading_updated < 10 else st.cog,
                         "age": round(age, 1)})
         return out
