@@ -724,8 +724,9 @@ class Recorder:
     # -- instrument history (Tools → Instruments plots) ---------------------------------
     INST_SAMPLE_S = 5            # one value per reading every this many seconds
     # <survey>_nmea.csv (0.41; _instruments.csv before): every numeric reading of every input in use,
-    # position included, one row per input and reading; Primary says whether it came from the primary
-    INST_COLUMNS = ["DateTime", "Source", "Primary", "Key", "Label", "Unit", "Value"]
+    # position included, one row per input and reading; Role (0.42; Primary yes/no in 0.41) is the input's
+    # role: primary, secondary (the platform's other inputs) or external (a drone, buoy, other vessel)
+    INST_COLUMNS = ["DateTime", "Source", "Role", "Key", "Label", "Unit", "Value"]
     NO_PLOT = ("lat", "lon")     # in the file, not plotted in Tools → Instruments
 
     def _inst_path(self, prefix: str | None = None) -> Path | None:
@@ -742,13 +743,15 @@ class Recorder:
             with open(p, newline="", encoding="utf-8-sig") as fh:
                 # one value per reading and time: the primary's, else another input's
                 rows = [r for r in csv.DictReader(fh) if r.get("Key") not in self.NO_PLOT]
-            has_prim = {(r["Key"], r.get("DateTime")) for r in rows if r.get("Primary", "yes") != "no"}
+            role = lambda r: r.get("Role") or ("secondary" if r.get("Primary") == "no" else "primary")  # noqa: E731
+            rows = [r for r in rows if role(r) != "external"]      # not the platform's readings
+            has_prim = {(r["Key"], r.get("DateTime")) for r in rows if role(r) == "primary"}
             taken = set()
             for r in rows:
                 k = (r["Key"], r.get("DateTime"))
-                if r.get("Primary", "yes") == "no" and (k in has_prim or k in taken):
+                if role(r) != "primary" and (k in has_prim or k in taken):
                     continue
-                if r.get("Primary", "yes") == "no":
+                if role(r) != "primary":
                     taken.add(k)
                 t = parse_time(r.get("DateTime", ""))
                 try:
@@ -776,7 +779,8 @@ class Recorder:
         for src, readings in self.decoder.inst_src.items():
             for k, r in readings.items():
                 if fresh(r):
-                    rows.append([stamp, src, "yes" if prim is None or src == prim else "no", k, r["label"], r["unit"], r["value"]])
+                    rl = "external" if src in self.decoder.externals else "primary" if prim is None or src == prim else "secondary"
+                    rows.append([stamp, src, rl, k, r["label"], r["unit"], r["value"]])
         for k, r in self.decoder.inst.items():          # the plotted value: the one Instruments shows
             if fresh(r) and k not in self.NO_PLOT:
                 h = self.inst_hist.setdefault(k, {"label": r["label"], "unit": r["unit"], "points": []})

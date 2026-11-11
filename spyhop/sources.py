@@ -94,24 +94,27 @@ class SourceManager:
         self.on_map: set[str] = set()
 
     async def start(self, sources: list[dict], failover: bool = False):
-        """Run the inputs in use. The one marked primary supplies the vessel's position (0.41); with none
-        marked, every input does, by their order. Secondaries with show_on_map are listed in self.on_map."""
+        """Run the inputs in use. The primary supplies the vessel's position (0.41); with none, every
+        platform input does, by their order. Externals (0.42) never do. Non-primaries with show_on_map are
+        listed in self.on_map."""
         await self.stop()
         self._stop_threads = threading.Event()
         self.status = {}
         on = [s for s in sources if s.get("enabled", True)]
         self.decoder.priority = {label(s): i for i, s in enumerate(on)}
-        prim = next((s for s in on if s.get("primary")), None)
+        prim = next((s for s in on if s.get("role") == "primary" or (s.get("role") is None and s.get("primary"))), None)
         self.decoder.primary = label(prim) if prim else None
+        self.decoder.externals = {label(s) for s in on if s.get("role") == "external"}
         self.decoder.failover = bool(failover)
         self.decoder.others = {}
         self.decoder.inst_src = {}
         self.on_map = {label(s) for s in on if s is not prim and s.get("show_on_map")}
+        role = lambda s: "external" if s.get("role") == "external" else "primary" if s is prim or prim is None else "secondary"  # noqa: E731
         for i, src in enumerate(sources):
             if not src.get("enabled", True):
                 continue
             self.status[i] = {"name": label(src), "state": "starting", "lines": 0, "error": "",
-                              "role": "primary" if src is prim or prim is None else "secondary", "type": src.get("type")}
+                              "role": role(src), "type": src.get("type")}
             runner = getattr(self, "_run_" + str(src.get("type")), None)
             if runner is None:
                 self.status[i].update(state="error", error="unknown source type")

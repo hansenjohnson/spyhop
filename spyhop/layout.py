@@ -167,9 +167,10 @@ def tidy_data_folder(cfg) -> None:
 
 # ------------------------------------------------------------------ 0.41: <survey>_nmea.csv
 def rename_instrument_files(folder) -> int:
-    """<survey>_instruments.csv (0.36–0.40) → <survey>_nmea.csv, with the 0.41 columns (Source blank,
-    Primary yes), in each survey folder under `folder` (or `folder` itself). An existing _nmea.csv is left
-    alone. Returns the files renamed. Delete before 1.0.0."""
+    """<survey>_instruments.csv (0.36–0.40) → <survey>_nmea.csv, with the 0.42 columns (Source blank,
+    Role primary), in each survey folder under `folder` (or `folder` itself); a 0.41 _nmea.csv (Primary
+    yes/no) gets the Role column. An existing _nmea.csv is never overwritten by an old file. Returns the
+    files renamed or converted. Delete before 1.0.0."""
     folder = Path(folder)
     try:
         dirs = [folder, *[d for d in folder.iterdir() if d.is_dir()]]
@@ -179,8 +180,28 @@ def rename_instrument_files(folder) -> int:
     for d in dirs:
         try:
             olds = list(d.glob("*_instruments.csv"))
+            v041 = list(d.glob("*_nmea.csv"))
         except OSError:
             continue
+        for f in v041:                            # 0.41: Primary yes/no → Role
+            try:
+                with open(f, newline="", encoding="utf-8-sig") as fh:
+                    head = fh.readline()
+                if "Primary" not in head.split(","):
+                    continue
+                with open(f, newline="", encoding="utf-8-sig") as fh:
+                    rows = list(csv.DictReader(fh))
+                tmp = f.with_name("." + f.name + ".tmp")
+                with open(tmp, "w", newline="", encoding="utf-8") as fh:
+                    w = csv.writer(fh)
+                    w.writerow(["DateTime", "Source", "Role", "Key", "Label", "Unit", "Value"])
+                    for r in rows:
+                        w.writerow([r.get("DateTime", ""), r.get("Source", ""), "secondary" if r.get("Primary") == "no" else "primary",
+                                    r.get("Key", ""), r.get("Label", ""), r.get("Unit", ""), r.get("Value", "")])
+                os.replace(tmp, f)
+                n += 1
+            except OSError:
+                continue
         for old in olds:
             new = old.with_name(old.name[: -len("_instruments.csv")] + "_nmea.csv")
             if new.exists():
@@ -191,9 +212,9 @@ def rename_instrument_files(folder) -> int:
                 tmp = new.with_name("." + new.name + ".tmp")
                 with open(tmp, "w", newline="", encoding="utf-8") as fh:
                     w = csv.writer(fh)
-                    w.writerow(["DateTime", "Source", "Primary", "Key", "Label", "Unit", "Value"])
+                    w.writerow(["DateTime", "Source", "Role", "Key", "Label", "Unit", "Value"])
                     for r in rows:
-                        w.writerow([r.get("DateTime", ""), r.get("Source", ""), r.get("Primary", "yes"), r.get("Key", ""),
+                        w.writerow([r.get("DateTime", ""), r.get("Source", ""), "primary", r.get("Key", ""),
                                     r.get("Label", ""), r.get("Unit", ""), r.get("Value", "")])
                 os.replace(tmp, new)
                 old.unlink()

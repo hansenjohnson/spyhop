@@ -6,6 +6,12 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.42.0 — 2026-11-11
+
+- **Input roles:** each GPS / NMEA input has a role drop-down: **Primary** (one: the platform's position, course, speed and heading), **Secondary** (another of the platform's inputs: logged, fills in readings, can stand in for the primary) or **External** (a drone, drifting buoy or second vessel: logged and shown on the map as an orange point, never used for the platform's position, readings or fallback). External travels with the input in templates.
+- **Fallback to a secondary** is still an option (off unless ticked), now with a **red GPS FALLBACK banner** across the top of the window while a secondary stands in, naming both inputs and how long the primary has been silent, plus a message when it starts and when the primary is back. The Inputs status shows the quiet primary in red.
+- `<survey>_nmea.csv`: the **Role** column (primary / secondary / external) replaces 0.41's Primary yes/no; 0.41 files are converted when the data folder is opened. Plots never use an external's readings.
+
 ## 0.41.0 — 2026-11-11
 
 - **Named GPS / NMEA inputs:** each input in Settings → Inputs has a name (e.g. *Tablet GPS*, *External GPS*). Serial inputs now travel in templates too, with UDP, TCP and gpsd, so a template can list every device a team uses. Which inputs are **in use** is each computer's choice, kept by name when a template is used (an input new to the computer comes in unticked).

@@ -642,6 +642,7 @@ class App {
         }
         this.map.updateVessel(m.vessel);
         this.map.updateOthers(m.others);
+        this.showFailover(m.failover);
         if (m.nmea) { this.S.nmea = { ...this.S.nmea, ...m.nmea }; this.updateNmeaStatus(); this.updateRawLog(); }
         if (m.inst) { this.S.inst = m.inst; if (this.shown('nmea')) this.updateInstruments(); }
         this.planner.onVessel();
@@ -854,6 +855,27 @@ class App {
     try { const r = await api(`/api/tab/${tab}/redo`, {}); if (!r.done) toast('Nothing to redo', 'info', 1500); } catch {}
   }
 
+  // 0.42: while a secondary stands in for the primary, a red banner across the top of the window (and a
+  // message when it starts and ends)
+  showFailover(f) {
+    let bar = $('#failover-banner');
+    const was = this._failover;
+    this._failover = f ? `${f.from}|${f.primary}` : null;
+    if (!f) {
+      if (bar) bar.remove();
+      if (was) toast(`The primary GPS is back: the position is from “${was.split('|')[1]}” again.`, 'info', 6000);
+      return;
+    }
+    if (!bar) {
+      bar = el('div', { id: 'failover-banner', role: 'alert' });
+      ($('#app') || document.body).prepend(bar);      // the first row of the window: everything else moves down
+    }
+    bar.replaceChildren(el('span', { class: 'fo-dot' }, '●'), el('b', {}, ' GPS FALLBACK: '),
+      `the vessel position is coming from the secondary input “${f.from}”, because the primary “${f.primary}” has sent nothing${f.quiet_s != null ? ` for ${f.quiet_s} s` : ''}. Check the primary GPS. `,
+      el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('inputs'); } }, 'Settings → Inputs'));
+    if (!was) toast(`GPS fallback: the position is now from “${f.from}” (the primary “${f.primary}” is quiet).`, 'warn', 10000);
+  }
+
   // Before a new survey (0.41): with no GPS input in use, or no position from the primary, say so, with a
   // way to Settings → Inputs and the simulator suggested for trying Spyhop out. true = go on.
   async checkGpsBeforeStart() {
@@ -861,8 +883,10 @@ class App {
     const inUse = inputs.filter((x) => x.enabled !== false);
     const fix = !!this.S.vessel?.has_fix;
     if (inUse.length && fix) return true;
+    const prim = inUse.find((x) => x.role === 'primary');
     const what = !inUse.length ? 'No GPS / NMEA input is in use on this computer'
-      : `No position from the primary input${inUse.find((x) => x.primary) ? ` (“${inUse.find((x) => x.primary).name}”)` : ''}`;
+      : !prim ? 'No primary GPS / NMEA input: every input in use is external'
+        : `No position from the primary input (“${prim.name}”)`;
     const go = await modal({ title: 'No GPS position', width: '34em',
       body: el('div', { id: 'gps-warning' },
         el('p', {}, el('b', {}, `${what}. `), 'Without one, the survey has no track, and new rows have no position until one arrives.'),
@@ -2646,34 +2670,40 @@ class App {
         this.renderInputs();
       } catch {}
     };
-    // 0.41: each input has a name; those in use (ticked) are run; one of them is the primary (it gives the
-    // vessel's position, course, speed and heading); the others are secondaries, logged and optionally on the map
+    // 0.41/0.42: each input has a name; those in use (ticked) are run. Its role: the primary (one: the
+    // platform's position, course, speed and heading), a secondary (the platform's other inputs) or external
+    // (a drone, drifting buoy, second vessel: logged and on the map, never the platform)
     const inUse = (s) => s.enabled !== false;
+    const roleOf = (s) => (['primary', 'secondary', 'external'].includes(s.role) ? s.role : s.primary ? 'primary' : 'secondary');
     const fixPrimary = () => {
-      const on = sources.filter(inUse);
-      if (!on.some((s) => s.primary)) { if (on[0]) on[0].primary = true; }
-      sources.forEach((s) => { if (!inUse(s)) s.primary = false; });
-      let seen = false;
-      on.forEach((s) => { if (s.primary && seen) s.primary = false; if (s.primary) seen = true; });
+      sources.forEach((s) => { s.role = roleOf(s); delete s.primary; });
+      const plat = sources.filter((s) => inUse(s) && s.role !== 'external');
+      const prim = plat.find((s) => s.role === 'primary') || plat[0];
+      sources.forEach((s) => { if (s.role !== 'external') s.role = s === prim ? 'primary' : 'secondary'; });
     };
     fixPrimary();
     const draw = () => {
       fixPrimary();
-      list.replaceChildren(...sources.map((s, i) => el('div', { class: `nmea-src${s.session ? ' session' : ''}${inUse(s) ? '' : ' off'}${s.primary ? ' primary' : ''}`, 'data-name': s.name || '' },
+      list.replaceChildren(...sources.map((s, i) => el('div', { class: `nmea-src role-${s.role}${s.session ? ' session' : ''}${inUse(s) ? '' : ' off'}`, 'data-name': s.name || '' },
         el('div', { class: 'nmea-src-head' },
           el('label', { class: 'check', title: 'Run this input on this computer' }, el('input', { type: 'checkbox', class: 'src-use', checked: inUse(s),
-            onchange: (e) => { s.enabled = e.target.checked; if (!s.enabled) s.primary = false; markDirty(); draw(); } }), 'In use'),
+            onchange: (e) => { s.enabled = e.target.checked; if (!s.enabled && s.role === 'primary') s.role = 'secondary'; markDirty(); draw(); } }), 'In use'),
           el('input', { type: 'text', class: 'src-name', value: s.name || '', placeholder: 'Name, e.g. External GPS', size: 22, 'aria-label': 'Input name',
             oninput: () => markDirty(), onchange: (e) => { s.name = e.target.value.trim(); markDirty(); } }),
-          el('label', { class: 'check', title: 'The primary input gives the vessel’s position, course, speed and heading for the survey' },
-            el('input', { type: 'radio', name: 'src-primary', class: 'src-primary', checked: !!s.primary, disabled: !inUse(s),
-              onchange: () => { sources.forEach((x) => { x.primary = x === s; }); markDirty(); draw(); } }), 'Primary'),
-          inUse(s) && !s.primary ? el('label', { class: 'check', title: 'Show where this input says it is, as a point on the map (not recorded in the survey’s tables)' },
+          el('select', { class: 'src-role', 'aria-label': 'Role', title: 'Primary: the platform’s position, course, speed and heading (one input). Secondary: another of the platform’s inputs (logged; fills in readings; can stand in for the primary). External: something else — a drone, a drifting buoy, a second vessel (logged and on the map; never the platform).',
+            onchange: (e) => {
+              const v = e.target.value;
+              if (v === 'primary') { sources.forEach((x) => { if (x !== s && x.role === 'primary') x.role = 'secondary'; }); s.enabled = true; }
+              if (v === 'external' && s.role !== 'external') s.show_on_map = true;      // externals are on the map unless unticked
+              s.role = v; markDirty(); draw();
+            } },
+            [['primary', 'Primary'], ['secondary', 'Secondary'], ['external', 'External']].map(([v, l]) => el('option', { value: v, selected: s.role === v }, l))),
+          inUse(s) && s.role !== 'primary' ? el('label', { class: 'check', title: 'Show where this input says it is, as a point on the map (not recorded in the survey’s tables)' },
             el('input', { type: 'checkbox', class: 'src-map', checked: !!s.show_on_map, onchange: (e) => { s.show_on_map = e.target.checked; markDirty(); } }), 'Show on the map') : null,
           s.session ? el('span', { class: 'hint', title: 'Started from the command line (e.g. --sim). Changes apply until Spyhop is closed.' }, 'this session only') : null,
           el('button', { class: 'icon', title: 'Remove', onclick: () => { sources.splice(i, 1); markDirty(); draw(); } }, '✕')),
         el('div', { class: 'nmea-src-body' },
-          el('select', { 'aria-label': 'Kind of input', onchange: (e) => { sources[i] = { name: s.name, type: e.target.value, enabled: inUse(s), primary: !!s.primary, show_on_map: !!s.show_on_map, ...defaults[e.target.value], ...(s.session ? { session: true } : {}) }; markDirty(); draw(); } },
+          el('select', { 'aria-label': 'Kind of input', onchange: (e) => { sources[i] = { name: s.name, type: e.target.value, enabled: inUse(s), role: s.role, show_on_map: !!s.show_on_map, ...defaults[e.target.value], ...(s.session ? { session: true } : {}) }; markDirty(); draw(); } },
             Object.keys(fields).map((t) => el('option', { value: t, selected: t === s.type }, t === 'sim' ? 'SIMULATOR' : t.toUpperCase()))),
           ...(fields[s.type] || []).flatMap(([k, label, type]) => [el('label', { class: 'inline' }, label,
             el('input', { type, value: s[k] ?? '', size: k === 'path' ? 30 : (k === 'heading' || k === 'speed_kn' ? 5 : 10),
@@ -2703,13 +2733,13 @@ class App {
       }
     }).catch(() => {});
     return el('section', { class: 'settings-sec' }, el('h3', {}, 'GPS / NMEA inputs'),
-      el('p', { class: 'hint help' }, 'Name each input for its device (e.g. “Tablet GPS”, “External GPS”, “Ship’s network”): the names travel in templates, so a template can list the inputs of every computer a team uses, and each computer ticks the ones it has. Of the inputs in use, the primary gives the vessel’s position, course, speed and heading for the survey (the track, new rows, the map). The others are secondaries: their readings appear in Tools → Instruments when the primary doesn’t have them, every input’s readings (position included) are saved in the survey’s <survey>_nmea.csv, every sentence goes in the raw NMEA log, and a secondary can be shown on the map as a point. Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
+      el('p', { class: 'hint help' }, 'Name each input for its device (e.g. “Tablet GPS”, “External GPS”, “Ship’s network”): the names travel in templates, so a template can list the inputs of every computer a team uses, and each computer ticks the ones it has. Each input in use has a role. Primary (one): the platform’s position, course, speed and heading for the survey (the track, new rows, the map). Secondary: another of the platform’s own inputs (a backup GPS, the depth sounder): its readings appear in Tools → Instruments where the primary has none, and it can stand in for the primary if you allow that below. External: something that isn’t the platform — a drone, a drifting buoy, a second vessel: never used for the platform, drawn on the map as an orange point. Every input’s readings (position included) are saved in the survey’s <survey>_nmea.csv with its role, every sentence goes in the raw NMEA log, and secondaries can be shown on the map as purple points. Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
       list, ports,
       el('label', { class: 'check', id: 'src-failover-row', title: 'If the primary stops sending positions for 5 seconds, use the first secondary that has one, until the primary is back' },
         el('input', { type: 'checkbox', id: 'src-failover', checked: !!draft.failover, onchange: (e) => { draft.failover = e.target.checked; markDirty(); } }),
-        el('span', {}, 'If the primary goes quiet for 5 s, take the position from a secondary until it’s back')),
+        el('span', {}, el('b', {}, 'Fall back to a secondary: '), 'if the primary goes quiet for 5 s, take the position from a secondary (never an external) until it’s back. A red banner shows while it does.')),
       el('div', { class: 'btnrow' },
-        el('button', { onclick: () => { sources.push({ name: '', type: 'serial', enabled: true, primary: !sources.some((x) => x.enabled !== false), ...defaults.serial }); markDirty(); draw();
+        el('button', { onclick: () => { sources.push({ name: '', type: 'serial', enabled: true, role: sources.some((x) => x.enabled !== false && x.role !== 'external') ? 'secondary' : 'primary', ...defaults.serial }); markDirty(); draw();
           $$('#pane-inputs .src-name').at(-1)?.focus(); } }, '+ Add input'),
         applyBtn,
         el('button', { onclick: () => { this.nmeaDraft = null; this.renderInputs(); }, title: 'Discard unapplied changes' }, 'Revert')),
@@ -2809,9 +2839,9 @@ class App {
     box.replaceChildren(...(n.sources || []).map((s) => {
       const prog = s.total ? ` · line ${s.at || 0} of ${s.total}${s.loops ? ` (replay ${s.loops + 1})` : ''}` : (s.lines ? ` · ${s.lines} lines` : '');
       return el('div', { class: `src-st ${s.state}` },
-        el('b', {}, s.name), el('span', { class: `role-tag ${s.role || 'primary'}` }, s.role === 'secondary' ? 'secondary' : 'primary'), ` — ${s.state}`, prog,
+        el('b', {}, s.name), el('span', { class: `role-tag ${s.role || 'primary'}` }, s.role || 'primary'), ` — ${s.state}`, prog,
         pos === s.name ? el('span', { class: 'ok' }, ' · vessel position from here') : null,
-        s.role !== 'secondary' && pos && pos !== s.name ? el('span', { class: 'hint' }, ` · quiet: position from “${pos}” (failover)`) : null,
+        s.role === 'primary' && pos && pos !== s.name ? el('span', { class: 'err' }, ` · quiet: position from “${pos}” (fallback)`) : null,
         s.error ? el('span', { class: 'err' }, ` · ${s.error}`) : '');
     }),
     el('div', { class: 'hint' }, `Sentences: ${Object.entries(n.counts || {}).map(([k, v]) => `${k} ${v}`).join(', ') || 'none yet'}${n.errors ? ` · ${n.errors} unreadable` : ''}`));

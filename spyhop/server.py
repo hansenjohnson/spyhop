@@ -260,7 +260,8 @@ class App:
                 self.rec.tick_tracker()
                 msg = {"type": "vessel", "vessel": self.rec.vessel(), "t": time.time(),
                        "inst": self.rec.decoder.instruments(),
-                       "others": self.rec.decoder.secondaries(self.sources.on_map) if self.sources.on_map else []}
+                       "others": self.rec.decoder.secondaries(self.sources.on_map) if self.sources.on_map else [],
+                       "failover": self.rec.decoder.failover_state()}
                 if n % 3 == 0:
                     msg["nmea"] = self.nmea_status(raw=False)
                     if self.tiles.prefetch_state["running"] or self.tiles.prefetch_state["total"]:
@@ -726,15 +727,15 @@ class App:
         from .config import clean_inputs
         saved = [dict(x) for x in self.rec.cfg.settings.get("nmea_sources") or []]
         extra = [{**x, "session": True} for x in self.extra_sources]
-        on = [x for x in extra if x.get("enabled", True) is not False]
-        chosen = [x for x in on if x.get("primary")]
-        if on and (chosen or not any("primary" in x for x in self.extra_sources)):
+        on = [x for x in extra if x.get("enabled", True) is not False and x.get("role") != "external"]
+        chosen = [x for x in on if x.get("role") == "primary" or x.get("primary")]
+        if on and (chosen or not any("role" in x or "primary" in x for x in self.extra_sources)):
             # an input from the command line (e.g. --sim) is the primary for this session, until another is chosen
-            for x in saved:
-                x["primary"] = False
-            for x in extra:
-                x["primary"] = False
-            (chosen or on)[0]["primary"] = True
+            for x in saved + extra:
+                if x.get("role") != "external":
+                    x["role"] = "secondary"
+                x.pop("primary", None)
+            (chosen or on)[0]["role"] = "primary"
         return clean_inputs(saved + extra)
 
     async def start_inputs(self):

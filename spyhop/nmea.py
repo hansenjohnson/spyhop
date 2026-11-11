@@ -160,6 +160,7 @@ class NmeaDecoder:
         self.primary: str | None = None
         self.failover = False            # a secondary stands in while the primary has been quiet for 5 s
         self.others: dict[str, VesselState] = {}
+        self.externals: set[str] = set()     # 0.42: inputs that aren't the platform (drone, buoy, other vessel)
         self.heard: dict[str, float] = {}    # source -> wall clock of its last position
 
     def feed(self, line: str, source: str = "") -> bool:
@@ -182,7 +183,7 @@ class NmeaDecoder:
         if handler is None:
             return False
         self._cur = (typ, source)
-        main = self.primary is None or not source or source == self.primary
+        main = source not in self.externals and (self.primary is None or not source or source == self.primary)
         st = self.state if main else self.others.setdefault(source, VesselState())
         saved, self.state = self.state, st
         try:
@@ -192,9 +193,17 @@ class NmeaDecoder:
             ok = False
         finally:
             self.state = saved
-        if ok and not main and self.failover:
+        if ok and not main and self.failover and source not in self.externals:
             self._stand_in(source, st)
         return ok
+
+    def failover_state(self) -> dict | None:
+        """While a secondary stands in for the primary: {from, primary, quiet_s}; else None."""
+        st = self.state
+        if not self.primary or not st.source or st.source == self.primary or st.updated is None or time.time() - st.updated > 10:
+            return None
+        t = self.heard.get(self.primary)
+        return {"from": st.source, "primary": self.primary, "quiet_s": None if t is None else round(time.time() - t)}
 
     def primary_quiet(self, after: float = 5.0) -> bool:
         t = self.heard.get(self.primary) if self.primary else None
@@ -206,7 +215,7 @@ class NmeaDecoder:
         if not self.primary_quiet():
             return
         now = time.time()
-        live = [s for s, t in self.heard.items() if s != self.primary and now - t < 5]
+        live = [s for s, t in self.heard.items() if s != self.primary and s not in self.externals and now - t < 5]
         if not live or min(live, key=lambda s: self.priority.get(s, 99)) != source:
             return
         main = self.state
@@ -233,9 +242,12 @@ class NmeaDecoder:
 
     @property
     def inst(self) -> dict[str, dict]:
-        """One reading per key: the primary's while it's under 15 s old, else the newest from any input."""
+        """One reading per key: the primary's while it's under 15 s old, else the newest from any platform
+        input (externals' readings are theirs, not the platform's: logged, not shown here)."""
         now, out = time.time(), {}
         for src, readings in self.inst_src.items():
+            if src in self.externals:
+                continue
             for k, r in readings.items():
                 cur = out.get(k)
                 prim = self.primary is not None and src == self.primary and now - r["t"] < 15
@@ -257,7 +269,7 @@ class NmeaDecoder:
             age = now - st.updated
             if age > lost_after:
                 continue
-            out.append({"name": name, "lat": st.lat, "lon": st.lon, "sog": st.sog, "cog": st.cog,
+            out.append({"name": name, "external": name in self.externals, "lat": st.lat, "lon": st.lon, "sog": st.sog, "cog": st.cog,
                         "heading": st.heading if st.heading_updated and now - st.heading_updated < 10 else st.cog,
                         "age": round(age, 1)})
         return out

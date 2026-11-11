@@ -521,8 +521,8 @@ export class MapView {
       let m = this._others.get(o.name);
       const ll = [o.lat, o.lon];
       if (!m) {
-        m = L.circleMarker(ll, { pane: 'vessel', radius: 6, color: '#ffffff', weight: 2, fillColor: '#7b3fbf', fillOpacity: 0.9, className: 'secondary-input' })
-          .bindTooltip(o.name, { permanent: true, direction: 'right', offset: [8, 0], className: 'secondary-label' });
+        m = L.circleMarker(ll, { pane: 'vessel', radius: 6, color: '#ffffff', weight: 2, fillColor: o.external ? '#e07000' : '#7b3fbf', fillOpacity: 0.9, className: o.external ? 'external-input' : 'secondary-input' })
+          .bindTooltip(o.name, { permanent: true, direction: 'right', offset: [8, 0], className: o.external ? 'secondary-label external-label' : 'secondary-label' });
         m.addTo(this.layers.others);
         this._others.set(o.name, m);
       } else {

@@ -576,3 +576,14 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 #src-failover-row { margin: 0.5em 0; }
 .leaflet-tooltip.secondary-label { background: rgba(255, 255, 255, 0.85); border: 1px solid #7b3fbf; color: #3d1f60; padding: 0 4px; font-size: 11px; box-shadow: none; }
 .leaflet-tooltip.secondary-label::before { display: none; }
+
+/* 0.42: input roles, and the GPS fallback banner */
+.nmea-src.role-primary { border-left: 3px solid var(--accent); }
+.nmea-src.role-external { border-left: 3px solid #e07000; }
+.role-tag.external { border-color: #e07000; color: #a04f00; }
+.leaflet-tooltip.external-label { border-color: #e07000; color: #7a3c00; }
+#failover-banner { flex: none; z-index: 6000; background: #c62828; color: #fff; padding: 0.45em 1em;
+  font-size: 1.02em; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); text-align: center; }
+#failover-banner a { color: #fff; text-decoration: underline; font-weight: 600; }
+#failover-banner .fo-dot { animation: fo-blink 1s steps(2, start) infinite; }
+@keyframes fo-blink { to { visibility: hidden; } }

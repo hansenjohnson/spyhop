@@ -1901,7 +1901,7 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
     res = _run(b.templates_use(_Req({"token": chk["token"], "backup": True})))
     assert res["added"] == {"waypoints": 1, "routes": 0, "overlays": 1, "feeds": 1}
     assert cb.settings["timezone"] == "UTC" and cb.settings["effort_reminder_min"] == 20
-    pick = lambda L: [(x["name"], x["enabled"], x["primary"]) for x in L]  # noqa: E731
+    pick = lambda L: [(x["name"], x["enabled"], x["role"] == "primary") for x in L]  # noqa: E731
     # none of B's inputs has those names, so the first is put in use, as the primary
     assert pick(cb.settings["nmea_sources"]) == [("Serial COM4 @ 4800", True, True), ("UDP port 2000", False, False)]
     assert cb.settings["online_feeds"][0]["name"] == "SMAs" and not feeds.cache_path(cb, "abc12345").exists()
@@ -1938,7 +1938,7 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
     loc = json.loads(cb.local_path.read_text())
     assert cur["nmea_inputs"] == [{"type": "serial", "port": "/dev/ttyUSB0", "name": "Serial /dev/ttyUSB0 @ 4800"},
                                   {"type": "udp", "port": 10110, "name": "UDP port 10110"}]
-    assert loc["settings"]["nmea_sources"][0]["primary"] is True
+    assert loc["settings"]["nmea_sources"][0]["role"] == "primary"
     assert "timezone" not in loc["settings"] and "online_feeds" not in loc["settings"]
 
 
@@ -2152,7 +2152,7 @@ def test_old_layout_moved_once(tmp_path):
     assert [r["name"] for r in cfg.lists["species"]] == ["Test whale", "Other"] and cfg.shortcuts[0]["combo"] == "Mod+Shift+T"
     assert cfg.display["marker_radius"] == "11" and sorted(cfg.reports) == ["mine.json"]
     assert cfg.settings["timezone"] == "UTC" and cfg.settings["follow_vessel"] is False
-    assert [(x["name"], x["enabled"], x["primary"]) for x in cfg.settings["nmea_sources"]] == [
+    assert [(x["name"], x["enabled"], x["role"] == "primary") for x in cfg.settings["nmea_sources"]] == [
         ("Serial COM4 @ 4800", True, True), ("UDP port 2000", True, False)]
     assert cfg.settings["online_feeds"][0]["name"] == "SMAs" and cfg.history[0]["notes"] == "v1"
     assert cfg.current_survey()["prefix"] == "S1"
@@ -2885,9 +2885,9 @@ def test_named_inputs_primary_secondary_and_nmea_csv(rec, tmp_path):
     assert [o["name"] for o in d.secondaries({"External GPS"})] == ["External GPS"]
     rec.sample_instruments()
     text = rec._inst_path().read_text()
-    assert rec._inst_path().name.endswith("_nmea.csv") and text.startswith("DateTime,Source,Primary,Key,Label,Unit,Value")
-    assert ",Tablet GPS,yes,lat,Latitude,°,41.9" in text and ",External GPS,no,lat,Latitude,°,42.0" in text
-    assert ",External GPS,no,depth," in text and "lat" not in rec.inst_hist
+    assert rec._inst_path().name.endswith("_nmea.csv") and text.startswith("DateTime,Source,Role,Key,Label,Unit,Value")
+    assert ",Tablet GPS,primary,lat,Latitude,°,41.9" in text and ",External GPS,secondary,lat,Latitude,°,42.0" in text
+    assert ",External GPS,secondary,depth," in text and "lat" not in rec.inst_hist
     # failover: the primary quiet for over 5 s → the first secondary with a fix stands in
     d.heard["Tablet GPS"] = _t.time() - 10
     d.feed(w("GPRMC,120001,A,4200.000,N,07000.000,W,5.0,180.0,111126,,"), "External GPS")
@@ -2899,19 +2899,58 @@ def test_named_inputs_primary_secondary_and_nmea_csv(rec, tmp_path):
     # names, one primary; a template's inputs keep this computer's choices by name
     c = clean_inputs([{"type": "udp", "port": 1}, {"type": "udp", "port": 1, "name": "UDP port 1"}, {"type": "serial", "port": "COM3", "enabled": False, "primary": True}])
     assert [x["name"] for x in c] == ["UDP port 1", "UDP port 1 (2)", "Serial COM3 @ 4800"]
-    assert [x["primary"] for x in c] == [True, False, False]
+    assert [x["role"] for x in c] == ["primary", "secondary", "secondary"]
     mine = [{"name": "Tablet GPS", "type": "serial", "port": "COM3", "enabled": False},
             {"name": "External GPS", "type": "serial", "port": "COM5", "enabled": True, "primary": True, "show_on_map": False},
             {"type": "sim"}]
     tpl = [{"name": "Tablet GPS", "type": "serial", "port": "COM3"}, {"name": "External GPS", "type": "serial", "port": "COM9"},
            {"name": "Ship", "type": "udp", "port": 10110}]
     m = merge_inputs(mine, tpl)
-    assert [(x["name"], x.get("port"), x["enabled"], x["primary"]) for x in m] == [
+    assert [(x["name"], x.get("port"), x["enabled"], x["role"] == "primary") for x in m] == [
         ("Tablet GPS", "COM3", False, False), ("External GPS", "COM9", True, True), ("Ship", 10110, False, False), ("Simulator", None, True, False)]
     # the 0.36–0.40 file is renamed and converted
     sd = tmp_path / "old" / "S"
     sd.mkdir(parents=True)
     (sd / "S_instruments.csv").write_text("DateTime,Key,Label,Unit,Value\n2026-11-01T12:00:00+00:00,depth,Depth,m,40\n")
     assert rename_instrument_files(tmp_path / "old") == 1
-    assert (sd / "S_nmea.csv").read_text().splitlines()[1] == "2026-11-01T12:00:00+00:00,,yes,depth,Depth,m,40"
+    assert (sd / "S_nmea.csv").read_text().splitlines()[1] == "2026-11-01T12:00:00+00:00,,primary,depth,Depth,m,40"
     assert not (sd / "S_instruments.csv").exists()
+
+
+
+def test_external_inputs_and_failover_notice(rec, tmp_path):
+    """0.42: roles primary / secondary / external; externals never give the platform's position, readings
+    or failover; failover_state while a secondary stands in; a 0.41 _nmea.csv gets the Role column."""
+    import time as _t
+    from spyhop.nmea import with_checksum as w
+    from spyhop.config import clean_inputs, input_definition, merge_inputs
+    from spyhop.layout import rename_instrument_files
+    d = rec.decoder
+    d.primary, d.failover, d.externals = "Ship GPS", True, {"Drone"}
+    d.priority = {"Ship GPS": 0, "Backup GPS": 1, "Drone": 2}
+    d.feed(w("GPRMC,120000,A,4154.000,N,07020.000,W,10.0,90.0,111126,,"), "Ship GPS")
+    d.heard["Ship GPS"] = _t.time() - 30                          # the primary has gone quiet
+    d.feed(w("GPRMC,120000,A,4300.000,N,06900.000,W,30.0,10.0,111126,,"), "Drone")
+    d.feed(w("SDDPT,99.0,0.5,"), "Drone")
+    assert abs(d.state.lat - 41.9) < 1e-6 and d.failover_state() is None     # a drone never stands in
+    assert "depth" not in d.inst and d.inst_src["Drone"]["depth"]["value"] == 99.5
+    assert [o["external"] for o in d.secondaries({"Drone"})] == [True]
+    d.feed(w("GPRMC,120001,A,4200.000,N,07000.000,W,5.0,180.0,111126,,"), "Backup GPS")
+    f = d.failover_state()
+    assert d.state.lat == 42.0 and f["from"] == "Backup GPS" and f["primary"] == "Ship GPS" and f["quiet_s"] >= 29
+    rec.sample_instruments()
+    assert ",Drone,external,depth," in rec._inst_path().read_text()
+    d.primary, d.externals = None, set()
+    # roles: one primary among platform inputs; externals stay external, also through a template
+    c = clean_inputs([{"type": "udp", "port": 1, "role": "external"}, {"type": "udp", "port": 2, "role": "primary"},
+                      {"type": "udp", "port": 3, "role": "primary"}])
+    assert [x["role"] for x in c] == ["external", "primary", "secondary"] and c[0]["show_on_map"] is True
+    assert input_definition(c[0])["role"] == "external" and "role" not in input_definition(c[1])
+    m = merge_inputs([{"name": "Ship", "type": "udp", "port": 2, "role": "primary"}],
+                     [{"name": "Ship", "type": "udp", "port": 2}, {"name": "Drone", "type": "udp", "port": 9, "role": "external"}])
+    assert [(x["name"], x["enabled"], x["role"]) for x in m] == [("Ship", True, "primary"), ("Drone", False, "external")]
+    sd = tmp_path / "v041" / "S"
+    sd.mkdir(parents=True)
+    (sd / "S_nmea.csv").write_text("DateTime,Source,Primary,Key,Label,Unit,Value\nt,A,yes,lat,Latitude,°,41\nt,B,no,lat,Latitude,°,42\n")
+    assert rename_instrument_files(tmp_path / "v041") == 1
+    assert (sd / "S_nmea.csv").read_text().splitlines()[1:] == ["t,A,primary,lat,Latitude,°,41", "t,B,secondary,lat,Latitude,°,42"]

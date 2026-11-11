@@ -333,8 +333,8 @@ DEFAULT_SETTINGS = {
     "online_feeds": [],             # map feeds (Tools → Overlays → Online overlays; feeds.py) → map_feeds
     "online_display": {},           # online overlays to show, set by a template: {ais, radar_us, radar_world,
                                     # feeds: [urls], radar_opacity, hide_stopped, stamp}; applied once per stamp
-    "nmea_sources": [{"name": "UDP port 10110", "type": "udp", "port": 10110, "enabled": True, "primary": True}],
-    "nmea_failover": False,         # use a secondary input's position while the primary has been quiet for 5 s
+    "nmea_sources": [{"name": "UDP port 10110", "type": "udp", "port": 10110, "enabled": True, "role": "primary"}],
+    "nmea_failover": False,         # use a secondary input's position while the primary has been quiet for 5 s (never an external)
                                     # all inputs in order (spyhop-local.json); the network ones (UDP, TCP, gpsd)
                                     # are also nmea_inputs in spyhop-config.json, which wins when they differ
     # --- this computer only: spyhop-local.json
@@ -378,20 +378,28 @@ SHARED_SETTINGS = {
     "segment_column": "Effort segment column",
 }
 # The GPS / NMEA inputs a template carries (0.41: serial too, named for the device, e.g. "External GPS").
-# Which of them are in use (enabled), which one is the primary and which secondaries show on the map is
-# this computer's choice (INPUT_FLAGS), kept by name when a template is used.
+# Each has a role (0.42): the platform's primary (its position, course, speed and heading), a secondary
+# (another of the platform's own inputs: logged, fills in readings, can stand in for the primary), or
+# external (something else: a drone, a drifting buoy, a second vessel; logged and drawn on the map, never
+# the platform). Which inputs are in use, primary or secondary, and which show on the map is this
+# computer's choice (INPUT_FLAGS), kept by name when a template is used; "external" travels with the input.
 TEMPLATE_INPUTS = ("serial", "udp", "tcp", "gpsd")
-INPUT_FLAGS = ("enabled", "primary", "show_on_map")
+INPUT_ROLES = ("primary", "secondary", "external")
+INPUT_FLAGS = ("enabled", "role", "show_on_map", "primary")
 
 
 def input_definition(src: dict) -> dict:
-    """An input without this computer's choices: what a template holds."""
-    return {k: v for k, v in src.items() if k not in INPUT_FLAGS and k != "session"}
+    """An input without this computer's choices: what a template holds (role only if external)."""
+    d = {k: v for k, v in src.items() if k not in INPUT_FLAGS and k != "session"}
+    if src.get("role") == "external":
+        d["role"] = "external"
+    return d
 
 
 def clean_inputs(sources) -> list[dict]:
-    """Inputs with a name each (unique; default from the type and port), the flags as booleans, and one
-    primary among the enabled ones (the first marked primary, else the first enabled)."""
+    """Inputs with a name each (unique; default from the type and port), a role, the flags as booleans,
+    and one primary among the enabled platform inputs (the first marked primary, else the first enabled
+    one that isn't external). Externals show on the map unless told not to."""
     from .sources import describe
     out, seen = [], set()
     for x in sources or []:
@@ -405,21 +413,30 @@ def clean_inputs(sources) -> list[dict]:
         seen.add(name.lower())
         x["name"] = name
         x["enabled"] = x.get("enabled", True) is not False
-        x["primary"] = bool(x.get("primary"))
-        x["show_on_map"] = bool(x.get("show_on_map"))
+        role = x.get("role")
+        if role not in INPUT_ROLES:
+            role = "primary" if x.get("primary") else "secondary"     # 0.41's primary flag
+        x["role"] = role
+        x.pop("primary", None)
+        x["show_on_map"] = bool(x.get("show_on_map", role == "external"))
         out.append(x)
-    on = [x for x in out if x["enabled"]]
-    prim = next((x for x in on if x["primary"]), on[0] if on else None)
+    platform = [x for x in out if x["enabled"] and x["role"] != "external"]
+    prim = next((x for x in platform if x["role"] == "primary"), platform[0] if platform else None)
     for x in out:
-        x["primary"] = x is prim
+        if x["role"] != "external":
+            x["role"] = "primary" if x is prim else "secondary"
     return out
+
+
+def primary_of(sources) -> dict | None:
+    return next((x for x in sources or [] if x.get("enabled", True) is not False and x.get("role") == "primary"), None)
 
 
 def merge_inputs(mine: list[dict], template: list[dict]) -> list[dict]:
     """This computer's inputs with its template kinds (serial, UDP, TCP, gpsd) replaced by the template's,
     which go where the first of them was (file replays and the simulator keep their places). This
-    computer's choices (in use, primary, on the map) are kept by name; inputs new to it come in not in
-    use, unless none would be in use."""
+    computer's choices (in use, role, on the map) are kept by name; inputs new to it come in not in
+    use (as secondaries, or external), unless none would be in use."""
     mine = clean_inputs(mine)
     template = clean_inputs(template)      # names from the type and port where none is given, as here
     flags = {str(x.get("name", "")).lower(): {k: x.get(k) for k in INPUT_FLAGS if k in x} for x in mine if x.get("name")}
@@ -430,12 +447,17 @@ def merge_inputs(mine: list[dict], template: list[dict]) -> list[dict]:
     for x in template or []:
         if not isinstance(x, dict) or x.get("type") not in TEMPLATE_INPUTS:
             continue
+        ext = x.get("role") == "external"
         d = input_definition(x)
-        d.update(flags.get(str(d.get("name", "")).lower(), {"enabled": False, "primary": False}))
+        d.update(flags.get(str(d.get("name", "")).lower(),
+                           {"enabled": False, "role": "external" if ext else "secondary", "show_on_map": ext}))
+        if ext:
+            d["role"] = "external"           # what the device is travels with it
         new.append(d)
     out = rest[:at] + new + rest[at:]
     if out and not any(x.get("enabled", True) is not False for x in out):
-        out[0].update(enabled=True, primary=True)
+        first_platform = next((x for x in out if x.get("role") != "external"), out[0])
+        first_platform.update(enabled=True, role="primary" if first_platform.get("role") != "external" else "external")
     return clean_inputs(out)
 
 # Spyhop's folder:
