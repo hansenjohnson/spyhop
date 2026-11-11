@@ -6,6 +6,14 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.40.0 — 2026-11-11
+
+- **Templates have two parts.** The **data** part (the drop-down lists, the data settings: magnetic variation, track point interval, trackline breaks, and the saved reports) is fixed during a survey, copied into the survey's folder, and is the only part a survey's template copy is checked against. The **preferences** (shortcuts, map display, the other settings including the bearing reference and distance unit, network inputs, map feeds) can change at any time. Settings → Templates shows what would change under these headings.
+- **Using a template during a survey** now takes its preferences (and list colors) and leaves the data part until the survey ends, instead of refusing the whole template.
+- **Reports wait until the survey ends:** during a survey Tools → Reports is locked (no running, saving, changing or deleting reports, no Run Reports), and Export Data leaves saved reports out.
+- **List colors can be changed during a survey** (Settings → Dropdowns); everything else in the lists stays locked. A color edited by hand in a list file is kept too.
+- **Every list has Other**, a placeholder for anything missing from it: species, events, behaviors, observers, effort, visibility, weather, and the reticles (**reticles-Other** keeps the reading but works out no distance). It can't be renamed or removed, and a list without it (yours, or a template's) gets it at the end. The Error check's new **Other placeholders** check lists every row that uses it, to fill in after the survey. Other in a watch position isn't counted as one observer in two places.
+
 ## 0.39.0 — 2026-11-11
 
 - **Effort is a list** (Settings → Dropdowns → Effort, `effort.csv` in the template; locked during a survey like the other lists). Each value has a **name**, a **status** (on or off effort: used for the track, the Summary, reports and the Error check), a **definition** (shown in the Effort drop-down) and a **color** (the track's color while it's in force). The defaults are **ON** (observers are on watch), **TRANSECT** (systematic line-transect survey), **DIRECTED** (directed survey/activity), **PHOTO-ID** (photo-ID survey) and **FOLLOW** (focal follow), on effort, and **OFF** (observers off watch). **Start** and **End**, and **ERROR** (added by Error check → Fix), are always there, always off effort, and can't be renamed or removed. LINE and PHOTO from earlier versions are gone: rows that still have them are flagged by the Error check.

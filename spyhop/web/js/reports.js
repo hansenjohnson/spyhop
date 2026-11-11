@@ -85,6 +85,16 @@ export class ReportsTool {
       if (!this.spec) { const first = this.defs.reports[0]; this.spec = first ? strip(first) : blank(); this.file = first?.file || null; }
     }
     if (!this.spec) this.spec = blank();
+    // saved reports are part of the data template, and reports read a finished survey: locked while one
+    // is under way (0.40)
+    if (this.app.S.survey?.active) {
+      const names = (this.defs.reports || []).map((f) => f.name);
+      pane.replaceChildren(el('section', { class: 'settings-sec', id: 'reports-locked' }, el('h3', {}, 'Reports'),
+        el('p', { class: 'warnbox' }, el('b', {}, 'Reports are ready when the survey ends. '),
+          'During a survey they can’t be run or changed: the saved reports are part of the survey’s template, like the drop-down lists. End the survey in the Survey tab to run them.'),
+        names.length ? el('p', {}, `Saved reports: ${names.join(', ')}.`) : el('p', { class: 'hint' }, 'No saved reports.')));
+      return;
+    }
     if (!this.$result) {
       this.$side = el('div', { class: 'flt-side' });
       this.$result = el('div', { class: 'flt-result' });
@@ -227,7 +237,7 @@ export class ReportsTool {
   // ---------------------------------------------------------------- server
   async run() {
     const n = ++this.seq;
-    if (!this.app.S.survey || !this.spec.columns.length) { this.counts = []; this.res = null; this.drawResult(); return; }
+    if (!this.app.S.survey || this.app.S.survey.active || !this.spec?.columns.length) { this.counts = []; this.res = null; this.drawResult(); return; }
     let r;
     try { r = await api('/api/reports/run', { spec: this.spec }); } catch { return; }
     if (n !== this.seq) return;           // a newer change is on its way

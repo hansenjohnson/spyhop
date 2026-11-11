@@ -22,6 +22,9 @@ data and offline charts are never in a template. A backup (itself a template) is
 templates/backups first; restoring the backup made before a template was used also takes away what
 that template added.
 
+A template has a data part (the lists and the data settings: fixed during a survey, copied into each
+survey's folder) and preferences (everything else: may change at any time); see DATA_TABLES and part_of().
+
 Nothing in a template is run: CSVs are checked for their columns, saved reports like any other, and
 files Spyhop doesn't know are listed and left alone.
 """
@@ -45,7 +48,7 @@ from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 
 from . import __version__, feeds, reports, schema
-from .config import NETWORK_INPUTS, SHARED_SETTINGS, merge_network_inputs
+from .config import LOCKED_LISTS, LOCKED_SETTINGS, NETWORK_INPUTS, SHARED_SETTINGS, merge_network_inputs, without_colors
 
 CONFIG = "spyhop-config.json"
 FORMAT = 3
@@ -74,7 +77,47 @@ OVERLAY_EXT = (".geojson", ".json", ".gpx", ".kml")
 ONLINE_KEYS = ("ais", "radar_us", "radar_world", "feeds", "radar_opacity", "hide_stopped")
 
 # what each part is called in the check before using a template (and in "What changed")
-SETTINGS_LABEL = "Settings (clock, units, tracking, keep awake, NMEA log)"
+SETTINGS_LABEL = "Settings (clock, units, bearings, keep awake, NMEA log)"
+DATA_SETTINGS_LABEL = "Data settings (magnetic variation, track point interval, trackline breaks)"
+
+# A template has two parts (0.40). The data part says what recorded values mean, how they are worked out
+# and how they are reported (the lists, the data settings and the saved reports): it is copied into each
+# survey's folder at Start, can't change during a survey, and is the only part compared with a survey's
+# copy. The preferences (shortcuts, map display, the other shared settings, network inputs, map feeds)
+# can change at any time, also during a survey.
+# Waypoints, routes and overlays are extras, only ever added to a computer.
+DATA_TABLES = tuple(f"{n}.csv" for n in LOCKED_LISTS)
+PARTS = {"data": "Data (fixed during a survey)", "prefs": "Preferences (can change at any time)",
+         "extra": "Added to this computer"}
+
+
+def _with_other(name: str, text: str, hdr: list[str], rows: list[list[str]]) -> str:
+    """A list's CSV with its Other entry (0.40: every list has one), added at the end if it's missing."""
+    from .config import DEFAULT_LISTS, OTHER, other_row
+    stem = name[:-4]
+    if stem not in DEFAULT_LISTS or "name" not in hdr:
+        return text
+    i = hdr.index("name")
+    if any(len(r) > i and r[i].strip().lower() == OTHER.lower() for r in rows[1:]):
+        return text
+    out = io.StringIO()
+    csv.writer(out, lineterminator="\n").writerow([other_row(stem).get(c, "") for c in hdr])
+    return text + ("" if text.endswith("\n") or not text else "\n") + out.getvalue()
+
+
+def part_of(file: str) -> str:
+    """"data", "prefs" or "extra" for a row of compare() (by its file label)."""
+    if file in DATA_TABLES or file == DATA_SETTINGS_LABEL or file.startswith("Saved report: "):
+        return "data"
+    if file == WAYPOINTS or file.startswith(("routes/", "overlays/")):
+        return "extra"
+    return "prefs"
+
+
+def _dict_rows(text: str | None) -> list[dict]:
+    if text is None:
+        return []
+    return [r for r in csv.DictReader(io.StringIO(text)) if any((v or "").strip() for v in r.values())]
 INPUTS_LABEL = "GPS / NMEA network inputs (UDP, TCP, gpsd)"
 DISPLAY_LABEL = "Map display"
 
@@ -530,7 +573,7 @@ def read_template(files: dict[str, bytes]) -> dict:
                     probs.append(f"{name} needs the column{'s' if len(missing) > 1 else ''} "
                                  f"{', '.join(missing)} in its first row.")
                 else:
-                    t["csv"][name] = text
+                    t["csv"][name] = _with_other(name, text, hdr, rows)
             elif name == WAYPOINTS:
                 t["waypoints"] = _read_waypoints(_text(b, name), probs)
             elif top == "routes" and rest and "/" not in rest:
@@ -681,7 +724,10 @@ def compare(cfg, t: dict) -> list[dict]:
     for name, text in t["csv"].items():
         here = _local_text(cfg.current_dir / name)
         st = "new" if here is None else ("same" if _norm(here) == _norm(text) else "changed")
-        out.append({"file": name, "status": st, "here": _count(here), "in_template": _count(text), "unit": "rows"})
+        row = {"file": name, "status": st, "here": _count(here), "in_template": _count(text), "unit": "rows"}
+        if st == "changed" and name in DATA_TABLES and without_colors(_dict_rows(here)) == without_colors(_dict_rows(text)):
+            row.update(colors_only=True, detail="only colors differ (they may change during a survey)")
+        out.append(row)
     if t["display"] is not None:
         here = cfg.display
         diffs = [f"{k}: {here.get(k, '—')} → {v}" for k, v in t["display"].items() if str(here.get(k, "")) != v]
@@ -699,8 +745,14 @@ def compare(cfg, t: dict) -> list[dict]:
     s = t.get("settings")
     if s:
         here = cfg.settings
-        diffs = [f"{SHARED_SETTINGS[k]}: {_fmt(here.get(k))} → {_fmt(v)}" for k, v in s["settings"].items() if here.get(k) != v]
-        out.append({"file": SETTINGS_LABEL, "status": "changed" if diffs else "same", "detail": "; ".join(diffs), "unit": "settings"})
+        diff = lambda keys: [f"{SHARED_SETTINGS[k]}: {_fmt(here.get(k))} → {_fmt(v)}" for k, v in s["settings"].items()  # noqa: E731
+                             if k in keys and here.get(k) != v]
+        locked = [k for k in s["settings"] if k in LOCKED_SETTINGS]
+        if locked:
+            d = diff(locked)
+            out.append({"file": DATA_SETTINGS_LABEL, "status": "changed" if d else "same", "detail": "; ".join(d), "unit": "settings"})
+        d = diff([k for k in s["settings"] if k not in LOCKED_SETTINGS])
+        out.append({"file": SETTINGS_LABEL, "status": "changed" if d else "same", "detail": "; ".join(d), "unit": "settings"})
         if s["nmea_inputs"] is not None:
             mine = network_inputs(here.get("nmea_sources"))
             desc = lambda L: ", ".join(f"{x['type'].upper()} {x.get('host', '') + ':' if x.get('host') else ''}{x.get('port', '')}"  # noqa: E731
@@ -734,8 +786,17 @@ def compare(cfg, t: dict) -> list[dict]:
                         "detail": "different here; this computer’s copy is kept" if st == "kept" else ""})
     if t.get("_undo"):
         out.extend(undo_rows(cfg, t["_undo"]))
+    for r in out:
+        r["part"] = part_of(r["file"])
     order = {"changed": 0, "new": 1, "removed": 2, "kept": 3, "same": 4}
     return sorted(out, key=lambda r: (order[r["status"]], r["file"]))
+
+
+def data_differs(cfg, t: dict, plan: list[dict] | None = None) -> list[str]:
+    """The data parts (lists, data settings) of the current template that differ from a template's, not
+    counting colors: what can't change during a survey, and what a survey's template copy is checked for."""
+    return [r["file"] for r in (plan if plan is not None else compare(cfg, t))
+            if r["part"] == "data" and r["status"] not in ("same", "kept") and not r.get("colors_only")]
 
 
 def _json_eq(a: str, b: str) -> bool:
@@ -786,7 +847,8 @@ def fingerprints(cfg) -> dict[str, str]:
     for fn, text in (t["reports"] or {}).items():
         out[f"Saved report: {_report_name(text, fn)}"] = h(json.loads(text))
     s = t["settings"] or {}
-    out[SETTINGS_LABEL] = h(s.get("settings"))
+    out[SETTINGS_LABEL] = h({k: v for k, v in (s.get("settings") or {}).items() if k not in LOCKED_SETTINGS})
+    out[DATA_SETTINGS_LABEL] = h({k: v for k, v in (s.get("settings") or {}).items() if k in LOCKED_SETTINGS})
     out[INPUTS_LABEL] = h(s.get("nmea_inputs"))
     for f in s.get("map_feeds") or []:
         out[f"Map feed: {f['name']}"] = h(f)
@@ -806,34 +868,40 @@ def changed_since(cfg, before: dict | None) -> list[str] | None:
 
 
 # ------------------------------------------------------------------ using a template
-def apply_all(cfg, t: dict) -> tuple[list[str], dict]:
+def apply_all(cfg, t: dict, data: bool = True) -> tuple[list[str], dict]:
     """Use a template: replace this computer's lists, shortcuts, map display, saved reports and shared
     settings with the template's; add its map feeds, routes and overlays that aren't here yet.
     Returns (what changed, what was added); its waypoints are for the caller to add (the recorder
-    holds that table): {settings, inputs, feeds, routes, overlays, waypoints, remove_waypoints, online}."""
+    holds that table): {settings, inputs, feeds, routes, overlays, waypoints, remove_waypoints, online,
+    data_kept}. With data=False (during a survey) the data part is left as it is (data_kept lists what
+    differed), except colors."""
     if t["problems"]:
         raise TemplateError("The template has problems, so nothing was changed:\n" + "\n".join(t["problems"]))
     plan = compare(cfg, t)
+    kept = [] if data else data_differs(cfg, t, plan)
     for name, text in t["csv"].items():
+        if name in kept:
+            continue
         _write(cfg.current_dir / name, text)
     if t["display"] is not None:
         cfg.save_display(t["display"], replace=True)
-    if t["reports"] is not None:
+    if t["reports"] is not None and (data or not any(f.startswith("Saved report: ") for f in kept)):
         cfg.save_reports({fn: json.loads(text) for fn, text in t["reports"].items()})
-    done = _apply_parts(cfg, t)
+    done = _apply_parts(cfg, t, data)
+    done["data_kept"] = kept
     if t["history"]:
         save_local_history(cfg, list(reversed(t["history"])))
     cfg.ensure_defaults()          # a list the template doesn't have keeps the one in use (or the default)
     cfg.reload()
-    return [r["file"] for r in plan if r["status"] not in ("same", "kept")], done
+    return [r["file"] for r in plan if r["status"] not in ("same", "kept") and r["file"] not in kept], done
 
 
-def _apply_parts(cfg, t: dict) -> dict:
+def _apply_parts(cfg, t: dict, data: bool = True) -> dict:
     done = {"settings": False, "inputs": False, "feeds": [], "routes": [], "overlays": [], "waypoints": [],
             "remove_waypoints": [], "online": None}
     s = t.get("settings")
     if s:
-        upd = {k: v for k, v in s["settings"].items() if cfg.settings.get(k) != v}
+        upd = {k: v for k, v in s["settings"].items() if cfg.settings.get(k) != v and (data or k not in LOCKED_SETTINGS)}
         if s["nmea_inputs"] is not None:
             mine = list(cfg.settings.get("nmea_sources") or [])
             new = merge_network_inputs(mine, s["nmea_inputs"])

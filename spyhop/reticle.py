@@ -13,6 +13,7 @@ method is one of:
                 the mark number, counted from the horizontal (mark 0), and each mark is a fixed angle
                 (deg_per_division) further down, so the angle below the horizontal is n × that angle.
   inclinometer  the angle below the horizontal, in degrees, read directly.
+  other         the placeholder entry Other (0.40): the reading is kept, no distance is worked out.
 
 The distance follows Lerczak & Hobbs (1998, Marine Mammal Science 14: 590–599), which allows for the
 curvature of the earth (no refraction correction): for eye height h above a sphere of radius R and
@@ -32,7 +33,8 @@ FT = 0.3048
 
 METHODS = {"binoculars": "Binocular reticles",
            "marks": "Calibrated marks",
-           "inclinometer": "Inclinometer degrees"}
+           "inclinometer": "Inclinometer degrees",
+           "other": "Other (no distance worked out)"}
 
 # magnification → (label, degrees per reticle division). These are starting points only: the angle
 # of one division depends on the make and model, so check the binoculars' manual or calibrate them.
@@ -58,6 +60,9 @@ def dip(h_m: float) -> float:
 def angle_below_horizontal(reading: float, h_m: float, settings: dict) -> float:
     """The angle below the horizontal (radians) for a reading, by the method in settings."""
     method = settings.get("reticle_method") or "binoculars"
+    if method == "other":
+        raise ReticleError("reticles-Other is a placeholder, so no distance is worked out: after the survey, "
+                           "add the reticle in Settings → Dropdowns → Reticles and use it in Unit.")
     if method == "inclinometer":
         return math.radians(float(reading))
     per = float(settings.get("reticle_deg_per_division") or 0)
@@ -94,7 +99,7 @@ def reading_for(distance_m_: float, altitude_ft: float, settings: dict) -> float
     """The reading that gives a distance (for a position picked on the map), or None."""
     method = settings.get("reticle_method") or "binoculars"
     h = float(altitude_ft) * FT
-    if h <= 0 or distance_m_ <= 0:
+    if method == "other" or h <= 0 or distance_m_ <= 0:
         return None
     g = distance_m_ / R                                         # angle at the earth's center
     rh = R + h

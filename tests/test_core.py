@@ -1169,7 +1169,7 @@ def test_save_lists_and_shortcuts(tmp_path):
             {"name": "", "color": "", "species_code": ""},                       # blank: dropped
             {"name": "Sei whale", "color": "#00aa88", "species_code": "SEWH", "extra": "x"}]
     cfg.save_list("species", rows)
-    assert [s["name"] for s in cfg.lists["species"]] == ["Fin whale", "Sei whale"]
+    assert [s["name"] for s in cfg.lists["species"]] == ["Fin whale", "Sei whale", "Other"]
     for bad, words in (([{"name": "A", "species_code": "X"}, {"name": "a", "species_code": "Y"}], "already used"),
                        ([{"name": "A", "species_code": "X"}, {"name": "B", "species_code": "x"}], "Code “x” is already used"),
                        ([{"name": "A", "color": "not a color!"}], "isn't a color"),
@@ -1177,7 +1177,7 @@ def test_save_lists_and_shortcuts(tmp_path):
                        ([], "can't be empty")):
         with pytest.raises(ValueError, match=words):
             cfg.save_list("species", bad)
-    assert [s["name"] for s in cfg.lists["species"]] == ["Fin whale", "Sei whale"]   # unchanged
+    assert [s["name"] for s in cfg.lists["species"]] == ["Fin whale", "Sei whale", "Other"]   # unchanged
     cfg.save_list("observers", [{"name": "HJ", "full_name": "Hansen Johnson"}, {"name": "NA", "full_name": "None"}])
     assert cfg.lists["observers"][0]["full_name"] == "Hansen Johnson"
     with pytest.raises(ValueError):
@@ -1219,7 +1219,7 @@ def test_lists_locked_during_survey(tmp_path):
     assert app.rec.cfg.shortcuts[0]["action"] == "undo"
     app.rec.end_survey()
     asyncio.run(app.save_list(Req({"list": "species", "rows": [{"name": "X"}]})))
-    assert [s["name"] for s in app.rec.cfg.lists["species"]] == ["X"]
+    assert [s["name"] for s in app.rec.cfg.lists["species"]] == ["X", "Other"]
 
 
 
@@ -1472,6 +1472,9 @@ def test_reports_presets_run_and_export(rec):
         filters.delete(rec.cfg, x["file"])
     assert filters.load(rec.cfg)[0] == []
     filters.save(rec.cfg, {**spec, "name": "Right whales", "codes": ["RIWH"]})
+    with pytest.raises(ValueErrorMsg, match="during a survey"):         # 0.40: reports wait for the end
+        rec.export(["report:right_whales.json"])
+    rec.end_survey()
     out = rec.export(["report:right_whales.json"])
     assert out.name.startswith("Test_report_right_whales") and out.suffix == ".csv"
     with pytest.raises(ValueErrorMsg):
@@ -1645,7 +1648,7 @@ def test_template_check_use_backup(tmp_path):
         assert [m["notes"] for m in t["history"]] == ["Added test whale", "First version"]    # newest first
         assert t["history"][0]["changed"] == "species.csv" and t["display"] == {"marker_radius": "11"}
         plan = {r["file"]: r for r in templates.compare(cfg, t)}
-        assert plan["species.csv"]["status"] == "changed" and plan["species.csv"]["in_template"] == 3
+        assert plan["species.csv"]["status"] == "changed" and plan["species.csv"]["in_template"] == 4   # with Other (0.40)
         assert plan["observers.csv"]["status"] == "changed"
         assert plan["Map display"]["status"] == "changed" and "marker_radius: 8 → 11" in plan["Map display"]["detail"]
         assert plan["Saved report: Gear (team)"]["status"] == "new" and plan["Saved report: Mine"]["status"] == "removed"
@@ -1663,7 +1666,7 @@ def test_template_check_use_backup(tmp_path):
 
         changed = templates.apply(cfg, t)
         assert "species.csv" in changed and "Saved report: Mine" in changed and "Map display" in changed
-        assert [s["name"] for s in cfg.lists["species"]] == ["North Atlantic right whale", "Humpback whale", "Spyhop test whale"]
+        assert [s["name"] for s in cfg.lists["species"]] == ["North Atlantic right whale", "Humpback whale", "Spyhop test whale", "Other"]
         assert sorted(cfg.reports) == ["team_gear.json"]                     # replaced as a set
         assert cfg.display["marker_radius"] == "11" and cfg.display["label_size"] == "12"      # missing keys come back
         assert [e["notes"] for e in templates.local_history(cfg)] == ["First version", "Added test whale"]
@@ -2141,7 +2144,7 @@ def test_old_layout_moved_once(tmp_path):
     cfg = Config(root)
     assert any("new layout" in n for n in cfg.notices)
     assert sorted(p.name for p in root.iterdir()) == ["charts", "data", "overlays", "routes", "spyhop-local.json", "templates"]
-    assert [r["name"] for r in cfg.lists["species"]] == ["Test whale"] and cfg.shortcuts[0]["combo"] == "Mod+Shift+T"
+    assert [r["name"] for r in cfg.lists["species"]] == ["Test whale", "Other"] and cfg.shortcuts[0]["combo"] == "Mod+Shift+T"
     assert cfg.display["marker_radius"] == "11" and sorted(cfg.reports) == ["mine.json"]
     assert cfg.settings["timezone"] == "UTC" and cfg.settings["follow_vessel"] is False
     assert cfg.settings["nmea_sources"] == [{"type": "serial", "port": "COM4"}, {"type": "udp", "port": 2000}]
@@ -2632,7 +2635,7 @@ def test_reticles_visibility_weather_lists_and_glare(tmp_path):
     cfg = rec.cfg
     assert {"visibility", "weather", "reticles"} <= set(cfg.lists) and (cfg.current_dir / "reticles.csv").is_file()
     assert "UNK" not in [r[0] for r in DEFAULT_LISTS["observers"][1]]
-    assert rec.list_values("distunit") == ["m", "km", "nm", "mi", "yd", "reticles-binos", "reticles-big-eyes", "reticles-incl"]
+    assert rec.list_values("distunit") == ["m", "km", "nm", "mi", "yd", "reticles-binos", "reticles-big-eyes", "reticles-incl", "reticles-Other"]
     assert "reticle_method" not in cfg.settings
     # checked when saved
     for bad, msg in [({"name": "big eyes", "method": "binoculars", "deg_per_division": "0.1"}, "no spaces"),
@@ -2702,13 +2705,14 @@ def test_data_settings_are_locked_during_a_survey(tmp_path):
     (cfg.current_dir / "weather.csv").write_text("name\nHail\n")
     (cfg.current_dir / "shortcuts.csv").write_text(other_shortcuts.replace("Mod+Shift+K", "Mod+Shift+J"))
     r = _run(app.reload_config(_Req()))
-    assert r["kept"] == ["weather.csv"] and [x["name"] for x in cfg.lists["weather"]] == ["Sunny", "Murky"]
+    assert r["kept"] == ["weather.csv"] and [x["name"] for x in cfg.lists["weather"]] == ["Sunny", "Murky", "Other"]
     assert "Sunny" in (cfg.current_dir / "weather.csv").read_text()
     assert any(s["combo"] == "Mod+Shift+J" for s in cfg.shortcuts)
-    # a template that would change a locked list is refused; one that only changes shortcuts is used
+    # 0.40: a template used during a survey changes only the preferences: the locked lists stay
     chk = _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))
-    with pytest.raises(ValueErrorMsg, match="weather.csv"):
-        asyncio.run(app.templates_use(_Req({"token": chk["token"]})))
+    r = _run(app.templates_use(_Req({"token": chk["token"]})))
+    assert r["data_kept"] == ["weather.csv"] and [x["name"] for x in cfg.lists["weather"]] == ["Sunny", "Murky", "Other"]
+    assert not any(s["combo"] == "Mod+Shift+J" for s in cfg.shortcuts)                 # the template's shortcuts
     app.rec.end_survey()
     _run(app.templates_use(_Req({"token": _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))["token"]})))
     assert [x["name"] for x in cfg.lists["weather"]][0] == "Clear"
@@ -2755,7 +2759,7 @@ def test_effort_list_status_definition_color(tmp_path):
     rec = Recorder(tmp_path)
     _sim_fix(rec)
     cfg = rec.cfg
-    assert [r["name"] for r in cfg.lists["effort"]] == ["Start", "ON", "TRANSECT", "DIRECTED", "PHOTO-ID", "FOLLOW", "OFF", "End", "ERROR"]
+    assert [r["name"] for r in cfg.lists["effort"]] == ["Start", "ON", "TRANSECT", "DIRECTED", "PHOTO-ID", "FOLLOW", "OFF", "Other", "End", "ERROR"]
     assert schema.ON_EFFORT == ("ON", "TRANSECT", "DIRECTED", "PHOTO-ID", "FOLLOW") and "effort" in LOCKED_LISTS
     with pytest.raises(ValueError, match="must include End, ERROR"):
         cfg.save_list("effort", [{"name": "Start", "status": "off"}, {"name": "ON", "status": "on"}])
@@ -2781,3 +2785,76 @@ def test_effort_list_status_definition_color(tmp_path):
     cfg.lists["effort"] = []
     schema.set_effort_list(None)                                  # back to the defaults for the other tests
     assert schema.ON_EFFORT == schema.DEFAULT_ON_EFFORT
+
+
+def test_template_parts_colors_and_other(tmp_path):
+    """0.40: a template's data part waits during a survey, its preferences don't; colors may change during a
+    survey; every list has Other, flagged by the Error check."""
+    import asyncio
+    from spyhop.server import App
+    from spyhop import templates, qc
+    from spyhop.config import DEFAULT_LISTS
+    app = App(tmp_path)
+    cfg, rec = app.rec.cfg, app.rec
+    assert all(any(r[0] == "Other" for r in rows) for _, rows in DEFAULT_LISTS.values())
+    cfg.save_list("weather", [{"name": "Sunny"}])                         # Other comes back at the end
+    assert [x["name"] for x in cfg.lists["weather"]] == ["Sunny", "Other"]
+    _run(app.templates_save(_Req({"by": "HJ", "notes": "first", "name": "Team"})))
+    cfg.save_list("weather", [{"name": "Sunny"}, {"name": "Fog"}, {"name": "other"}])
+    cfg.save_shortcuts([{"combo": "Alt+9", "action": "undo", "prefill": ""}])
+    _run(app.settings(_Req({"updates": {"bearing_reference": "M", "distance_unit": "km"}})))
+    _sim_fix(rec)
+    rec.start_survey("P", meta={"platform_type": "Shipboard"})
+    t = templates.read_template_file(cfg, "Team.spyhop-template.zip")
+    plan = {r["file"]: r for r in templates.compare(cfg, t)}
+    assert plan["weather.csv"]["part"] == "data" and plan["shortcuts.csv"]["part"] == "prefs"
+    assert plan[templates.SETTINGS_LABEL]["status"] == "changed" and plan[templates.SETTINGS_LABEL]["part"] == "prefs"
+    assert templates.data_differs(cfg, t) == ["weather.csv"]
+    # colors only: allowed during a survey; anything else isn't
+    rows = [dict(r) for r in cfg.lists["species"]]
+    rows[0]["color"] = "#010203"
+    _run(app.save_list(_Req({"list": "species", "rows": rows})))
+    assert cfg.lists["species"][0]["color"] == "#010203"
+    rows[0]["species_code"] = "ZZZZ"
+    with pytest.raises(ValueErrorMsg, match="only the colors"):
+        asyncio.run(app.save_list(_Req({"list": "species", "rows": rows})))
+    assert rec.template_status()["differs"] == []                         # colors don't count
+    # using the template now takes the preferences only
+    r = _run(app.templates_use(_Req({"token": _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))["token"]})))
+    assert r["data_kept"] == ["weather.csv"] and [x["name"] for x in cfg.lists["weather"]] == ["Sunny", "Fog", "Other"]
+    assert not any(s["combo"] == "Alt+9" for s in cfg.shortcuts) and cfg.settings["distance_unit"] != "km"
+    # Other is a placeholder the Error check lists
+    rec.new_row("effort", {"Effort": "ON", "Weather": "Other", "Port": "Other", "Starboard": "Other"})
+    rec.new_row("sightings", {"Species": "Other", "Count": "1", "Bearing": "10", "BrgRef": "T", "Distance": "3", "DistUnit": "reticles-Other"})
+    issues = [i for i in qc.run_qc(rec)["issues"] if i["check"] == "Other placeholders"]
+    assert {i["column"] for i in issues} >= {"Weather", "Port", "Starboard", "Species", "DistUnit"}
+    assert not any(i["check"] == "Observers in one position at a time" and "Other" in i["message"] for i in qc.run_qc(rec)["issues"])
+
+
+def test_reports_are_data_and_wait_for_the_end(tmp_path):
+    """0.40: saved reports are in the data part; no report can be run, saved or deleted during a survey."""
+    import asyncio
+    from spyhop.server import App
+    from spyhop import templates, reports
+    app = App(tmp_path)
+    cfg, rec = app.rec.cfg, app.rec
+    _run(app.templates_save(_Req({"by": "HJ", "notes": "first", "name": "Team"})))
+    spec = {"name": "Mine", "table": "sightings", "columns": ["Species"]}
+    reports.save(cfg, spec)
+    _sim_fix(rec)
+    rec.start_survey("R", meta={"platform_type": "Shipboard"})
+    for call, body in ((app.report_run, {"spec": spec}), (app.report_save, {"spec": spec}),
+                       (app.report_delete, {"file": "mine.json"}), (app.reports_batch, {"files": ["mine.json"], "formats": ["csv"]})):
+        with pytest.raises(ValueErrorMsg, match="during a survey"):
+            asyncio.run(call(_Req(body)))
+    t = templates.read_template_file(cfg, "Team.spyhop-template.zip")
+    plan = templates.compare(cfg, t)
+    assert all(r["part"] == "data" for r in plan if r["file"].startswith("Saved report: "))
+    assert "Saved report: Mine" in templates.data_differs(cfg, t, plan)
+    r = _run(app.templates_use(_Req({"token": _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))["token"]})))
+    assert "mine.json" in cfg.reports and "Saved report: Mine" in r["data_kept"]          # kept until the end
+    snap = cfg.locked_snapshot()
+    cfg.save_reports({})                                                            # a hand edit
+    assert "saved reports" in cfg.restore_locked(snap) and "mine.json" in cfg.reports
+    rec.end_survey()
+    assert _run(app.report_run(_Req({"spec": spec})))["result"] is not None

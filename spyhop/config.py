@@ -76,6 +76,7 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
         ["Marine debris", "sienna", "DEBR"],
         ["Fishing gear - reported", "darkorange", "GRPT"],
         ["Fishing gear - recovered", "chocolate", "GRCV"],
+        ["Other", "black", "OTHR"],
     ]),
     "event_types": (["name", "color", "event_code"], [
         ["CTD cast", "blue", "CTD"],
@@ -98,6 +99,7 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
         ["OBS3", "Observer 3"],
         ["OBS4", "Observer 4"],
         ["NA", "None"],             # an empty watch position: may fill several positions at once
+        ["Other", "Someone not in this list (fill in after the survey)"],
     ]),
     # Effort values (0.39): status on/off decides plotting, reporting and the Error check; color = the track.
     # Start, End and ERROR are required (Start/End begin and end a survey; ERROR is added by Error check → Fix).
@@ -109,12 +111,13 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
         ["PHOTO-ID", "on", "Conducting a photo-ID survey.", "#9b30d9"],
         ["FOLLOW", "on", "Conducting a focal follow.", "#c0306a"],
         ["OFF", "off", "Observers are off watch.", "#7a7a7a"],
+        ["Other", "off", "An effort value not in this list: fill in the right one after the survey.", "#a0a0a0"],
         ["End", "off", "Survey ended (the last row only; use End survey in the Survey tab).", "#7a7a7a"],
         ["ERROR", "off", "A trackline break (GPS jump or loss), added by Error check → Fix; not drawn or counted.", "#d00000"],
     ]),
-    "visibility": (["name"], [["<0.5 nm"], ["0.5-1 nm"], ["1-2 nm"], ["2-5 nm"], ["5-10 nm"], [">10 nm"]]),
+    "visibility": (["name"], [["<0.5 nm"], ["0.5-1 nm"], ["1-2 nm"], ["2-5 nm"], ["5-10 nm"], [">10 nm"], ["Other"]]),
     "weather": (["name"], [["Clear"], ["Partly cloudy"], ["Overcast"], ["Haze"], ["Fog"], ["Mist"],
-                           ["Drizzle"], ["Rain"], ["Showers"], ["Snow"]]),
+                           ["Drizzle"], ["Rain"], ["Showers"], ["Snow"], ["Other"]]),
     # how reticle distances are worked out (reticle.py): Unit = reticles-<name> on a sighting.
     # binoculars: magnification (a key of reticle.PRESETS, a suggestion) and degrees per division;
     # marks: evenly spaced calibrated marks, degrees between marks; inclinometer: the reading is the angle itself.
@@ -122,6 +125,7 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
         ["binos", "binoculars", "7", "0.573"],
         ["big-eyes", "binoculars", "25", "0.0771"],
         ["incl", "inclinometer", "", ""],
+        ["Other", "other", "", ""],
     ]),
     "behaviors": (["name", "behavior_code", "definition"], [
         ["Travel", "TR", "Moving steadily in one direction, with regular surfacings and dives."],
@@ -144,7 +148,7 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
         ["Avoidance", "AV", "Moving away from the vessel, changing heading or diving as the vessel approaches."],
         ["Approach vessel", "AP", "Moving toward the vessel or staying close beside it."],
         ["Entangled", "EN", "Fishing gear, line or debris seen on the animal."],
-        ["Other", "OT", "A behavior not in this list: describe it in Comments."],
+        ["Other", "OT", "A behavior not in this list: describe it in Notes, and fill in the right one after the survey."],
     ]),
 }
 
@@ -191,6 +195,22 @@ LOCKED_LISTS = ("species", "event_types", "observers", "behaviors", "effort", "v
 LOCKED_SETTINGS = {"mag_variation": "Magnetic variation", "tracking_interval": "Track point every (s)",
                    "track_break_kn": "Break the track above (kn)", "track_break_gap_s": "Break the track after a gap of (s)"}
 UNIQUE_COLUMNS = {"name", "species_code", "event_code", "behavior_code"}
+# every drop-down list has "Other" (0.40): a placeholder for an entry that's missing from the list, which
+# can't be added during a survey; the Error check lists the rows that use it, to fill in afterwards
+OTHER = "Other"
+COLOR_COLUMNS = {"color"}           # the only columns of a locked list that may change during a survey
+
+
+def other_row(name: str) -> dict:
+    """The default "Other" entry of a list."""
+    hdr, rows = DEFAULT_LISTS[name]
+    row = next(r for r in rows if r[0] == OTHER)
+    return dict(zip(hdr, row))
+
+
+def without_colors(rows) -> list[dict]:
+    """A list's rows without their colors, to tell whether anything but colors changed."""
+    return [{k: str(v or "").strip() for k, v in r.items() if k not in COLOR_COLUMNS} for r in rows or []]
 SHORTCUT_VERBS = {"add", "tab"}            # verbs that take ":<argument>"
 SHORTCUT_ACTIONS = {"add-current", "add-resight", "toggle-effort", "undo", "redo", "next-tab", "prev-tab",
                     "center-vessel", "toggle-log", "max-log", "measure"}
@@ -207,6 +227,8 @@ def _clean_reticle(row: dict) -> dict:
     if method not in reticle.METHODS:
         raise ValueError("choose how readings are taken: " + ", ".join(reticle.METHODS) + ".")
     out = {"method": method, "magnification": "", "deg_per_division": ""}
+    if method == "other":                   # the placeholder: no distance is worked out
+        return out
     if method in ("binoculars", "marks"):
         mag = row.get("magnification", "").strip() if method == "binoculars" else ""
         if mag and mag not in reticle.PRESETS:
@@ -534,17 +556,23 @@ class Config:
     # -- what can't change during an active survey (0.37) ------------------------------
     def locked_snapshot(self) -> dict:
         return {"lists": {n: [dict(r) for r in self.lists.get(n, [])] for n in LOCKED_LISTS},
-                "settings": {k: self.settings.get(k) for k in LOCKED_SETTINGS}}
+                "settings": {k: self.settings.get(k) for k in LOCKED_SETTINGS},
+                "reports": json.loads(json.dumps(self.reports))}           # saved reports: data part too (0.40)
 
     def restore_locked(self, snap: dict) -> list[str]:
         """Put back the locked lists and settings from a snapshot (files too) if they changed; returns what was put back."""
         back = []
         for n, rows in snap["lists"].items():
+            if self.lists.get(n) != rows and without_colors(self.lists.get(n)) == without_colors(rows):
+                continue                     # only colors changed: allowed during a survey (0.40)
             if self.lists.get(n) != rows:
                 hdr = list(dict.fromkeys([*DEFAULT_LISTS[n][0], *(k for r in rows for k in r)]))
                 _write_csv(self.list_path(n), hdr, [[r.get(c, "") for c in hdr] for r in rows])
                 self.lists[n] = rows
                 back.append(f"{n}.csv")
+        if "reports" in snap and self.reports != snap["reports"]:
+            self.save_reports(snap["reports"])
+            back.append("saved reports")
         changed = {k: v for k, v in snap["settings"].items() if self.settings.get(k) != v}
         if changed:
             self.settings.update(changed)
@@ -564,6 +592,14 @@ class Config:
             have = [h for h in have if h != "marks"]
         return known + [h for h in have if h not in known]
 
+    def colors_only_change(self, name: str, rows: list[dict]) -> bool:
+        """True if `rows` differ from the list in use only in their colors (allowed during a survey)."""
+        hdr = self.list_header(name)
+        new = [{c: str((r or {}).get(c, "") or "").strip() for c in hdr} for r in rows or []]
+        new = [r for r in new if any(r.values())]
+        old = [{c: str(r.get(c, "") or "").strip() for c in hdr} for r in self.lists.get(name, [])]
+        return without_colors(new) == without_colors(old)
+
     def save_list(self, name: str, rows: list[dict]) -> list[dict]:
         """Replace a drop-down list (Settings → Dropdowns). Raises ValueError listing the problems."""
         if name not in DEFAULT_LISTS:
@@ -582,6 +618,8 @@ class Config:
                     row.update(_clean_reticle(row))
                 except ValueError as e:
                     problems.append(f"Row {i} ({row['name']}): {e}")
+            if row["name"].lower() == OTHER.lower():
+                row["name"] = OTHER
             if name == "effort" and row["name"]:
                 req = next((x for x in schema.EFFORT_REQUIRED if x.lower() == row["name"].lower()), None)
                 if req:
@@ -603,6 +641,8 @@ class Config:
             out.append(row)
         if not out:
             problems.append("The list can't be empty.")
+        if out and not any(r["name"] == OTHER for r in out):     # always there (0.40): put back at the end
+            out.append({c: other_row(name).get(c, "") for c in hdr})
         if name == "effort":
             have = {r["name"] for r in out}
             miss = [x for x in schema.EFFORT_REQUIRED if x not in have]
@@ -665,6 +705,15 @@ class Config:
                 self.lists[name] = [r for r in _read_csv(self.list_path(name)) if r.get("name")]
             except FileNotFoundError:
                 self.lists[name] = []
+        for name in DEFAULT_LISTS:          # every list has Other (0.40); one without it gets it at the end
+            rows = self.lists[name]
+            if rows and not any(r.get("name") == OTHER for r in rows) and self.list_path(name).exists():
+                hdr = self.list_header(name)
+                rows.append({c: other_row(name).get(c, "") for c in hdr})
+                try:
+                    _write_csv(self.list_path(name), hdr, [[r.get(c, "") for c in hdr] for r in rows])
+                except OSError:
+                    pass
         schema.set_effort_list(self.lists.get("effort"))
         try:
             self.shortcuts = [r for r in _read_csv(self.shortcuts_path) if r.get("combo")]

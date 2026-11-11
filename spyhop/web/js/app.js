@@ -1091,7 +1091,7 @@ class App {
     if (!t.saved || !t.differs?.length) return null;
     return el('div', { class: 'warnbox', id: 'survey-template-note' },
       el('p', {}, el('b', {}, 'This survey was recorded with a different template. '),
-        `It differs from the current template in: ${t.differs.join(', ')}. The data aren’t changed either way, but the drop-downs, colors and the Error check use the current template, so values that aren’t in its lists are flagged.`),
+        `Its data part (the lists and data settings) differs from the current template in: ${t.differs.join(', ')}. The data aren’t changed either way, but the drop-downs and the Error check use the current template, so values that aren’t in its lists are flagged.`),
       el('div', { class: 'btnrow' },
         el('button', { id: 'btn-use-survey-template', onclick: () => this.useSurveyTemplate(sv) }, 'Compare and use the survey’s template…')));
   }
@@ -1191,8 +1191,9 @@ class App {
         return el('label', { class: 'check' }, boxes[k], el('span', {}, el('b', {}, label), el('br'), el('span', { class: 'hint' }, hint)));
       }),
       REPORTS.length ? el('h4', {}, 'Saved reports (Tools → Reports)') : null,
+      REPORTS.length && sv.active ? el('p', { class: 'hint', id: 'export-reports-locked' }, 'Saved reports can be exported once the survey ends.') : null,
       ...REPORTS.map(([k, label, hint]) => {
-        boxes[k] = el('input', { type: 'checkbox', checked: chosen.includes(k), onchange: update });
+        boxes[k] = el('input', { type: 'checkbox', checked: chosen.includes(k) && !sv.active, disabled: !!sv.active, onchange: update });
         return el('label', { class: 'check' }, boxes[k], el('span', {}, el('b', {}, label), el('br'), el('span', { class: 'hint' }, hint)));
       }),
       el('label', { class: 'row' }, 'Save the summary as ', asSel,
@@ -1874,6 +1875,7 @@ class App {
       kids.push(el('p', { class: 'okbox', id: 'tpl-done' }, repl.length || addText || tp.done.removed
         ? ['Done.', repl.length ? ` Updated: ${repl.join(', ')}.` : '', addText ? ` Added ${addText}.` : '',
           tp.done.removed ? ` Removed ${tp.done.removed} waypoint${tp.done.removed > 1 ? 's' : ''} the template had added.` : ''].join('') : 'Done; nothing needed changing.',
+        tp.done.kept?.length ? el('span', {}, ` Kept until the survey ends: ${tp.done.kept.join(', ')}.`) : '',
         tp.done.copy ? el('span', {}, ' A copy was kept in the templates folder as ', el('span', { class: 'mono' }, tp.done.copy), '.') : '',
         tp.done.backup ? el('span', {}, ' Backup saved as ', el('span', { class: 'mono' }, tp.done.backup), '. ') : ' ',
         el('a', { href: '#', onclick: (e) => { e.preventDefault(); tp.done = null; this.renderTemplates(); } }, 'OK')));
@@ -1914,12 +1916,16 @@ class App {
     const S = this.S, st = S.config.settings, tp = this.tpl;
     const label = { new: 'New — will be added', changed: 'Changed — replaces this computer’s copy', same: 'Same as here',
       removed: r.kind === 'backup' ? 'Will be removed' : 'Not in the template — will be removed', kept: 'Already here — this computer’s is kept' };
-    const todo = r.files.filter((f) => f.status !== 'same' && f.status !== 'kept');
+    // during a survey the data part (lists, data settings) waits until it ends; colors don't (0.40)
+    const waits = (f) => r.survey_active && f.part === 'data' && f.status !== 'same' && f.status !== 'kept' && !f.colors_only;
+    const todo = r.files.filter((f) => f.status !== 'same' && f.status !== 'kept' && !waits(f));
     const title = r.kind === 'backup' ? `Restoring the backup ${r.name}` : r.kind === 'folder' ? `Using the template ${r.name}`
       : r.kind === 'survey' ? `The template the survey was recorded with (${r.name})` : 'The template from the web';
     const box = [el('h4', {}, `${title}: what would change`), el('p', { class: 'hint' }, `From ${r.source}`)];
-    box.push(el('p', { class: 'warnbox' }, el('b', {}, 'This replaces this computer’s lists, shortcuts, map display, saved reports and shared settings. '),
-      'The template’s lists, shortcuts and map display replace the ones here (nothing is merged); its saved reports replace all of this computer’s saved reports; its settings and network GPS / NMEA inputs replace this computer’s. Map feeds, waypoints, routes and overlays are only added: any already here are kept as they are, and none are removed',
+    if (r.survey_active && r.files.some(waits)) box.push(el('p', { class: 'warnbox', id: 'tpl-waits' }, el('b', {}, 'A survey is under way: '),
+      'only the preferences (and list colors) can be used now. The data part — the lists and the data settings — stays as it is until the survey ends.'));
+    box.push(el('p', { class: 'warnbox' }, el('b', {}, 'The template’s data part and preferences replace this computer’s '),
+      '(nothing is merged; its saved reports replace all of this computer’s). Map feeds, waypoints, routes and overlays are only added',
       r.kind === 'backup' ? ', except those the template used after this backup added, which are taken away.' : '.',
       ' Survey data, offline charts, serial GPS ports and the data folder are never changed.'));
     const inf = r.info || {};
@@ -1938,11 +1944,14 @@ class App {
     const count = (f, n) => (f.unit === 'rows' || f.unit === 'waypoints') && n != null ? `${n} ${f.unit === 'rows' ? 'row' : 'waypoint'}${n === 1 ? '' : 's'}` : '';
     box.push(el('table', { class: 'summary tpl-parts' },
       el('thead', {}, el('tr', {}, ['What', 'What happens', 'Here', 'In the template'].map((h) => el('th', {}, h)))),
-      el('tbody', {}, r.files.map((f) => el('tr', { class: `tpl-${f.status}` },
-        el('td', { class: ['rows', 'route', 'overlay'].includes(f.unit) ? 'mono' : '' }, f.file),
-        el('td', {}, f.unit === 'waypoints' && f.status === 'new' ? `${f.add} new — will be added` : label[f.status],
-          f.detail ? el('div', { class: 'tpl-note' }, f.detail) : null),
-        el('td', {}, count(f, f.here)), el('td', {}, count(f, f.in_template)))))));
+      el('tbody', {}, Object.entries(S.schema.template_parts || { data: 'Data', prefs: 'Preferences', extra: 'Added to this computer' }).flatMap(([part, name]) => {
+        const fs = r.files.filter((f) => (f.part || 'prefs') === part);
+        return fs.length ? [el('tr', { class: 'tpl-part', 'data-part': part }, el('th', { colspan: 4 }, name)), ...fs.map((f) => el('tr', { class: `tpl-${waits(f) ? 'waits' : f.status}` },
+          el('td', { class: ['rows', 'route', 'overlay'].includes(f.unit) ? 'mono' : '' }, f.file),
+          el('td', {}, waits(f) ? 'Changed — waits until the survey ends' : f.unit === 'waypoints' && f.status === 'new' ? `${f.add} new — will be added` : label[f.status],
+            f.detail ? el('div', { class: 'tpl-note' }, f.detail) : null),
+          el('td', {}, count(f, f.here)), el('td', {}, count(f, f.in_template))))] : [];
+      }))));
     if (r.history.length) {
       box.push(el('h4', {}, 'Recent changes in the template'), el('table', { class: 'summary' },
         el('thead', {}, el('tr', {}, ['Date', 'Changed by', 'What changed', 'Notes'].map((h) => el('th', {}, h)))),
@@ -1952,7 +1961,9 @@ class App {
     const cancel = el('button', { onclick: () => { tp.result = null; this.renderTemplates(); } }, 'Cancel');
     if (!r.problems.length) {
       if (!todo.length) {
-        box.push(el('p', { id: 'tpl-uptodate' }, el('b', {}, 'The current template is already the same as this one.')),
+        box.push(r.files.some(waits)
+          ? el('p', { id: 'tpl-uptodate' }, el('b', {}, 'Only the data part differs, so there is nothing to use until the survey ends.'))
+          : el('p', { id: 'tpl-uptodate' }, el('b', {}, 'The current template is already the same as this one.')),
           el('div', { class: 'btnrow' }, el('button', { id: 'btn-tpl-use', onclick: () => this.useTemplate() },
             r.kind === 'web' || r.kind === 'file' ? 'Keep a copy in the templates folder' : 'Mark it as in use'), cancel));
       } else {
@@ -2075,7 +2086,8 @@ class App {
   async useTemplate() {
     const tp = this.tpl, r = tp?.result;
     if (!r) return;
-    const todo = r.files.filter((f) => f.status !== 'same' && f.status !== 'kept');
+    const waits = (f) => r.survey_active && f.part === 'data' && f.status !== 'same' && f.status !== 'kept' && !f.colors_only;
+    const todo = r.files.filter((f) => f.status !== 'same' && f.status !== 'kept' && !waits(f));
     const backup = todo.length ? ($('#tpl-backup')?.checked ?? true) : false;
     if (todo.length) {
       const over = todo.filter((f) => f.status !== 'new' || f.unit === 'rows' || f.unit === 'report');
@@ -2083,13 +2095,14 @@ class App {
       let text = over.length ? `${over.length === 1 ? 'This' : 'These'} will be replaced or removed on this computer: ${over.map((f) => f.file).join(', ')}.` : '';
       if (adds.length) text += `${text ? ' ' : ''}Added: ${adds.map((f) => f.unit === 'waypoints' ? `${f.add} waypoint${f.add > 1 ? 's' : ''}` : f.file).join(', ')}.`;
       text += backup ? ' A backup is saved first.' : ' No backup will be saved, so changes made here to these will be lost.';
-      if (r.survey_active) text += '\n\nA survey is active, so only parts that don’t change the data can be used now (shortcuts, map display, reports, overlays and display settings). If the template would change a drop-down list, the reticles, or the tracking or magnetic variation settings, Spyhop refuses until the survey ends.';
+      const later = r.files.filter(waits).map((f) => f.file);
+      if (later.length) text += `\n\nA survey is under way, so these stay as they are until it ends: ${later.join(', ')}.`;
       if (!await confirmBox('Use this template?', text, r.kind === 'backup' ? 'Restore' : 'Use it', true)) return;
     }
     tp.busy = 'use'; this.renderTemplates();
     try {
       const res = await api('/api/templates/use', { token: r.token, backup });
-      tp.done = { changed: res.changed, backup: res.backup, copy: res.copy, added: res.added, removed: res.removed_waypoints }; tp.result = null;
+      tp.done = { changed: res.changed, backup: res.backup, copy: res.copy, added: res.added, removed: res.removed_waypoints, kept: res.data_kept || [] }; tp.result = null;
       toast(r.kind === 'backup' ? 'Backup restored' : 'Template used');
     } catch { /* toast shown */ }
     tp.busy = null;
@@ -2456,6 +2469,7 @@ class App {
     const toHex = (v) => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = '#000'; c.fillStyle = v || '#000'; return c.fillStyle.startsWith('#') ? c.fillStyle : '#000000'; };
     const R = S.schema.reticle || { methods: {}, presets: {} };
     const required = (r) => cur === 'effort' && EFFORT_REQUIRED.includes(r.name);   // Start, End, ERROR: always there
+    const fixedName = (r) => required(r) || r.name === 'Other';     // Other: in every list (0.40), the placeholder
     const cell = (r, i, c) => {
       if (cur === 'effort' && c === 'status') {
         return el('td', {}, el('select', { disabled: locked || required(r), 'data-col': c,
@@ -2464,8 +2478,9 @@ class App {
           el('option', { value: '', selected: !r.status }, '—'),
           [['on', 'on effort'], ['off', 'off effort']].map(([v, l]) => el('option', { value: v, selected: r.status === v }, l))));
       }
-      if (cur === 'effort' && c === 'name' && required(r)) {
-        return el('td', {}, el('input', { type: 'text', value: r.name, disabled: true, 'data-col': c, size: 26, title: 'Needed by Spyhop: can’t be renamed or removed' }));
+      if (c === 'name' && fixedName(r)) {
+        return el('td', {}, el('input', { type: 'text', value: r.name, disabled: true, 'data-col': c, size: 26,
+          title: r.name === 'Other' ? 'The placeholder for anything missing from this list: can’t be renamed or removed' : 'Needed by Spyhop: can’t be renamed or removed' }));
       }
       if (cur === 'reticles' && c === 'method') {
         return el('td', {}, el('select', { disabled: locked, 'data-col': c, onchange: (e) => { edit()[i].method = e.target.value; this.renderDropdowns(); } },
@@ -2490,9 +2505,9 @@ class App {
       }
       if (c === 'color') {
         const sw = el('span', { class: 'swatch', style: { background: okColor(r.color) ? r.color || 'transparent' : 'transparent' } });
-        const txt = el('input', { type: 'text', value: r.color, disabled: locked, class: okColor(r.color) ? null : 'invalid', size: 12,
+        const txt = el('input', { type: 'text', value: r.color, class: okColor(r.color) ? null : 'invalid', size: 12,
           oninput: (e) => { edit()[i].color = e.target.value.trim(); const ok = okColor(e.target.value.trim()); e.target.classList.toggle('invalid', !ok); sw.style.background = ok ? e.target.value : 'transparent'; markDirty(); } });
-        const pick = el('input', { type: 'color', value: toHex(r.color), disabled: locked, title: 'Pick a color',
+        const pick = el('input', { type: 'color', value: toHex(r.color), title: 'Pick a color',
           oninput: (e) => { edit()[i].color = e.target.value; txt.value = e.target.value; txt.classList.remove('invalid'); sw.style.background = e.target.value; markDirty(); } });
         return el('td', { class: 'color-cell' }, sw, txt, pick);
       }
@@ -2507,7 +2522,7 @@ class App {
       el('td', { class: 'rowbtns' },
         el('button', { title: 'Move up', disabled: locked || i === 0, onclick: () => { const d = edit(); [d[i - 1], d[i]] = [d[i], d[i - 1]]; this.renderDropdowns(); } }, '↑'),
         el('button', { title: 'Move down', disabled: locked || i === rows.length - 1, onclick: () => { const d = edit(); [d[i + 1], d[i]] = [d[i], d[i + 1]]; this.renderDropdowns(); } }, '↓'),
-        el('button', { title: required(r) ? 'Needed by Spyhop: can’t be removed' : 'Delete', class: 'danger-outline', disabled: locked || required(r), onclick: () => { edit().splice(i, 1); this.renderDropdowns(); } }, '✕'))));
+        el('button', { title: fixedName(r) ? 'Always in the list: can’t be removed' : 'Delete', class: 'danger-outline', disabled: locked || fixedName(r), onclick: () => { edit().splice(i, 1); this.renderDropdowns(); } }, '✕'))));
     const pills = el('div', { class: 'report-tabs', id: 'dd-tabs' }, lists.map(([k, l]) => el('button', {
       class: `report-tab${k === cur ? ' active' : ''}${this.ddDrafts[k] ? ' has-draft' : ''}`, 'data-list': k,
       onclick: () => { this.ddTab = k; try { localStorage.setItem('wsr.ddtab', k); } catch {} this.renderDropdowns(); } },
@@ -2519,11 +2534,11 @@ class App {
       visibility: 'The Vis drop-down in Effort. The Error check reads distances from the names (e.g. “1-2 nm” is at most 2 nm, “<0.5 nm” at most 0.5; km, m and mi are understood) to flag sightings beyond the visibility.',
       weather: 'The Weather drop-down in Effort.',
       effort: 'The Effort drop-down in Effort. Status decides whether a value counts as on or off effort: for the track on the map (drawn in the value’s color, with the on- or off-effort width and line from Settings → General → Map display), the Summary’s time on effort and distances, reports and the Error check. Start, End and ERROR are needed by Spyhop and can’t be renamed or removed: Start and End are the first and last rows (Start / End survey in the Survey tab), and Error check → Fix adds ERROR rows to mark a trackline break.',
-      reticles: 'How reticle readings are turned into distances. Each entry is a Unit in Sightings, reticles-<name> (e.g. reticles-binos): type the reading in Dist and the animals’ position comes from the bearing, the reading and the platform altitude (the row’s Alt), allowing for the curvature of the earth (Lerczak & Hobbs 1998). Binocular reticles: divisions counted down from the horizon, each a fixed angle (the magnification suggests one, but check the binoculars’ manual or calibrate them: many 7×50 and 10× marine binoculars have a 10-mil scale, 0.573° per division; Fujinon 25×150 big-eyes are 0.0771°, Kinzey & Gerrodette 2001). Calibrated marks: evenly spaced marks (e.g. on an aircraft’s window or strut), counted down from the horizontal (mark 0); Degrees per division is the angle between one mark and the next, so mark n is n × that angle below the horizontal (no magnification). Inclinometer degrees: the reading is the angle below the horizontal (90 = straight down). Names may use letters, digits, - _ and . (no spaces).' }[cur];
+      reticles: 'How reticle readings are turned into distances. Each entry is a Unit in Sightings, reticles-<name> (e.g. reticles-binos): type the reading in Dist and the animals’ position comes from the bearing, the reading and the platform altitude (the row’s Alt), allowing for the curvature of the earth (Lerczak & Hobbs 1998). Binocular reticles: divisions counted down from the horizon, each a fixed angle (the magnification suggests one, but check the binoculars’ manual or calibrate them: many 7×50 and 10× marine binoculars have a 10-mil scale, 0.573° per division; Fujinon 25×150 big-eyes are 0.0771°, Kinzey & Gerrodette 2001). Calibrated marks: evenly spaced marks (e.g. on an aircraft’s window or strut), counted down from the horizontal (mark 0); Degrees per division is the angle between one mark and the next, so mark n is n × that angle below the horizontal (no magnification). Inclinometer degrees: the reading is the angle below the horizontal (90 = straight down). Other (reticles-Other) is the placeholder: the reading is kept, but no distance is worked out until the right reticle is put in after the survey. Names may use letters, digits, - _ and . (no spaces).' }[cur];
     pane.replaceChildren(pills, el('section', { class: `settings-sec dd-sec${locked ? ' dd-locked' : ''}` },
       el('h3', {}, Object.fromEntries(lists)[cur]),
-      locked ? el('p', { class: 'warnbox', id: 'dd-locked' }, el('b', {}, 'A survey is under way, so the drop-down lists can’t be changed. '),
-        'End the survey (in Survey) to edit them.') : null,
+      locked ? el('p', { class: 'warnbox', id: 'dd-locked' }, el('b', {}, cols.includes('color') ? 'A survey is under way, so only the colors can be changed. ' : 'A survey is under way, so this list can’t be changed. '),
+        'Use Other for anything missing from a list, and fill in the right entry after the survey (the Error check lists the rows). End the survey (in Survey) to edit the lists.') : null,
       el('p', { class: 'hint help' }, what),
       el('table', { class: 'summary edit-table dd-edit', 'data-list': cur },
         el('thead', {}, el('tr', {}, ...cols.map((c) => el('th', {}, labels[c] || c)), el('th', {}, ''))),
@@ -2534,9 +2549,9 @@ class App {
         el('button', { disabled: locked, onclick: () => { edit().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })); this.renderDropdowns(); } }, 'Sort A–Z')),
       el('div', { id: 'dd-errors' }),
       el('div', { class: 'btnrow' },
-        el('button', { id: 'btn-dd-save', class: `primary${dirty ? ' dirty' : ''}`, disabled: locked, onclick: () => this.saveDropdown(cur) }, dirty ? 'Save — unsaved changes' : 'Save'),
-        el('button', { disabled: locked || !this.ddDrafts[cur], onclick: () => { delete this.ddDrafts[cur]; this.renderDropdowns(); } }, 'Revert')),
-      el('p', { class: 'hint help' }, 'The order here is the order in the drop-down. Renaming or removing an entry doesn’t change rows already recorded; the Error check flags values that are no longer in the list.'),
+        el('button', { id: 'btn-dd-save', class: `primary${dirty ? ' dirty' : ''}`, disabled: locked && !cols.includes('color'), onclick: () => this.saveDropdown(cur) }, dirty ? 'Save — unsaved changes' : 'Save'),
+        el('button', { disabled: !this.ddDrafts[cur] || (locked && !cols.includes('color')), onclick: () => { delete this.ddDrafts[cur]; this.renderDropdowns(); } }, 'Revert')),
+      el('p', { class: 'hint help' }, 'The order here is the order in the drop-down. Renaming or removing an entry doesn’t change rows already recorded; the Error check flags values that are no longer in the list. Every list has Other, a placeholder for anything missing from it: lists can’t change during a survey (only their colors can), so record it as Other and fill in the right entry afterwards — the Error check lists the rows that use Other.'),
       this.fileBox(`${cur}.csv`, `config:${cur}`, () => { delete this.ddDrafts[cur]; }, locked)));
   }
 

@@ -428,8 +428,13 @@ td.color-cell input[type=color] { width: 2em; height: 1.7em; padding: 0; border:
 .swatch { display: inline-block; width: 1em; height: 1em; border: 1px solid #0006; border-radius: 3px; vertical-align: middle; margin-right: 0.3em; }
 .report-tab .count { margin-left: 0.45em; font-size: 0.85em; opacity: 0.7; }
 .report-tab.has-draft::after { content: " •"; color: #b9770e; }
-.dd-locked table, .dd-locked .btnrow, .dd-locked > p:not(.warnbox) { opacity: 0.55; }
-.dd-locked input, .dd-locked button { cursor: not-allowed; }
+.dd-locked > p:not(.warnbox) { opacity: 0.55; }
+.dd-locked input:disabled, .dd-locked select:disabled, .dd-locked button:disabled { cursor: not-allowed; }
+/* during a survey only the colors can change (0.40) */
+.dd-locked td:not(.color-cell) { opacity: 0.55; }
+/* Settings → Templates: the parts of a template (0.40) */
+table.tpl-parts tr.tpl-part th { background: var(--panel2); text-align: left; font-size: 0.92em; padding-top: 0.5em; }
+table.tpl-parts tr.tpl-waits td { color: var(--muted); }
 button.dirty { background: #b9770e; border-color: #b9770e; color: #fff; }
 table.dd-edit input[data-col=name], table.dd-edit input[data-col=full_name] { min-width: 16em; }
 .stack-form label.stack { margin: 0.6em 0; }

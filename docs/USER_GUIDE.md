@@ -159,7 +159,7 @@ The window has **three panes** under the status bar: the **map** (top left), **S
     - **Basemap:** downloading areas for offline use, and the charts folder (see *Maps offline* below).
     - **Inputs:** the GPS / NMEA inputs.
     - **Shortcuts:** every keyboard shortcut and what it does.
-    - **Dropdowns:** the species, event, behavior, observer, effort, visibility and weather lists, and the reticles. None of them can change while a survey is active.
+    - **Dropdowns:** the species, event, behavior, observer, effort, visibility and weather lists, and the reticles. Only their colors can change while a survey is active; each has an **Other** entry for anything missing.
     - **Templates:** a team's settings in one file (see *Templates* below).
     - **Guide:** the tutorial, with a list of its sections beside it (above it in a narrow pane) to jump to each one.
     - **About:** the version, the changelog, the diagnostic logs (**Save diagnostics…**), and **Updates**: **Check for updates** looks on GitHub for a newer Spyhop and can install it (with a backup of the old version) and restart. Tick *Check when Spyhop starts* to be told automatically when there's internet. **Uninstall or reinstall:**
@@ -260,12 +260,15 @@ The **Species**, **Events**, **Behaviors**, **Observers**, **Effort**, **Visibil
 - **Effort** entries have a status (on or off effort), a definition and a color; Start, End and ERROR can't be renamed or removed, and at least one entry must be on effort.
 - Names and codes must be unique. Spyhop shows what's wrong and saves nothing until it's fixed.
 - Renaming or removing an entry doesn't change rows already recorded; the Error check flags values that are no longer in the list.
-- **While a survey is under way the lists are grayed out and can't be changed**, so they stay the same for the whole survey. End the survey to edit them. (Using a template during a survey is still possible, after a warning.)
+- **While a survey is under way only the colors can be changed**, so the lists stay the same for the whole survey. End the survey to edit them. Using a template during a survey takes only its preferences and list colors (see *Templates*).
+- **Every list has Other**, the placeholder for anything missing from it (and the reticles have **reticles-Other**, which keeps the reading but works out no distance). Record such a row as Other, with a note, and after the survey add the right entry and replace Other. The **Error check** lists every row that uses Other (*Other placeholders*). Other can't be renamed or removed.
 - For many changes at once, the files (`species.csv` and so on) can still be edited in a spreadsheet and reloaded.
 
 ## Reports (Tools → Reports)
 
-A report is a chosen part of one table: some rows, some columns. It updates as you change it and as records are added, and can be saved as CSV, HTML or PDF.
+A report is a chosen part of one table: some rows, some columns. It updates as you change it, and can be saved as CSV, HTML or PDF.
+
+**Reports are ready when the survey ends.** During a survey (from Start to End) the Reports tab is locked: reports can't be run, saved, changed or deleted, Run Reports isn't offered, and Export Data leaves saved reports out. The saved reports are part of the survey's template, like the drop-down lists, so every computer reports the survey the same way. A survey that has ended, or one opened later, can be reported.
 
 - **Table:** Sightings, Events or Effort. Sightings reports leave out resights: each group of animals appears once, as its first sighting (see *Resights*).
 - **Species** (Sightings) or **Event types** (Events): the codes in this survey, with how many rows each has. Click one or more to keep only those; none picked keeps all. **Add a species…** finds any entry in the list, by code or name. A row matches when its species (or event type) has that code in the Dropdowns list, or was typed as the code itself; a name with no code is shown, and matched, by its name.

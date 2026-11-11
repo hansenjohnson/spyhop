@@ -44,6 +44,8 @@ OPTIONAL = {
 # survey details that may be blank (platform altitude matters only for reticle distances: checked there)
 META_OPTIONAL = {"platform_altitude_ft", "survey_notes"}
 # Start and End rows need only their time and position
+OTHER_LISTS = {"species": "Species", "event_types": "Events", "behaviors": "Behaviors", "observers": "Observers",
+               "effort": "Effort", "visibility": "Visibility", "weather": "Weather", "distunit": "Reticles"}
 EFFORT_START_END_REQUIRED = {"DateTime", "Lat", "Lon", "Effort"}
 NOT_DATA = {"RowID", "Map", "VesHdg"}          # internal / display columns
 
@@ -171,7 +173,7 @@ def on_land(lat, lon, buffer_km=LIMITS["land_buffer_km"]) -> bool:
     return False
 
 
-PLACEHOLDER_OBSERVERS = {"NA", "N/A", "NONE", "-", "—"}
+PLACEHOLDER_OBSERVERS = {"NA", "N/A", "NONE", "-", "—", "OTHER"}   # Other (0.40) may be different people
 
 
 def is_placeholder_observer(name: str, full_name: str = "") -> bool:
@@ -275,6 +277,12 @@ def run_qc(rec) -> dict:
                             add("error" if fixed else "warning", "Values from the lists",
                                 f"{c['label']} “{x}” isn't in the {'allowed values' if fixed else c['list'] + '.csv list'}.",
                                 tab, r, c["key"], name)
+                        # 0.40: Other stands in for an entry missing from a list (lists can't change during a survey)
+                        if x == "Other" or (c["list"] == "distunit" and x == schema.RETICLE_UNIT + "Other"):
+                            where = OTHER_LISTS.get(c["list"], c["list"])
+                            add("warning", "Other placeholders",
+                                f"{c['label']} is {x}, a placeholder: add the missing entry in Settings → Dropdowns → {where} "
+                                f"(after the survey) and put it here.", tab, r, c["key"], name)
                 elif c["type"] in ("lat", "lon"):
                     n = _num(v)
                     lim = 90 if c["type"] == "lat" else 180
@@ -671,6 +679,7 @@ CHECKS = [
     ("Required fields filled", "Sightings: everything except Behaviors, Bearing, Ref, Dist, Unit, FieldID and Notes. "
      "Effort: everything except Notes (Start and End rows: time and position only). Events: everything except ID and Notes."),
     ("Values from the lists", "Choices are in their lists (species, observers, behaviors, event types, sea state…)."),
+    ("Other placeholders", "Rows that use Other, the placeholder for an entry missing from a list (or the reticle reticles-Other): fill in the right entry after the survey."),
     ("Valid numbers, positions and times", "Numbers are numbers, positions are on the globe, times can be read."),
     ("Effort starts with Start / Survey ended", "The first Effort row is Start; the survey has an End row."),
     ("Times within the survey", "Nothing is timed before Start, after End, or in the future; rows are in time order."),
@@ -682,7 +691,7 @@ CHECKS = [
     ("Positions at sea", f"Positions more than {LIMITS['land_buffer_km']:g} km inside the 1:10m coastline are flagged."),
     ("Trackline plausible", "No jumps faster than the trackline-break speed in Settings (30 kn by default); no gaps longer than the GPS-loss time in Settings while recording. A stretch already marked by an ERROR Effort row is skipped; Fix adds one."),
     ("Conditions recorded regularly", f"On effort, a new Effort row at least every {LIMITS['conditions_gap_factor']:g} × the reminder interval."),
-    ("Observers in one position at a time", "Nobody is in two of Port / Recorder / Stbd at once (NA / None, an empty position, can be in several)."),
+    ("Observers in one position at a time", "Nobody is in two of Port / Recorder / Stbd at once (NA / None, an empty position, and Other, the placeholder, can be in several)."),
     ("Sighting observer on watch", "On effort, the sighting's Obs is one of the observers on watch."),
     ("Sightings on effort", "Sightings made off effort are listed (information only; resights aren't)."),
     ("Survey conditions", f"On effort in sea state above {LIMITS['max_seastate_on']} or visibility under 0.5 nm (information only)."),

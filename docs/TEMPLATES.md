@@ -11,6 +11,20 @@ A **template** is your team's Spyhop settings in one small file, so every comput
 
 A computer can also switch between templates, for example a vessel crew's and an aerial crew's.
 
+## Two parts: data and preferences
+
+A template has two parts, which follow different rules:
+
+| Part | What's in it | During a survey |
+|---|---|---|
+| **Data** | The drop-down lists (species, event types, behaviors, observers, effort, visibility, weather, reticles), the data settings (magnetic variation, track point interval, trackline-break speed and gap) and the **saved reports**: what recorded values mean, how they are worked out and how they are reported. | **Fixed.** Copied into the survey's folder at Start (`<survey>_template.zip`), and the only part a survey's copy is compared with. Only the lists' **colors** can change, and reports can't be run or changed until the survey ends. |
+| **Preferences** | Shortcuts, map display, the other shared settings (lat/lon format, clock, bearing reference, distance unit, effort reminder, keep awake, raw NMEA log, Altitude column), network GPS / NMEA inputs, map feeds and online overlays. | **Can change at any time.** Using a template during a survey takes its preferences (and list colors) and leaves the data part as it is until the survey ends. |
+| *Extras* | Waypoints, routes and overlays, if included. | Only ever added. |
+
+Settings → Templates shows what would change under these headings. A list change that waits until the survey ends is marked *waits until the survey ends*.
+
+**Every list has Other.** Because lists can't change during a survey, each one has an entry **Other** (and the reticles a placeholder **reticles-Other**, which keeps the reading but works out no distance). Record anything missing from a list as Other, with a note; after the survey, add the right entry to the list and replace Other in those rows. The Error check lists every row that uses Other. Other can't be renamed or removed, and a template list without it gets it added at the end.
+
 Offline charts are not in templates (they are far too big); copy them between computers separately (see the USER_GUIDE, *Offline charts*). Survey data, serial GPS ports and the data folder are never in a template either.
 
 Templates are updated by hand: Spyhop never looks for a newer template, or changes anything, until someone presses **Check** or **Use this template…**.
@@ -21,7 +35,7 @@ Templates live in the **`templates` folder in Spyhop's own folder** (Settings �
 
 | Folder | What it holds |
 |---|---|
-| `templates/current/` | **The current template**: `species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv`, `shortcuts.csv` and `spyhop-config.json`. It is a template, unzipped: everything you change in Settings → Dropdowns, Shortcuts, General and Inputs, and in Tools → Reports, is saved here. |
+| `templates/current/` | **The current template**: the lists (`species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv`, `effort.csv`, `visibility.csv`, `weather.csv`, `reticles.csv`), `shortcuts.csv` and `spyhop-config.json`. It is a template, unzipped: everything you change in Settings → Dropdowns, Shortcuts, General and Inputs, and in Tools → Reports, is saved here. |
 | `templates/saved/` | Your templates, `<name>.spyhop-template.zip`, and copies of the ones you got from the web. |
 | `templates/backups/` | The current template as it was before each other template was used. |
 
@@ -51,7 +65,7 @@ A template is a zip file (or, on GitHub, a repository or a folder in one) contai
 | File | What it is |
 |---|---|
 | `spyhop-config.json` | Everything that isn't a table (see below). |
-| `species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv` | The drop-down lists. |
+| `species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv`, `effort.csv`, `visibility.csv`, `weather.csv`, `reticles.csv` | The drop-down lists (the data part). |
 | `shortcuts.csv` | Keyboard shortcuts. |
 | `waypoints.csv` | Waypoints (optional). |
 | `routes/*.gpx` | Saved routes (optional). |
@@ -72,7 +86,7 @@ The lists and shortcuts stay as CSV files so they can be edited in a spreadsheet
 
 **Only the parts in the template are changed.** For example, a template with only `species.csv` and `observers.csv` changes only those two lists on each computer.
 
-**Lists, shortcuts, map display and settings are replaced.** The shared settings are: lat/lon format, clock (time zone), bearing reference, distance unit, magnetic variation, track point interval, track break speed and gap, effort reminder, keep the computer awake and the screen on, the raw NMEA log (on/off and time stamps), and the Altitude column choice. The lists in a template are species, event types, observers, behaviors, visibility, weather and the reticles (how reticle readings are taken: method, binocular magnification and degrees per division, or calibrated marks), plus the shortcuts. The template's network GPS / NMEA inputs replace this computer's network inputs; **serial ports, file replays and the simulator stay as they are**, since port names differ between computers. Everything else in Settings (the data folder, the view and split, follow vessel, the browsing cache…) belongs to the computer and is never in a template.
+**Lists, shortcuts, map display and settings are replaced.** The shared settings are: lat/lon format, clock (time zone), bearing reference, distance unit, magnetic variation, track point interval, track break speed and gap, effort reminder, keep the computer awake and the screen on, the raw NMEA log (on/off and time stamps), and the Altitude column choice. The lists in a template are species, event types, observers, behaviors, effort, visibility, weather and the reticles (how reticle readings are taken: method, binocular magnification and degrees per division, or calibrated marks), plus the shortcuts. The template's network GPS / NMEA inputs replace this computer's network inputs; **serial ports, file replays and the simulator stay as they are**, since port names differ between computers. Everything else in Settings (the data folder, the view and split, follow vessel, the browsing cache…) belongs to the computer and is never in a template.
 
 **Saved reports go as a set.** If the template has saved reports, each computer ends up with exactly those reports: any others of its own are removed. A template with no saved reports leaves each computer's reports alone.
 

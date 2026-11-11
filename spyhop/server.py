@@ -621,10 +621,12 @@ class App:
 
     async def save_list(self, request):
         b = await request.json()
-        if self.rec.survey_active():
-            raise ValueErrorMsg("A survey is under way, so the drop-down lists can't be changed until it ends.")
+        name = str(b.get("list", ""))
+        if self.rec.survey_active() and not (name in self.rec.cfg.lists and self.rec.cfg.colors_only_change(name, b.get("rows") or [])):
+            raise ValueErrorMsg("A survey is under way, so only the colors in the drop-down lists can be changed until it ends."
+                                " Use Other for anything missing, and fill it in after the survey.")
         try:
-            self.rec.cfg.save_list(str(b.get("list", "")), b.get("rows") or [])
+            self.rec.cfg.save_list(name, b.get("rows") or [])
         except ValueError as e:
             raise ValueErrorMsg(str(e))
         log.info("list %s saved from Settings → Dropdowns (%d rows)", b.get("list"), len(self.rec.cfg.lists.get(b.get("list"), [])))
@@ -1095,12 +1097,20 @@ class App:
         except reports.ReportError as e:
             raise ValueErrorMsg(str(e))
 
+    def _reports_unlocked(self):
+        """Saved reports are part of the data template, and reports read a finished survey: none can be run,
+        saved or deleted during a survey (0.40)."""
+        if self.rec.survey_active():
+            raise ValueErrorMsg("Reports can't be run or changed during a survey: they're ready once it ends (End survey in the Survey tab).")
+
     async def report_run(self, request):
+        self._reports_unlocked()
         b = await request.json()
         spec = self._report_spec(b)
         return json_ok(result=reports.run(self.rec, spec), counts=reports.counts(self.rec, spec["table"]))
 
     async def report_save(self, request):
+        self._reports_unlocked()
         b = await request.json()
         try:
             f = reports.save(self.rec.cfg, b.get("spec") or {}, b.get("replace") or None)
@@ -1110,6 +1120,7 @@ class App:
         return json_ok(report=f)
 
     async def report_delete(self, request):
+        self._reports_unlocked()
         b = await request.json()
         try:
             reports.delete(self.rec.cfg, str(b.get("file", "")))
@@ -1129,6 +1140,7 @@ class App:
 
     async def report_export(self, request):
         """Save one report (the one on screen) as CSV, HTML or PDF in the exports folder."""
+        self._reports_unlocked()
         b = await request.json()
         spec, fmt = self._report_spec(b), b.get("format", "csv")
         if fmt not in ("csv", "html", "pdf"):
@@ -1149,6 +1161,7 @@ class App:
     async def reports_batch(self, request):
         """Run Reports: save the chosen saved reports, in the chosen formats, into a folder
         (the exports folder if none is given)."""
+        self._reports_unlocked()
         b = await request.json()
         if self.rec.survey is None:
             raise ValueErrorMsg("Open a survey first.")
@@ -1247,22 +1260,14 @@ class App:
             raise ValueErrorMsg("That check is too old. Check the template again.")
         url, t = got
         cfg = self.rec.cfg
-        if self.rec.survey_active():           # nothing that defines or works out the data may change (0.37)
-            from .config import LOCKED_LISTS, LOCKED_SETTINGS
-            plan = {r["file"]: r["status"] for r in templates.compare(cfg, t)}
-            locked = [f"{n}.csv" for n in LOCKED_LISTS if plan.get(f"{n}.csv") not in (None, "same", "kept")]
-            st = (t.get("settings") or {}).get("settings") or {}
-            locked += [label for k, label in LOCKED_SETTINGS.items() if k in st and st[k] != cfg.settings.get(k)]
-            if locked:
-                raise ValueErrorMsg("A survey is under way, so this template can't be used until it ends: it would change "
-                                    + ", ".join(locked) + ", which define or work out the survey's data. End the survey first.")
+        during = self.rec.survey_active()       # then only the preferences (and colors) are used (0.40)
         backup = bool(b.get("backup"))
         cfg.save_settings({"template_backup": backup})
         kind = t.get("_kind", "web")
 
         def work():
             saved = templates.save_backup(cfg) if backup else None
-            changed, done = templates.apply_all(cfg, t)
+            changed, done = templates.apply_all(cfg, t, data=not during)
             copy = None
             if kind in ("web", "file"):          # keep a copy in the templates folder, for use offline
                 try:
@@ -1303,7 +1308,7 @@ class App:
         return json_ok(changed=changed, backup=str(saved) if saved else None, copy=copy.name if copy else None,
                        added={"waypoints": len(added_ids), "routes": len(done["routes"]),
                               "overlays": len(done["overlays"]), "feeds": len(done["feeds"])},
-                       removed_waypoints=len(done["remove_waypoints"]))
+                       removed_waypoints=len(done["remove_waypoints"]), data_kept=done["data_kept"])
 
     async def templates_backup(self, request):
         try:

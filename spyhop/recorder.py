@@ -444,7 +444,8 @@ class Recorder:
             self.notices.append(f"Couldn't save a copy of the template with this survey ({e}).")
 
     def template_status(self, prefix: str | None = None) -> dict:
-        """The survey's template copy against the current template: {saved, name, differs: [parts]}."""
+        """The survey's template copy against the current template: {saved, name, differs: [data parts]}.
+        Preferences (shortcuts, map display…) and colors may change during a survey, so they don't count."""
         from . import templates
         prefix = prefix or (self.survey["prefix"] if self.survey else None)
         p = self.template_copy_path(prefix)
@@ -453,7 +454,7 @@ class Recorder:
         if out["saved"]:
             try:
                 t = templates.read_template(templates.unzip(p.read_bytes(), ""))
-                out["differs"] = [r["file"] for r in templates.compare(self.cfg, t) if r["status"] not in ("same", "kept")]
+                out["differs"] = templates.data_differs(self.cfg, t)      # the data part only (0.40)
             except Exception as e:  # noqa: BLE001
                 out["error"] = str(e)
         return out
@@ -1595,6 +1596,8 @@ class Recorder:
         if self.survey is None:
             raise ValueErrorMsg(self.NO_SURVEY)
         formats = list(formats) if formats is not None else ["csv", "merged", "gpx", "geojson"]
+        if any(f.startswith("report:") for f in formats) and self.survey_active():
+            raise ValueErrorMsg("Saved reports can't be run during a survey: export them once it ends (or untick them).")
         report_defs = {f["file"]: f for f in _reports.load(self.cfg)[0]} if any(
             f.startswith("report:") for f in formats) else {}
         bad = [f for f in formats if f not in self.EXPORT_FORMATS
@@ -1865,10 +1868,12 @@ class Recorder:
 
     # -- bootstrap ---------------------------------------------------------------------
     def bootstrap(self) -> dict:
+        from . import templates          # the template's parts, for Settings → Templates
         return {
             "config": self.cfg.public(),
             "schema": {"tabs": schema.TABS, "fixed_lists": schema.FIXED_LISTS, "survey_meta": schema.SURVEY_META,
-                       "reticle": {"methods": reticle.METHODS, "presets": {k: list(v) for k, v in reticle.PRESETS.items()}}},
+                       "reticle": {"methods": reticle.METHODS, "presets": {k: list(v) for k, v in reticle.PRESETS.items()}},
+                       "template_parts": templates.PARTS},
             "survey": self.survey_info(),
             "resume_prompt": self.pending_resume,
             "surveys": self.list_surveys(),
