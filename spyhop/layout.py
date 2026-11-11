@@ -11,6 +11,7 @@ in spyhop-local.json. See config.Config.
 from __future__ import annotations
 
 import csv
+import os
 import re
 import json
 import shutil
@@ -44,7 +45,7 @@ def _rmdir_if_empty(d: Path):
 
 def move_old_layout(cfg) -> bool:
     """Move a 0.27 layout into the 0.28 one. Returns True if anything was moved."""
-    from .config import SHARED_SETTINGS, NETWORK_INPUTS, DEFAULT_SETTINGS, TEMPLATE_FORMAT, CONFIG_FILE, LOCAL_FILE
+    from .config import SHARED_SETTINGS, TEMPLATE_INPUTS as NETWORK_INPUTS, DEFAULT_SETTINGS, TEMPLATE_FORMAT, CONFIG_FILE, LOCAL_FILE
     root = cfg.root
     old_settings = root / "settings"
     markers = [root / f"{n}.csv" for n in LISTS] + [root / "shortcuts.csv", root / "display.csv", old_settings / "settings.json"]
@@ -162,6 +163,44 @@ def tidy_data_folder(cfg) -> None:
     if left:
         cfg.notices.append("The data folder still has a templates folder with files Spyhop doesn't know what to do with: "
                            + ", ".join(left[:4]) + (" …" if len(left) > 4 else "") + ". Move or delete them yourself.")
+
+
+# ------------------------------------------------------------------ 0.41: <survey>_nmea.csv
+def rename_instrument_files(folder) -> int:
+    """<survey>_instruments.csv (0.36–0.40) → <survey>_nmea.csv, with the 0.41 columns (Source blank,
+    Primary yes), in each survey folder under `folder` (or `folder` itself). An existing _nmea.csv is left
+    alone. Returns the files renamed. Delete before 1.0.0."""
+    folder = Path(folder)
+    try:
+        dirs = [folder, *[d for d in folder.iterdir() if d.is_dir()]]
+    except OSError:
+        return 0
+    n = 0
+    for d in dirs:
+        try:
+            olds = list(d.glob("*_instruments.csv"))
+        except OSError:
+            continue
+        for old in olds:
+            new = old.with_name(old.name[: -len("_instruments.csv")] + "_nmea.csv")
+            if new.exists():
+                continue
+            try:
+                with open(old, newline="", encoding="utf-8-sig") as fh:
+                    rows = list(csv.DictReader(fh))
+                tmp = new.with_name("." + new.name + ".tmp")
+                with open(tmp, "w", newline="", encoding="utf-8") as fh:
+                    w = csv.writer(fh)
+                    w.writerow(["DateTime", "Source", "Primary", "Key", "Label", "Unit", "Value"])
+                    for r in rows:
+                        w.writerow([r.get("DateTime", ""), r.get("Source", ""), r.get("Primary", "yes"), r.get("Key", ""),
+                                    r.get("Label", ""), r.get("Unit", ""), r.get("Value", "")])
+                os.replace(tmp, new)
+                old.unlink()
+                n += 1
+            except OSError:
+                continue
+    return n
 
 
 # ------------------------------------------------------------------ 0.36: one folder per survey

@@ -1,5 +1,5 @@
 // Main controller: layout, status bar, tabs, shortcuts, settings, summary, live updates.
-import { $, $$, el, esc, api, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, isTrackBreak, trackStates, isPlaceholderObs, LINE_STYLES, isOn, ON_EFFORT, setEffortList, effortInfo, effortColor, EFFORT_REQUIRED, watchHelp } from './util.js';
+import { $, $$, el, esc, api, fmtCoord, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, isTrackBreak, trackStates, isPlaceholderObs, LINE_STYLES, isOn, ON_EFFORT, setEffortList, effortInfo, effortColor, EFFORT_REQUIRED, watchHelp } from './util.js';
 import { Grid } from './grid.js';
 import { Resights, groupCounts } from './resights.js';
 import { ResightTool } from './resight_tool.js';
@@ -641,6 +641,7 @@ class App {
           if (this.clock() !== before) this.onClockChanged();
         }
         this.map.updateVessel(m.vessel);
+        this.map.updateOthers(m.others);
         if (m.nmea) { this.S.nmea = { ...this.S.nmea, ...m.nmea }; this.updateNmeaStatus(); this.updateRawLog(); }
         if (m.inst) { this.S.inst = m.inst; if (this.shown('nmea')) this.updateInstruments(); }
         this.planner.onVessel();
@@ -853,7 +854,28 @@ class App {
     try { const r = await api(`/api/tab/${tab}/redo`, {}); if (!r.done) toast('Nothing to redo', 'info', 1500); } catch {}
   }
 
+  // Before a new survey (0.41): with no GPS input in use, or no position from the primary, say so, with a
+  // way to Settings → Inputs and the simulator suggested for trying Spyhop out. true = go on.
+  async checkGpsBeforeStart() {
+    const inputs = this.S.nmea?.all_sources || this.S.config.settings.nmea_sources || [];
+    const inUse = inputs.filter((x) => x.enabled !== false);
+    const fix = !!this.S.vessel?.has_fix;
+    if (inUse.length && fix) return true;
+    const what = !inUse.length ? 'No GPS / NMEA input is in use on this computer'
+      : `No position from the primary input${inUse.find((x) => x.primary) ? ` (“${inUse.find((x) => x.primary).name}”)` : ''}`;
+    const go = await modal({ title: 'No GPS position', width: '34em',
+      body: el('div', { id: 'gps-warning' },
+        el('p', {}, el('b', {}, `${what}. `), 'Without one, the survey has no track, and new rows have no position until one arrives.'),
+        el('p', {}, 'Check or choose the inputs in ', el('a', { href: '#', id: 'gps-warning-inputs', onclick: (e) => {
+          e.preventDefault(); document.querySelector('.modal-buttons button')?.click(); this.showTab('inputs'); } }, 'Settings → Inputs'),
+        '. To try Spyhop without a GPS, add a ', el('b', {}, 'SIMULATOR'), ' input there (+ Add input, then choose SIMULATOR) and make it the primary.')),
+      buttons: [{ label: 'Cancel', value: null }, { label: 'Open Settings → Inputs', value: 'inputs' }, { label: 'Start anyway', value: 'start', primary: true }] });
+    if (go === 'inputs') this.showTab('inputs');
+    return go === 'start';
+  }
+
   async newSurvey() {
+    if (!await this.checkGpsBeforeStart()) return;
     const cur = this.S.survey;
     if (cur?.active) {
       const how = await modal({ title: 'Current survey is still active',
@@ -1824,7 +1846,7 @@ class App {
 
     // ---- the current template and the saved templates
     const kids = [
-      el('p', {}, 'A template is your team’s Spyhop settings in one small file, so every computer records the same way: the species, event types, observers and behaviors lists, keyboard shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log, network GPS / NMEA inputs), the map feeds and which online overlays are on, and, if you choose, waypoints, routes and overlays. Update the template and use it again whenever the team changes something. The current template is the one in use, kept unzipped in templates/current of Spyhop’s folder; saved templates are zip files in templates/saved. Share one by uploading it (or copying it to a USB stick). Offline charts, survey data, serial GPS ports and the data folder are never in a template.'),
+      el('p', {}, 'A template is your team’s Spyhop settings in one small file, so every computer records the same way: the species, event types, observers and behaviors lists, keyboard shortcuts, map display, saved reports, shared settings (clock, units, tracking, keep awake, raw NMEA log), the named GPS / NMEA inputs (serial, UDP, TCP, gpsd: each computer chooses which it uses and its primary), the map feeds and which online overlays are on, and, if you choose, waypoints, routes and overlays. Update the template and use it again whenever the team changes something. The current template is the one in use, kept unzipped in templates/current of Spyhop’s folder; saved templates are zip files in templates/saved. Share one by uploading it (or copying it to a USB stick). Offline charts, survey data, file replays, the simulator and the data folder are never in a template.'),
     ];
     if (!L) kids.push(el('p', { class: 'hint' }, tp.loading ? 'Reading the templates folder…' : ''));
     else {
@@ -1927,7 +1949,7 @@ class App {
     box.push(el('p', { class: 'warnbox' }, el('b', {}, 'The template’s data part and preferences replace this computer’s '),
       '(nothing is merged; its saved reports replace all of this computer’s). Map feeds, waypoints, routes and overlays are only added',
       r.kind === 'backup' ? ', except those the template used after this backup added, which are taken away.' : '.',
-      ' Survey data, offline charts, serial GPS ports and the data folder are never changed.'));
+      ' Survey data, offline charts and the data folder are never changed; which inputs this computer uses, and its primary, are kept by name.'));
     const inf = r.info || {};
     if (inf.min_spyhop || inf.made_with) box.push(el('p', { class: 'hint', id: 'tpl-version' },
       [inf.min_spyhop ? `Needs Spyhop ${inf.min_spyhop} or newer` : '', inf.made_with ? `made with Spyhop ${inf.made_with}` : ''].filter(Boolean).join('; '),
@@ -2600,7 +2622,7 @@ class App {
     // Edits are kept in a draft until Apply, so redrawing Settings never loses them.
     if (!this.nmeaDraft) {
       const base = this.S.nmea?.all_sources || st.nmea_sources || [];
-      this.nmeaDraft = { sources: JSON.parse(JSON.stringify(base)), dirty: false };
+      this.nmeaDraft = { sources: JSON.parse(JSON.stringify(base)), dirty: false, failover: !!st.nmea_failover };
     }
     const draft = this.nmeaDraft, sources = draft.sources;
     const list = el('div', { class: 'nmea-list' });
@@ -2617,33 +2639,55 @@ class App {
     };
     const apply = async () => {
       try {
-        const r = await api('/api/nmea/sources', { sources });
+        const r = await api('/api/nmea/sources', { sources, failover: draft.failover });
         this.S.nmea = { ...(this.S.nmea || {}), all_sources: r.sources };
         this.nmeaDraft = null;
         toast('GPS inputs applied');
         this.renderInputs();
       } catch {}
     };
+    // 0.41: each input has a name; those in use (ticked) are run; one of them is the primary (it gives the
+    // vessel's position, course, speed and heading); the others are secondaries, logged and optionally on the map
+    const inUse = (s) => s.enabled !== false;
+    const fixPrimary = () => {
+      const on = sources.filter(inUse);
+      if (!on.some((s) => s.primary)) { if (on[0]) on[0].primary = true; }
+      sources.forEach((s) => { if (!inUse(s)) s.primary = false; });
+      let seen = false;
+      on.forEach((s) => { if (s.primary && seen) s.primary = false; if (s.primary) seen = true; });
+    };
+    fixPrimary();
     const draw = () => {
-      list.replaceChildren(...sources.map((s, i) => el('div', { class: `nmea-src${s.session ? ' session' : ''}` },
-        el('input', { type: 'checkbox', checked: s.enabled !== false, title: 'Enabled', onchange: (e) => { s.enabled = e.target.checked; markDirty(); } }),
-        el('select', { onchange: (e) => { sources[i] = { type: e.target.value, enabled: true, ...defaults[e.target.value], ...(s.session ? { session: true } : {}) }; markDirty(); draw(); } },
-          Object.keys(fields).map((t) => el('option', { value: t, selected: t === s.type }, t === 'sim' ? 'SIMULATOR' : t.toUpperCase()))),
-        ...(fields[s.type] || []).flatMap(([k, label, type]) => [el('label', { class: 'inline' }, label,
-          el('input', { type, value: s[k] ?? '', size: k === 'path' ? 30 : (k === 'heading' || k === 'speed_kn' ? 5 : 10),
-            style: type === 'number' ? { width: k === 'heading' || k === 'speed_kn' ? '5em' : '7em' } : null,
-            min: k === 'heading' ? 0 : null, max: k === 'heading' ? 359 : null,
-            list: k === 'port' && s.type === 'serial' ? 'serial-ports' : null,
-            oninput: () => markDirty(),
-            onchange: (e) => { s[k] = type === 'number' ? +e.target.value : e.target.value; markDirty(); },
-            onkeydown: (e) => { if (e.key === 'Enter') { s[k] = type === 'number' ? +e.target.value : e.target.value; apply(); } } })),
-          k === 'path' ? el('button', { title: 'Find the NMEA log on this computer', onclick: async () => {
-            let r;
-            try { r = await api('/api/pick-file', { current: s.path || '' }); } catch { return; }
-            if (r.path) { s.path = r.path; markDirty(); draw(); }
-          } }, 'Choose…') : null]),
-        s.session ? el('span', { class: 'hint', title: 'Started from the command line (e.g. --sim). Changes apply until Spyhop is closed.' }, 'this session only') : null,
-        el('button', { class: 'icon', title: 'Remove', onclick: () => { sources.splice(i, 1); markDirty(); draw(); } }, '✕'))));
+      fixPrimary();
+      list.replaceChildren(...sources.map((s, i) => el('div', { class: `nmea-src${s.session ? ' session' : ''}${inUse(s) ? '' : ' off'}${s.primary ? ' primary' : ''}`, 'data-name': s.name || '' },
+        el('div', { class: 'nmea-src-head' },
+          el('label', { class: 'check', title: 'Run this input on this computer' }, el('input', { type: 'checkbox', class: 'src-use', checked: inUse(s),
+            onchange: (e) => { s.enabled = e.target.checked; if (!s.enabled) s.primary = false; markDirty(); draw(); } }), 'In use'),
+          el('input', { type: 'text', class: 'src-name', value: s.name || '', placeholder: 'Name, e.g. External GPS', size: 22, 'aria-label': 'Input name',
+            oninput: () => markDirty(), onchange: (e) => { s.name = e.target.value.trim(); markDirty(); } }),
+          el('label', { class: 'check', title: 'The primary input gives the vessel’s position, course, speed and heading for the survey' },
+            el('input', { type: 'radio', name: 'src-primary', class: 'src-primary', checked: !!s.primary, disabled: !inUse(s),
+              onchange: () => { sources.forEach((x) => { x.primary = x === s; }); markDirty(); draw(); } }), 'Primary'),
+          inUse(s) && !s.primary ? el('label', { class: 'check', title: 'Show where this input says it is, as a point on the map (not recorded in the survey’s tables)' },
+            el('input', { type: 'checkbox', class: 'src-map', checked: !!s.show_on_map, onchange: (e) => { s.show_on_map = e.target.checked; markDirty(); } }), 'Show on the map') : null,
+          s.session ? el('span', { class: 'hint', title: 'Started from the command line (e.g. --sim). Changes apply until Spyhop is closed.' }, 'this session only') : null,
+          el('button', { class: 'icon', title: 'Remove', onclick: () => { sources.splice(i, 1); markDirty(); draw(); } }, '✕')),
+        el('div', { class: 'nmea-src-body' },
+          el('select', { 'aria-label': 'Kind of input', onchange: (e) => { sources[i] = { name: s.name, type: e.target.value, enabled: inUse(s), primary: !!s.primary, show_on_map: !!s.show_on_map, ...defaults[e.target.value], ...(s.session ? { session: true } : {}) }; markDirty(); draw(); } },
+            Object.keys(fields).map((t) => el('option', { value: t, selected: t === s.type }, t === 'sim' ? 'SIMULATOR' : t.toUpperCase()))),
+          ...(fields[s.type] || []).flatMap(([k, label, type]) => [el('label', { class: 'inline' }, label,
+            el('input', { type, value: s[k] ?? '', size: k === 'path' ? 30 : (k === 'heading' || k === 'speed_kn' ? 5 : 10),
+              style: type === 'number' ? { width: k === 'heading' || k === 'speed_kn' ? '5em' : '7em' } : null,
+              min: k === 'heading' ? 0 : null, max: k === 'heading' ? 359 : null,
+              list: k === 'port' && s.type === 'serial' ? 'serial-ports' : null,
+              oninput: () => markDirty(),
+              onchange: (e) => { s[k] = type === 'number' ? +e.target.value : e.target.value; markDirty(); },
+              onkeydown: (e) => { if (e.key === 'Enter') { s[k] = type === 'number' ? +e.target.value : e.target.value; apply(); } } })),
+            k === 'path' ? el('button', { title: 'Find the NMEA log on this computer', onclick: async () => {
+              let r;
+              try { r = await api('/api/pick-file', { current: s.path || '' }); } catch { return; }
+              if (r.path) { s.path = r.path; markDirty(); draw(); }
+            } }, 'Choose…') : null])))));
     };
     draw();
     if (draft.dirty) markDirty();
@@ -2659,10 +2703,14 @@ class App {
       }
     }).catch(() => {});
     return el('section', { class: 'settings-sec' }, el('h3', {}, 'GPS / NMEA inputs'),
-      el('p', { class: 'hint help' }, 'Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS; the readings in Tools → Instruments from the other sentences, from any talker. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
+      el('p', { class: 'hint help' }, 'Name each input for its device (e.g. “Tablet GPS”, “External GPS”, “Ship’s network”): the names travel in templates, so a template can list the inputs of every computer a team uses, and each computer ticks the ones it has. Of the inputs in use, the primary gives the vessel’s position, course, speed and heading for the survey (the track, new rows, the map). The others are secondaries: their readings appear in Tools → Instruments when the primary doesn’t have them, every input’s readings (position included) are saved in the survey’s <survey>_nmea.csv, every sentence goes in the raw NMEA log, and a secondary can be shown on the map as a point. Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
       list, ports,
+      el('label', { class: 'check', id: 'src-failover-row', title: 'If the primary stops sending positions for 5 seconds, use the first secondary that has one, until the primary is back' },
+        el('input', { type: 'checkbox', id: 'src-failover', checked: !!draft.failover, onchange: (e) => { draft.failover = e.target.checked; markDirty(); } }),
+        el('span', {}, 'If the primary goes quiet for 5 s, take the position from a secondary until it’s back')),
       el('div', { class: 'btnrow' },
-        el('button', { onclick: () => { sources.push({ type: 'serial', enabled: true, ...defaults.serial }); markDirty(); draw(); } }, '+ Add input'),
+        el('button', { onclick: () => { sources.push({ name: '', type: 'serial', enabled: true, primary: !sources.some((x) => x.enabled !== false), ...defaults.serial }); markDirty(); draw();
+          $$('#pane-inputs .src-name').at(-1)?.focus(); } }, '+ Add input'),
         applyBtn,
         el('button', { onclick: () => { this.nmeaDraft = null; this.renderInputs(); }, title: 'Discard unapplied changes' }, 'Revert')),
       el('div', { id: 'nmea-status', class: 'nmea-status' }),
@@ -2728,15 +2776,18 @@ class App {
       el('h4', {}, g),
       el('div', { class: 'inst-tiles' }, keys.filter((k) => inst[k].group === g).map((k) => {
         const r = inst[k];
-        const val = typeof r.value === 'number' ? (Number.isInteger(r.value) && r.unit === '' ? String(r.value) : r.value.toFixed(digits(r.unit))) : String(r.value);
+        const ll = k === 'lat' || k === 'lon';
+        const val = ll ? fmtCoord(r.value, k === 'lat', this.S.config.settings.latlon_format)
+          : typeof r.value === 'number' ? (Number.isInteger(r.value) && r.unit === '' ? String(r.value) : r.value.toFixed(digits(r.unit))) : String(r.value);
+        if (ll) r.unit = '';
         const age = r.age < 2 ? 'now' : r.age < 90 ? `${Math.round(r.age)} s ago` : `${Math.round(r.age / 60)} min ago`;
-        const plottable = typeof r.value === 'number';
+        const plottable = typeof r.value === 'number' && !ll;
         return el('div', { class: `inst${r.age > 15 ? ' stale' : ''}${plottable ? ' plottable' : ''}`, 'data-key': k,
           title: `${r.sentence} from ${r.source || 'input'}${plottable ? ' — click to plot since the start of the survey' : ''}`,
           onclick: plottable ? () => openInstrumentPlot(this, k) : null },
           el('div', { class: 'inst-l' }, r.label),
           el('div', { class: 'inst-v' }, val, el('span', { class: 'inst-u' }, r.unit ? ` ${r.unit}` : '')),
-          el('div', { class: 'inst-s' }, `${r.sentence} · ${age}`));
+          el('div', { class: 'inst-s' }, `${r.sentence} · ${r.source ? r.source + ' · ' : ''}${age}`));
       })))));
   }
 
@@ -2756,14 +2807,11 @@ class App {
     const n = this.S.nmea;
     const pos = n.position_source || '';
     box.replaceChildren(...(n.sources || []).map((s) => {
-      const live = s.state === 'receiving' || s.state === 'replaying';
-      // an input with a position but outranked by one above it in the list (lower in the list = used only as a backup)
-      const outranked = live && pos && pos !== s.name && (n.counts?.RMC || n.counts?.GGA || n.counts?.GLL);
       const prog = s.total ? ` · line ${s.at || 0} of ${s.total}${s.loops ? ` (replay ${s.loops + 1})` : ''}` : (s.lines ? ` · ${s.lines} lines` : '');
       return el('div', { class: `src-st ${s.state}` },
-        el('b', {}, s.name), ` — ${s.state}`, prog,
-        pos === s.name ? el('span', { class: 'ok' }, ' · position from here') : null,
-        outranked ? el('span', { class: 'hint', title: 'Inputs higher in the list are preferred; one lower down supplies the position only when those above go quiet for 5 s.' }, ` · position from “${pos}” (higher in the list)`) : null,
+        el('b', {}, s.name), el('span', { class: `role-tag ${s.role || 'primary'}` }, s.role === 'secondary' ? 'secondary' : 'primary'), ` — ${s.state}`, prog,
+        pos === s.name ? el('span', { class: 'ok' }, ' · vessel position from here') : null,
+        s.role !== 'secondary' && pos && pos !== s.name ? el('span', { class: 'hint' }, ` · quiet: position from “${pos}” (failover)`) : null,
         s.error ? el('span', { class: 'err' }, ` · ${s.error}`) : '');
     }),
     el('div', { class: 'hint' }, `Sentences: ${Object.entries(n.counts || {}).map(([k, v]) => `${k} ${v}`).join(', ') || 'none yet'}${n.errors ? ` · ${n.errors} unreadable` : ''}`));

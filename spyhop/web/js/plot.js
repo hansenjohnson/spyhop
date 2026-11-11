@@ -125,7 +125,7 @@ export function openInstrumentPlot(app, key) {
   const label = app.S.inst?.[key]?.label || key;
   const done = modal({ title: `${label} since the start of the survey`, width: '52em', closeOnOutside: true,
     body: el('div', { class: 'plot-box' }, stats, canvas, readout,
-      el('p', { class: 'hint help' }, 'Updates every 5 seconds while open. The dashed line is the survey’s Start. Readings are saved in the survey’s _instruments.csv file and included in the separate-CSV export.')),
+      el('p', { class: 'hint help' }, 'Updates every 5 seconds while open. The dashed line is the survey’s Start. Readings are saved in the survey’s _nmea.csv file and included in the separate-CSV export.')),
     onOpen: () => { load(); timer = setInterval(load, 5000); return false; },
     buttons: [{ label: 'Close', primary: true, value: true }] });
   done.finally(() => clearInterval(timer));

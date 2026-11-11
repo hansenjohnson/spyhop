@@ -109,6 +109,8 @@ class VesselState:
 # Instrument readings shown in Tools → Instruments: key -> (group, label, unit).
 # Readings not listed here (other transducers, extra engines) are added as they arrive.
 INSTRUMENTS = {
+    "lat": ("Navigation", "Latitude", "°"),
+    "lon": ("Navigation", "Longitude", "°"),
     "sog": ("Navigation", "Speed over ground", "kn"),
     "stw": ("Navigation", "Speed through water", "kn"),
     "cog": ("Navigation", "Course over ground", "°T"),
@@ -144,14 +146,21 @@ class NmeaDecoder:
     def __init__(self, state: VesselState | None = None):
         self.state = state or VesselState()
         self.raw = deque(maxlen=200)
-        # latest instrument readings: key -> {group, label, unit, value, t, sentence, source}
-        self.inst: dict[str, dict] = {}
+        # latest readings of each input: source -> key -> {group, label, unit, value, t, sentence, source}
+        self.inst_src: dict[str, dict[str, dict]] = {}
+        self._order: dict[str, int] = {}
         self.raw_logger = None           # callable(line, source), set while raw logging is on
         self.counts: dict[str, int] = {}
         self.errors = 0
-        # source name -> priority (lower wins). A lower-priority source only
-        # supplies position when the preferred one has been quiet for 5 s.
+        # source name -> priority (lower wins): with no primary, or for failover, a lower-priority
+        # source only supplies position when the preferred one has been quiet for 5 s.
         self.priority: dict[str, int] = {}
+        # 0.41: the primary input supplies the vessel's position, course, speed and heading; secondaries
+        # keep their own (others, drawn on the map if chosen). None = every input, by priority (as before).
+        self.primary: str | None = None
+        self.failover = False            # a secondary stands in while the primary has been quiet for 5 s
+        self.others: dict[str, VesselState] = {}
+        self.heard: dict[str, float] = {}    # source -> wall clock of its last position
 
     def feed(self, line: str, source: str = "") -> bool:
         line = line.strip()
@@ -173,11 +182,39 @@ class NmeaDecoder:
         if handler is None:
             return False
         self._cur = (typ, source)
+        main = self.primary is None or not source or source == self.primary
+        st = self.state if main else self.others.setdefault(source, VesselState())
+        saved, self.state = self.state, st
         try:
-            return bool(handler(f, source))
+            ok = bool(handler(f, source))
         except (IndexError, ValueError):
             self.errors += 1
-            return False
+            ok = False
+        finally:
+            self.state = saved
+        if ok and not main and self.failover:
+            self._stand_in(source, st)
+        return ok
+
+    def primary_quiet(self, after: float = 5.0) -> bool:
+        t = self.heard.get(self.primary) if self.primary else None
+        return t is None or time.time() - t > after
+
+    def _stand_in(self, source: str, st: "VesselState"):
+        """Failover: copy a secondary's position into the vessel's while the primary is quiet (the
+        first secondary in the list that has a recent fix)."""
+        if not self.primary_quiet():
+            return
+        now = time.time()
+        live = [s for s, t in self.heard.items() if s != self.primary and now - t < 5]
+        if not live or min(live, key=lambda s: self.priority.get(s, 99)) != source:
+            return
+        main = self.state
+        for k in ("lat", "lon", "sog", "cog", "heading", "heading_updated", "variation", "quality", "sats", "gps_time", "updated"):
+            setattr(main, k, getattr(st, k))
+        if main.lat is not None and (main.last_moved is None or st.last_moved and st.last_moved > main.last_moved):
+            main.last_moved = st.last_moved
+        main.source = source
 
     # -- instruments ------------------------------------------------------
     def put(self, key: str, value, unit: str | None = None, label: str | None = None, group: str | None = None):
@@ -187,15 +224,43 @@ class NmeaDecoder:
         g, lab, u = INSTRUMENTS.get(key, (group or "Other transducers", label or key, unit or ""))
         typ, source = getattr(self, "_cur", ("", ""))
         if isinstance(value, float):
-            value = round(value, 2)
-        order = list(INSTRUMENTS).index(key) if key in INSTRUMENTS else 100 + len(self.inst)
-        prev = self.inst.get(key)
-        self.inst[key] = {"group": group or g, "label": label or lab, "unit": u if unit is None else unit,
-                          "order": prev["order"] if prev else order, "value": value, "t": time.time(), "sentence": typ, "source": source}
+            value = round(value, 6 if key in ("lat", "lon") else 2)
+        if key not in self._order:
+            self._order[key] = list(INSTRUMENTS).index(key) if key in INSTRUMENTS else 100 + len(self._order)
+        self.inst_src.setdefault(source, {})[key] = {
+            "group": group or g, "label": label or lab, "unit": u if unit is None else unit, "order": self._order[key],
+            "value": value, "t": time.time(), "sentence": typ, "source": source}
+
+    @property
+    def inst(self) -> dict[str, dict]:
+        """One reading per key: the primary's while it's under 15 s old, else the newest from any input."""
+        now, out = time.time(), {}
+        for src, readings in self.inst_src.items():
+            for k, r in readings.items():
+                cur = out.get(k)
+                prim = self.primary is not None and src == self.primary and now - r["t"] < 15
+                cur_prim = cur is not None and self.primary is not None and cur["source"] == self.primary and now - cur["t"] < 15
+                if cur is None or prim or (not cur_prim and r["t"] > cur["t"]):
+                    out[k] = r
+        return out
 
     def instruments(self) -> dict:
         now = time.time()
         return {k: {**v, "age": round(now - v["t"], 1)} for k, v in self.inst.items()}
+
+    def secondaries(self, names=None, lost_after: float = 10.0) -> list[dict]:
+        """The secondary inputs' latest fixes (for the map): [{name, lat, lon, sog, cog, heading, age}]."""
+        now, out = time.time(), []
+        for name, st in self.others.items():
+            if names is not None and name not in names or st.lat is None or st.updated is None:
+                continue
+            age = now - st.updated
+            if age > lost_after:
+                continue
+            out.append({"name": name, "lat": st.lat, "lon": st.lon, "sog": st.sog, "cog": st.cog,
+                        "heading": st.heading if st.heading_updated and now - st.heading_updated < 10 else st.cog,
+                        "age": round(age, 1)})
+        return out
 
     # -- position ---------------------------------------------------------
     def _set_pos(self, lat, lon, source):
@@ -211,6 +276,9 @@ class NmeaDecoder:
         st.lat, st.lon = lat, lon
         st.updated = now
         st.source = source
+        self.heard[source] = now
+        self.put("lat", lat)
+        self.put("lon", lon)
         return True
 
     def _RMC(self, f, source):

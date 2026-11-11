@@ -478,7 +478,7 @@ class Recorder:
     PACKAGE_MIN = "0.36.0"            # the oldest Spyhop that can open a package of this format
 
     def _package_files(self, prefix: str, logs: bool) -> list[Path]:
-        """The files of a survey's folder that go in its package: its data, details, instruments and
+        """The files of a survey's folder that go in its package: its data, details, NMEA readings and
         template copy (and its raw NMEA logs if asked); not its exports, backups or temporary files."""
         folder = self.cfg.survey_dir(prefix)
         out = []
@@ -597,6 +597,8 @@ class Recorder:
         finally:
             if tmp.exists():
                 shutil.rmtree(tmp, ignore_errors=True)
+        from .layout import rename_instrument_files        # a 0.36–0.40 package (removed before 1.0)
+        rename_instrument_files(self.cfg.survey_dir(new))
         self.open_survey(new)
         return {"opened": new, "renamed_from": old if new != old else "", "manifest": man,
                 "template": self.template_status(new)}
@@ -721,11 +723,14 @@ class Recorder:
 
     # -- instrument history (Tools → Instruments plots) ---------------------------------
     INST_SAMPLE_S = 5            # one value per reading every this many seconds
-    INST_COLUMNS = ["DateTime", "Key", "Label", "Unit", "Value"]
+    # <survey>_nmea.csv (0.41; _instruments.csv before): every numeric reading of every input in use,
+    # position included, one row per input and reading; Primary says whether it came from the primary
+    INST_COLUMNS = ["DateTime", "Source", "Primary", "Key", "Label", "Unit", "Value"]
+    NO_PLOT = ("lat", "lon")     # in the file, not plotted in Tools → Instruments
 
     def _inst_path(self, prefix: str | None = None) -> Path | None:
         prefix = prefix or (self.survey["prefix"] if self.survey else None)
-        return self._file(prefix, "instruments") if prefix else None
+        return self._file(prefix, "nmea") if prefix else None
 
     def _load_instruments(self):
         """history: key -> {"label", "unit", "points": [(epoch seconds, value)]}, from the survey's file."""
@@ -735,16 +740,25 @@ class Recorder:
             return
         try:
             with open(p, newline="", encoding="utf-8-sig") as fh:
-                for r in csv.DictReader(fh):
-                    t = parse_time(r.get("DateTime", ""))
-                    try:
-                        v = float(r.get("Value", ""))
-                    except ValueError:
-                        continue
-                    if t is None:
-                        continue
-                    h = self.inst_hist.setdefault(r["Key"], {"label": r.get("Label", r["Key"]), "unit": r.get("Unit", ""), "points": []})
-                    h["points"].append((t.timestamp(), v))
+                # one value per reading and time: the primary's, else another input's
+                rows = [r for r in csv.DictReader(fh) if r.get("Key") not in self.NO_PLOT]
+            has_prim = {(r["Key"], r.get("DateTime")) for r in rows if r.get("Primary", "yes") != "no"}
+            taken = set()
+            for r in rows:
+                k = (r["Key"], r.get("DateTime"))
+                if r.get("Primary", "yes") == "no" and (k in has_prim or k in taken):
+                    continue
+                if r.get("Primary", "yes") == "no":
+                    taken.add(k)
+                t = parse_time(r.get("DateTime", ""))
+                try:
+                    v = float(r.get("Value", ""))
+                except ValueError:
+                    continue
+                if t is None:
+                    continue
+                h = self.inst_hist.setdefault(r["Key"], {"label": r.get("Label", r["Key"]), "unit": r.get("Unit", ""), "points": []})
+                h["points"].append((t.timestamp(), v))
         except OSError as e:
             log.warning("couldn't read %s: %s", p, e)
 
@@ -756,13 +770,17 @@ class Recorder:
         now = time.time()
         stamp = self.now().isoformat(timespec="seconds")
         rows = []
-        for k, r in self.decoder.inst.items():
-            v = r.get("value")
-            if not isinstance(v, (int, float)) or isinstance(v, bool) or now - r.get("t", 0) > 2 * self.INST_SAMPLE_S:
-                continue
-            h = self.inst_hist.setdefault(k, {"label": r["label"], "unit": r["unit"], "points": []})
-            h["points"].append((now, float(v)))
-            rows.append([stamp, k, r["label"], r["unit"], v])
+        fresh = lambda r: (isinstance(r.get("value"), (int, float)) and not isinstance(r.get("value"), bool)  # noqa: E731
+                           and now - r.get("t", 0) <= 2 * self.INST_SAMPLE_S)
+        prim = self.decoder.primary
+        for src, readings in self.decoder.inst_src.items():
+            for k, r in readings.items():
+                if fresh(r):
+                    rows.append([stamp, src, "yes" if prim is None or src == prim else "no", k, r["label"], r["unit"], r["value"]])
+        for k, r in self.decoder.inst.items():          # the plotted value: the one Instruments shows
+            if fresh(r) and k not in self.NO_PLOT:
+                h = self.inst_hist.setdefault(k, {"label": r["label"], "unit": r["unit"], "points": []})
+                h["points"].append((now, float(r["value"])))
         if not rows:
             return
         try:

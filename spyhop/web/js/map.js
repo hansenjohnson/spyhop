@@ -509,6 +509,31 @@ export class MapView {
   // General → Map display; this computer only) the icon, heading vector and range rings glide from where
   // they're drawn to the new fix instead of hopping. Only the drawing is smoothed: the data, popups,
   // measurements and Follow vessel all use the real latest fix.
+  // the secondary GPS / NMEA inputs chosen to show on the map (0.41): a point and its name each, where
+  // that input says it is (drawing only; nothing is recorded in the tables)
+  updateOthers(list) {
+    if (!this.layers.others) this.layers.others = L.layerGroup().addTo(this.map);
+    this._others = this._others || new Map();
+    const seen = new Set();
+    for (const o of list || []) {
+      if (o.lat == null || o.lon == null) continue;
+      seen.add(o.name);
+      let m = this._others.get(o.name);
+      const ll = [o.lat, o.lon];
+      if (!m) {
+        m = L.circleMarker(ll, { pane: 'vessel', radius: 6, color: '#ffffff', weight: 2, fillColor: '#7b3fbf', fillOpacity: 0.9, className: 'secondary-input' })
+          .bindTooltip(o.name, { permanent: true, direction: 'right', offset: [8, 0], className: 'secondary-label' });
+        m.addTo(this.layers.others);
+        this._others.set(o.name, m);
+      } else {
+        m.setLatLng(ll);
+      }
+    }
+    for (const [name, m] of this._others) {
+      if (!seen.has(name)) { this.layers.others.removeLayer(m); this._others.delete(name); }
+    }
+  }
+
   updateVessel(v) {
     const disp = this.app.S.config.display;
     if (!v || v.lat === null || v.lat === undefined) return;

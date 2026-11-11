@@ -6,6 +6,13 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.41.0 — 2026-11-11
+
+- **Named GPS / NMEA inputs:** each input in Settings → Inputs has a name (e.g. *Tablet GPS*, *External GPS*). Serial inputs now travel in templates too, with UDP, TCP and gpsd, so a template can list every device a team uses. Which inputs are **in use** is each computer's choice, kept by name when a template is used (an input new to the computer comes in unticked).
+- **Primary and secondary inputs:** of the inputs in use, the **primary** gives the vessel's position, course, speed and heading. The others are **secondaries**: their readings fill in Tools → Instruments where the primary has none (each reading names its input), and **Show on the map** draws a secondary as a point with its name. An optional **failover** takes the position from a secondary while the primary has been quiet for 5 s. (Before, the first input in the list was preferred and the next took over automatically.) A `--sim` input is the primary for its session.
+- **Start New Survey warns when there's no GPS position** (no input in use, or none from the primary), with a link to Settings → Inputs and a pointer to the SIMULATOR input for trying Spyhop out; *Start anyway* still starts it.
+- **`<survey>_nmea.csv`** replaces `<survey>_instruments.csv`: every numeric reading of every input in use, **latitude and longitude included**, with the input's name (Source) and whether it's the primary. Existing `_instruments.csv` files are renamed and converted when the data folder (or a survey package) is opened. The raw NMEA log labels each line with the input's name.
+
 ## 0.40.0 — 2026-11-11
 
 - **Templates have two parts.** The **data** part (the drop-down lists, the data settings: magnetic variation, track point interval, trackline breaks, and the saved reports) is fixed during a survey, copied into the survey's folder, and is the only part a survey's template copy is checked against. The **preferences** (shortcuts, map display, the other settings including the bearing reference and distance unit, network inputs, map feeds) can change at any time. Settings → Templates shows what would change under these headings.

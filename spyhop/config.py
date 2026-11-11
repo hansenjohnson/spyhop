@@ -333,7 +333,8 @@ DEFAULT_SETTINGS = {
     "online_feeds": [],             # map feeds (Tools → Overlays → Online overlays; feeds.py) → map_feeds
     "online_display": {},           # online overlays to show, set by a template: {ais, radar_us, radar_world,
                                     # feeds: [urls], radar_opacity, hide_stopped, stamp}; applied once per stamp
-    "nmea_sources": [{"type": "udp", "port": 10110, "enabled": True}],
+    "nmea_sources": [{"name": "UDP port 10110", "type": "udp", "port": 10110, "enabled": True, "primary": True}],
+    "nmea_failover": False,         # use a secondary input's position while the primary has been quiet for 5 s
                                     # all inputs in order (spyhop-local.json); the network ones (UDP, TCP, gpsd)
                                     # are also nmea_inputs in spyhop-config.json, which wins when they differ
     # --- this computer only: spyhop-local.json
@@ -376,7 +377,66 @@ SHARED_SETTINGS = {
     "altitude_column": "Altitude column",
     "segment_column": "Effort segment column",
 }
-NETWORK_INPUTS = ("udp", "tcp", "gpsd")       # the GPS / NMEA inputs a template carries
+# The GPS / NMEA inputs a template carries (0.41: serial too, named for the device, e.g. "External GPS").
+# Which of them are in use (enabled), which one is the primary and which secondaries show on the map is
+# this computer's choice (INPUT_FLAGS), kept by name when a template is used.
+TEMPLATE_INPUTS = ("serial", "udp", "tcp", "gpsd")
+INPUT_FLAGS = ("enabled", "primary", "show_on_map")
+
+
+def input_definition(src: dict) -> dict:
+    """An input without this computer's choices: what a template holds."""
+    return {k: v for k, v in src.items() if k not in INPUT_FLAGS and k != "session"}
+
+
+def clean_inputs(sources) -> list[dict]:
+    """Inputs with a name each (unique; default from the type and port), the flags as booleans, and one
+    primary among the enabled ones (the first marked primary, else the first enabled)."""
+    from .sources import describe
+    out, seen = [], set()
+    for x in sources or []:
+        if not isinstance(x, dict) or not x.get("type"):
+            continue
+        x = dict(x)
+        base = str(x.get("name") or "").strip()[:60] or describe(x)
+        name, n = base, 2
+        while name.lower() in seen:
+            name, n = f"{base} ({n})", n + 1
+        seen.add(name.lower())
+        x["name"] = name
+        x["enabled"] = x.get("enabled", True) is not False
+        x["primary"] = bool(x.get("primary"))
+        x["show_on_map"] = bool(x.get("show_on_map"))
+        out.append(x)
+    on = [x for x in out if x["enabled"]]
+    prim = next((x for x in on if x["primary"]), on[0] if on else None)
+    for x in out:
+        x["primary"] = x is prim
+    return out
+
+
+def merge_inputs(mine: list[dict], template: list[dict]) -> list[dict]:
+    """This computer's inputs with its template kinds (serial, UDP, TCP, gpsd) replaced by the template's,
+    which go where the first of them was (file replays and the simulator keep their places). This
+    computer's choices (in use, primary, on the map) are kept by name; inputs new to it come in not in
+    use, unless none would be in use."""
+    mine = clean_inputs(mine)
+    template = clean_inputs(template)      # names from the type and port where none is given, as here
+    flags = {str(x.get("name", "")).lower(): {k: x.get(k) for k in INPUT_FLAGS if k in x} for x in mine if x.get("name")}
+    first = next((i for i, x in enumerate(mine) if x.get("type") in TEMPLATE_INPUTS), None)
+    rest = [x for x in mine if x.get("type") not in TEMPLATE_INPUTS]
+    at = len(rest) if first is None else sum(1 for x in mine[:first] if x.get("type") not in TEMPLATE_INPUTS)
+    new = []
+    for x in template or []:
+        if not isinstance(x, dict) or x.get("type") not in TEMPLATE_INPUTS:
+            continue
+        d = input_definition(x)
+        d.update(flags.get(str(d.get("name", "")).lower(), {"enabled": False, "primary": False}))
+        new.append(d)
+    out = rest[:at] + new + rest[at:]
+    if out and not any(x.get("enabled", True) is not False for x in out):
+        out[0].update(enabled=True, primary=True)
+    return clean_inputs(out)
 
 # Spyhop's folder:
 #   templates/current/   the current template: LIST_FILES, shortcuts.csv and spyhop-config.json (a template, unzipped)
@@ -441,9 +501,10 @@ class Config:
         self.ensure_defaults()
         self.load()
         self._resolve_data_dir()
-        from .layout import tidy_data_folder, move_surveys_into_folders
+        from .layout import tidy_data_folder, move_surveys_into_folders, rename_instrument_files
         tidy_data_folder(self)
         move_surveys_into_folders(self)        # the pre-0.36 layout, moved once (removed before 1.0)
+        rename_instrument_files(self.data_dir)  # _instruments.csv → _nmea.csv (0.41; removed before 1.0)
         self.reload()
 
     # -- paths -----------------------------------------------------------------
@@ -521,9 +582,10 @@ class Config:
             raise ValueError(f"Can't use {p} as the data folder: {e}")
         self.data_dir = p
         self.save_settings({"data_dir": "" if p == self.default_data_dir else str(p)})
-        from .layout import tidy_data_folder, move_surveys_into_folders
+        from .layout import tidy_data_folder, move_surveys_into_folders, rename_instrument_files
         tidy_data_folder(self)
         move_surveys_into_folders(self)
+        rename_instrument_files(p)
         return p
 
     # -- the current template: templates/current -----------------------------------
@@ -748,7 +810,8 @@ class Config:
         if isinstance(doc.get("online_overlays"), dict):
             s["online_display"] = doc["online_overlays"]
         if isinstance(doc.get("nmea_inputs"), list):
-            s["nmea_sources"] = merge_network_inputs(s.get("nmea_sources") or [], doc["nmea_inputs"])
+            s["nmea_sources"] = merge_inputs(s.get("nmea_sources") or [], doc["nmea_inputs"])
+        s["nmea_sources"] = clean_inputs(s.get("nmea_sources"))
         s["timezone"] = clean_timezone(s.get("timezone"))
         self.settings = s
         display = dict(DEFAULT_DISPLAY)
@@ -767,7 +830,7 @@ class Config:
             "spyhop_template": TEMPLATE_FORMAT,
             "history": self.history,
             "settings": {k: s.get(k) for k in SHARED_SETTINGS},
-            "nmea_inputs": [dict(x) for x in s.get("nmea_sources") or [] if isinstance(x, dict) and x.get("type") in NETWORK_INPUTS],
+            "nmea_inputs": [input_definition(x) for x in s.get("nmea_sources") or [] if isinstance(x, dict) and x.get("type") in TEMPLATE_INPUTS],
             "map_feeds": s.get("online_feeds") or [],
             "map_display": dict(self.display),
             "reports": self.reports,
@@ -787,6 +850,8 @@ class Config:
     def save_settings(self, updates: dict | None = None):
         if updates and "timezone" in updates:
             updates = {**updates, "timezone": clean_timezone(updates["timezone"])}
+        if updates and "nmea_sources" in updates:
+            updates = {**updates, "nmea_sources": clean_inputs(updates["nmea_sources"])}
         if updates and "keep_awake" in updates and updates["keep_awake"] not in ("off", "survey", "always"):
             updates = {**updates, "keep_awake": "survey"}
         for k, v in (updates or {}).items():
@@ -839,16 +904,6 @@ class Config:
             "default_data_dir": str(self.default_data_dir),
             "current_dir": str(self.current_dir),
         }
-
-
-def merge_network_inputs(mine: list[dict], network: list[dict]) -> list[dict]:
-    """This computer's inputs with its network ones (UDP, TCP, gpsd) replaced by `network`, which go
-    where the first network input was (serial ports, file replays and the simulator keep their places)."""
-    mine = [dict(x) for x in mine if isinstance(x, dict)]
-    first = next((i for i, x in enumerate(mine) if x.get("type") in NETWORK_INPUTS), None)
-    rest = [x for x in mine if x.get("type") not in NETWORK_INPUTS]
-    at = len(rest) if first is None else sum(1 for x in mine[:first] if x.get("type") not in NETWORK_INPUTS)
-    return rest[:at] + [dict(x) for x in network if isinstance(x, dict) and x.get("type") in NETWORK_INPUTS] + rest[at:]
 
 
 def _read_json(p: Path) -> dict:

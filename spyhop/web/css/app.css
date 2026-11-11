@@ -562,3 +562,17 @@ h2 .help-btn, h3 .help-btn, h4 .help-btn { font-size: 0.72rem; }
 h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 .route-create { border-top: 2px solid var(--line); padding-top: 0.6em; }
 .route-create > .settings-sec:last-child { border-bottom: 0; }
+
+/* Settings → Inputs: named inputs, in use, primary / secondary (0.41) */
+.nmea-src { flex-direction: column; align-items: stretch; gap: 0.3em; padding: 0.45em 0.4em; }
+.nmea-src-head, .nmea-src-body { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; }
+.nmea-src-body { padding-left: 1.6em; }
+.nmea-src.off .nmea-src-body, .nmea-src.off .src-name { opacity: 0.6; }
+.nmea-src.primary { border-left: 3px solid var(--accent); }
+.nmea-src .src-name { font-weight: 600; }
+.nmea-src-head .icon { margin-left: auto; }
+.role-tag { display: inline-block; margin-left: 0.4em; padding: 0 0.4em; border-radius: 3px; font-size: 0.82em; background: var(--panel2); border: 1px solid var(--line); }
+.role-tag.primary { border-color: var(--accent); }
+#src-failover-row { margin: 0.5em 0; }
+.leaflet-tooltip.secondary-label { background: rgba(255, 255, 255, 0.85); border: 1px solid #7b3fbf; color: #3d1f60; padding: 0 4px; font-size: 11px; box-shadow: none; }
+.leaflet-tooltip.secondary-label::before { display: none; }

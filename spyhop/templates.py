@@ -48,7 +48,7 @@ from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 
 from . import __version__, feeds, reports, schema
-from .config import LOCKED_LISTS, LOCKED_SETTINGS, NETWORK_INPUTS, SHARED_SETTINGS, merge_network_inputs, without_colors
+from .config import LOCKED_LISTS, LOCKED_SETTINGS, TEMPLATE_INPUTS, SHARED_SETTINGS, clean_inputs, input_definition, merge_inputs, without_colors
 
 CONFIG = "spyhop-config.json"
 FORMAT = 3
@@ -118,7 +118,7 @@ def _dict_rows(text: str | None) -> list[dict]:
     if text is None:
         return []
     return [r for r in csv.DictReader(io.StringIO(text)) if any((v or "").strip() for v in r.values())]
-INPUTS_LABEL = "GPS / NMEA network inputs (UDP, TCP, gpsd)"
+INPUTS_LABEL = "GPS / NMEA inputs (serial, UDP, TCP, gpsd)"
 DISPLAY_LABEL = "Map display"
 
 class TemplateError(Exception):
@@ -369,7 +369,8 @@ def _feed_url(f) -> str:
 
 
 def network_inputs(sources) -> list[dict]:
-    return [dict(s) for s in (sources or []) if isinstance(s, dict) and s.get("type") in NETWORK_INPUTS]
+    """The inputs a template holds (serial, UDP, TCP, gpsd: named, without this computer's choices)."""
+    return [input_definition(s) for s in clean_inputs(sources) if s.get("type") in TEMPLATE_INPUTS]
 
 
 def clean_online(d) -> dict | None:
@@ -755,11 +756,11 @@ def compare(cfg, t: dict) -> list[dict]:
         out.append({"file": SETTINGS_LABEL, "status": "changed" if d else "same", "detail": "; ".join(d), "unit": "settings"})
         if s["nmea_inputs"] is not None:
             mine = network_inputs(here.get("nmea_sources"))
-            desc = lambda L: ", ".join(f"{x['type'].upper()} {x.get('host', '') + ':' if x.get('host') else ''}{x.get('port', '')}"  # noqa: E731
-                                       + ("" if x.get("enabled", True) else " (off)") for x in L) or "none"
-            same = [_norm_src(x) for x in mine] == [_norm_src(x) for x in s["nmea_inputs"]]
+            theirs = network_inputs(s["nmea_inputs"])
+            desc = lambda L: ", ".join(x["name"] for x in L) or "none"  # noqa: E731
+            same = mine == theirs
             out.append({"file": INPUTS_LABEL, "status": "same" if same else "changed", "unit": "settings",
-                        "detail": "" if same else f"{desc(mine)} → {desc(s['nmea_inputs'])}; serial ports are left as they are"})
+                        "detail": "" if same else f"{desc(mine)} → {desc(theirs)}; which are in use, and the primary, stay this computer’s choice"})
         mine = {_feed_url(f): f for f in here.get("online_feeds") or []}
         for f in s["map_feeds"]:
             m = mine.get(_feed_url(f))
@@ -904,7 +905,7 @@ def _apply_parts(cfg, t: dict, data: bool = True) -> dict:
         upd = {k: v for k, v in s["settings"].items() if cfg.settings.get(k) != v and (data or k not in LOCKED_SETTINGS)}
         if s["nmea_inputs"] is not None:
             mine = list(cfg.settings.get("nmea_sources") or [])
-            new = merge_network_inputs(mine, s["nmea_inputs"])
+            new = merge_inputs(mine, s["nmea_inputs"])
             if new != mine:
                 upd["nmea_sources"] = new
                 done["inputs"] = True

@@ -25,6 +25,11 @@ from .nmea import NmeaDecoder, with_checksum
 log = logging.getLogger(__name__)
 
 
+def label(src: dict) -> str:
+    """The input's name (0.41), or a description of it."""
+    return str(src.get("name") or "").strip() or describe(src)
+
+
 def describe(src: dict) -> str:
     t = src.get("type")
     if t == "serial":
@@ -86,16 +91,27 @@ class SourceManager:
         self.status: dict[int, dict] = {}
         self._stop_threads = threading.Event()
         self._sims: dict[tuple, "Simulator"] = {}   # kept across restarts, keyed by start point
+        self.on_map: set[str] = set()
 
-    async def start(self, sources: list[dict]):
+    async def start(self, sources: list[dict], failover: bool = False):
+        """Run the inputs in use. The one marked primary supplies the vessel's position (0.41); with none
+        marked, every input does, by their order. Secondaries with show_on_map are listed in self.on_map."""
         await self.stop()
         self._stop_threads = threading.Event()
         self.status = {}
-        self.decoder.priority = {describe(s): i for i, s in enumerate(sources)}
+        on = [s for s in sources if s.get("enabled", True)]
+        self.decoder.priority = {label(s): i for i, s in enumerate(on)}
+        prim = next((s for s in on if s.get("primary")), None)
+        self.decoder.primary = label(prim) if prim else None
+        self.decoder.failover = bool(failover)
+        self.decoder.others = {}
+        self.decoder.inst_src = {}
+        self.on_map = {label(s) for s in on if s is not prim and s.get("show_on_map")}
         for i, src in enumerate(sources):
             if not src.get("enabled", True):
                 continue
-            self.status[i] = {"name": describe(src), "state": "starting", "lines": 0, "error": ""}
+            self.status[i] = {"name": label(src), "state": "starting", "lines": 0, "error": "",
+                              "role": "primary" if src is prim or prim is None else "secondary", "type": src.get("type")}
             runner = getattr(self, "_run_" + str(src.get("type")), None)
             if runner is None:
                 self.status[i].update(state="error", error="unknown source type")

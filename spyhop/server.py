@@ -259,7 +259,8 @@ class App:
             try:
                 self.rec.tick_tracker()
                 msg = {"type": "vessel", "vessel": self.rec.vessel(), "t": time.time(),
-                       "inst": self.rec.decoder.instruments()}
+                       "inst": self.rec.decoder.instruments(),
+                       "others": self.rec.decoder.secondaries(self.sources.on_map) if self.sources.on_map else []}
                 if n % 3 == 0:
                     msg["nmea"] = self.nmea_status(raw=False)
                     if self.tiles.prefetch_state["running"] or self.tiles.prefetch_state["total"]:
@@ -310,8 +311,7 @@ class App:
 
     # -- lifecycle ------------------------------------------------------------------
     async def on_startup(self, app):
-        srcs = list(self.rec.cfg.settings.get("nmea_sources") or []) + self.extra_sources
-        await self.sources.start(srcs)
+        await self.start_inputs()
         self._loop_task = asyncio.create_task(self.ticker())
         self._watch_task = asyncio.create_task(self.stall_watch())
         app["perf"] = self.perf
@@ -607,9 +607,8 @@ class App:
         self.rec.cfg.save_settings(updates)
         if "keep_awake" in updates or "keep_screen_on" in updates:
             self.sync_awake()
-        if restart:
-            await self.sources.start(list(self.rec.cfg.settings.get("nmea_sources") or [])
-                                     + self.extra_sources)
+        if restart or "nmea_failover" in updates:
+            await self.start_inputs()
         self._broadcast_soon({"type": "settings", "settings": self.rec.cfg.settings})
         return json_ok(settings=self.rec.cfg.settings)
 
@@ -703,10 +702,16 @@ class App:
                     raise ValueErrorMsg("A FILE input needs the path of an NMEA log: press Choose… or paste it.")
                 if not Path(x["path"]).is_file():
                     raise ValueErrorMsg(f"There's no file at {x['path']}. Check the path, or press Choose… to find it.")
+        names = [str(x.get("name") or "").strip().lower() for x in srcs if str(x.get("name") or "").strip()]
+        dup = next((n for n in names if names.count(n) > 1), None)
+        if dup:
+            raise ValueErrorMsg(f"Two inputs are called “{dup}”: give each its own name.")
         saved = [{k: v for k, v in x.items() if k != "session"} for x in srcs if not x.get("session")]
         self.extra_sources = [x for x in srcs if x.get("session")]
         self.rec.cfg.save_settings({"nmea_sources": saved})
-        await self.sources.start(saved + self.extra_sources)
+        if "failover" in b:
+            self.rec.cfg.save_settings({"nmea_failover": bool(b["failover"])})
+        await self.start_inputs()
         self._broadcast_soon({"type": "settings", "settings": self.rec.cfg.settings})
         return json_ok(sources=self.all_sources())
 
@@ -717,8 +722,23 @@ class App:
         return json_ok(log=st)
 
     def all_sources(self) -> list[dict]:
-        return (list(self.rec.cfg.settings.get("nmea_sources") or [])
-                + [{**x, "session": True} for x in self.extra_sources])
+        """The saved inputs and this session's (e.g. --sim), as they run: names, in use, primary."""
+        from .config import clean_inputs
+        saved = [dict(x) for x in self.rec.cfg.settings.get("nmea_sources") or []]
+        extra = [{**x, "session": True} for x in self.extra_sources]
+        on = [x for x in extra if x.get("enabled", True) is not False]
+        chosen = [x for x in on if x.get("primary")]
+        if on and (chosen or not any("primary" in x for x in self.extra_sources)):
+            # an input from the command line (e.g. --sim) is the primary for this session, until another is chosen
+            for x in saved:
+                x["primary"] = False
+            for x in extra:
+                x["primary"] = False
+            (chosen or on)[0]["primary"] = True
+        return clean_inputs(saved + extra)
+
+    async def start_inputs(self):
+        await self.sources.start(self.all_sources(), failover=bool(self.rec.cfg.settings.get("nmea_failover")))
 
     # -- tiles ------------------------------------------------------------------------
     async def tile_online(self, request):
@@ -1281,7 +1301,7 @@ class App:
             raise ValueErrorMsg(str(e))
         added_ids = self.rec.template_waypoints(done["waypoints"], done["remove_waypoints"])
         if done["inputs"]:
-            await self.sources.start(list(cfg.settings.get("nmea_sources") or []) + self.extra_sources)
+            await self.start_inputs()
         if done["settings"]:
             self.rec.set_raw_logging()
             self.sync_awake()
