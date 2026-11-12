@@ -152,29 +152,30 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
     ]),
 }
 
-DEFAULT_SHORTCUTS = ["combo", "action", "prefill"], [
-    ["Mod+Enter", "add-current", ""],
-    ["Mod+Shift+S", "add:sightings", ""],
-    ["Mod+Shift+E", "add:effort", ""],
-    ["Mod+Shift+F", "toggle-effort", ""],
-    ["Mod+Shift+V", "add:events", ""],
-    ["Mod+Shift+K", "add:marks", ""],
-    ["Mod+Shift+R", "add:sightings", "Species=North Atlantic right whale"],
-    ["Mod+Shift+H", "add:sightings", "Species=Humpback whale"],
-    ["Mod+Shift+L", "add-resight", ""],
-    ["Mod+Z", "undo", ""],
-    ["Mod+Shift+Z", "redo", ""],
-    ["Mod+PageUp", "prev-tab", ""],
-    ["Mod+PageDown", "next-tab", ""],
-    ["Alt+ArrowLeft", "prev-tab", ""],
-    ["Alt+ArrowRight", "next-tab", ""],
-    ["Mod+1", "tab:sightings", ""],
-    ["Mod+2", "tab:effort", ""],
-    ["Mod+3", "tab:events", ""],
-    ["Mod+4", "tab:summary", ""],
-    ["Mod+5", "tab:settings", ""],
-    ["Mod+Shift+C", "center-vessel", ""],
-    ["Mod+Shift+M", "toggle-log", ""],
+# focus (0.51): the column selected in the new row of an add shortcut (blank: the first empty one)
+DEFAULT_SHORTCUTS = ["combo", "action", "prefill", "focus"], [
+    ["Mod+Enter", "add-current", "", ""],
+    ["Mod+Shift+S", "add:sightings", "", ""],
+    ["Mod+Shift+E", "add:effort", "", ""],
+    ["Mod+Shift+F", "toggle-effort", "", ""],
+    ["Mod+Shift+V", "add:events", "", ""],
+    ["Mod+Shift+K", "add:marks", "", ""],
+    ["Mod+Shift+R", "add:sightings", "Species=North Atlantic right whale", ""],
+    ["Mod+Shift+H", "add:sightings", "Species=Humpback whale", ""],
+    ["Mod+Shift+L", "add-resight", "", ""],
+    ["Mod+Z", "undo", "", ""],
+    ["Mod+Shift+Z", "redo", "", ""],
+    ["Mod+PageUp", "prev-tab", "", ""],
+    ["Mod+PageDown", "next-tab", "", ""],
+    ["Alt+ArrowLeft", "prev-tab", "", ""],
+    ["Alt+ArrowRight", "next-tab", "", ""],
+    ["Mod+1", "tab:sightings", "", ""],
+    ["Mod+2", "tab:effort", "", ""],
+    ["Mod+3", "tab:events", "", ""],
+    ["Mod+4", "tab:summary", "", ""],
+    ["Mod+5", "tab:settings", "", ""],
+    ["Mod+Shift+C", "center-vessel", "", ""],
+    ["Mod+Shift+M", "toggle-log", "", ""],
 ]
 
 # what each list's columns are called in Settings → Dropdowns, and which must be unique
@@ -753,7 +754,7 @@ class Config:
         to check pre-fills. Raises ValueError listing the problems."""
         out, problems, seen = [], [], {}
         for i, r in enumerate(rows or [], 1):
-            combo, action, prefill = (str((r or {}).get(k, "") or "").strip() for k in ("combo", "action", "prefill"))
+            combo, action, prefill, focus = (str((r or {}).get(k, "") or "").strip() for k in ("combo", "action", "prefill", "focus"))
             if not combo and not action and not prefill:
                 continue
             try:
@@ -777,15 +778,22 @@ class Config:
                     elif not (verb == "add" or action == "add-current"):
                         problems.append(f"Row {i}: only shortcuts that add a row can pre-fill columns.")
                         break
+            if focus:                       # 0.51: the column to select in the new row
+                if not (verb == "add" or action in ("add-current", "add-resight")):
+                    problems.append(f"Row {i}: only shortcuts that add a row can choose the column to select.")
+                elif tabs is not None:
+                    where = [arg] if verb == "add" else ["sightings"] if action == "add-resight" else [t for t in ("sightings", "effort", "events") if t in tabs]
+                    if not any(focus in tabs.get(t, ()) for t in where):
+                        problems.append(f"Row {i}: the {arg if verb == 'add' else 'data'} table has no column “{focus}” to select.")
             key = combo.lower()
             if key in seen:
                 problems.append(f"Row {i}: {combo} is already used in row {seen[key]}.")
             else:
                 seen[key] = i
-            out.append({"combo": combo, "action": action, "prefill": prefill})
+            out.append({"combo": combo, "action": action, "prefill": prefill, "focus": focus})
         if problems:
             raise ValueError("\n".join(problems[:12]) + (f"\n… and {len(problems) - 12} more." if len(problems) > 12 else ""))
-        _write_csv(self.shortcuts_path, DEFAULT_SHORTCUTS[0], [[r["combo"], r["action"], r["prefill"]] for r in out])
+        _write_csv(self.shortcuts_path, DEFAULT_SHORTCUTS[0], [[r["combo"], r["action"], r["prefill"], r["focus"]] for r in out])
         self.reload()
         return out
 

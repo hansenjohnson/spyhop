@@ -183,6 +183,8 @@ export class MapView {
     this.layers.fidlines = L.layerGroup();
     this.layers.relines = L.layerGroup();
     for (const tab of ['sightings', 'events', 'marks']) this.markerLayers[tab] = L.layerGroup();
+    // 0.51: resights (their markers, the lines to them from the vessel and through them) as a layer of their own
+    this.layers.resights = L.layerGroup();
     this.layers.imported = L.layerGroup();
     this.layers.graticule = L.layerGroup();
     this.layers.vessel = L.layerGroup().addTo(this.map);
@@ -194,6 +196,7 @@ export class MapView {
     overlays['Effort (on-effort track)'] = this.layers.effortOn;
     overlays['Track (off effort)'] = this.layers.effortOff;
     overlays['Sightings'] = this.markerLayers.sightings;
+    overlays['Resights'] = this.layers.resights;
     overlays['Events'] = this.markerLayers.events;
     overlays['Waypoints'] = this.markerLayers.marks;
     overlays['Imported overlays'] = this.layers.imported;
@@ -208,7 +211,7 @@ export class MapView {
     this.baseLayer = base;
     // track and sighting/FieldID lines are always on the map; Settings decides what they draw
     for (const k of ['track', 'lines', 'fidlines', 'relines']) this.layers[k].addTo(this.map);
-    const defaultsOn = ['Platform icon', 'Sightings', 'Events', 'Waypoints', 'Imported overlays'];
+    const defaultsOn = ['Platform icon', 'Sightings', 'Resights', 'Events', 'Waypoints', 'Imported overlays'];
     let seen = null;
     try { seen = JSON.parse(localStorage.getItem('wsr.overlays.seen') || 'null'); } catch {}
     const disp = this.app.S.config.display;
@@ -1061,7 +1064,7 @@ export class MapView {
     const layer = this.markerLayers[tab];
     if (!layer) return;
     layer.clearLayers();
-    if (tab === 'sightings') { this.layers.lines.clearLayers(); this.layers.fidlines.clearLayers(); this.layers.relines.clearLayers(); }
+    if (tab === 'sightings') { this.layers.lines.clearLayers(); this.layers.fidlines.clearLayers(); this.layers.relines.clearLayers(); this.layers.resights.clearLayers(); }
     const byFid = {};
     const disp = this.app.S.config.display;
     const rad = +disp.marker_radius || 8, lsize = +disp.label_size || 12;
@@ -1080,7 +1083,8 @@ export class MapView {
       const icon = L.divIcon({ className: 'data-marker', iconSize: [s, s], iconAnchor: [s / 2, s / 2],
         html: `${shapeSvg(look.shape, color, look.r, '#000', look.fill)}${label}` });
       const old = tab !== 'marks' && this.isOld(r.DateTime);      // waypoints never fade
-      const m = L.marker(pos, { icon, title: this.title(tab, r), riseOnHover: true, opacity: old ? 0.35 : 1 }).addTo(layer);
+      const isRe = tab === 'sightings' && rs.isResight(r);
+      const m = L.marker(pos, { icon, title: this.title(tab, r), riseOnHover: true, opacity: old ? 0.35 : 1 }).addTo(isRe ? this.layers.resights : layer);
       m.bindPopup(() => this.rowPopup(tab, r.RowID), { minWidth: 200, maxWidth: 320 });
       m.on('popupopen', () => { this.openRowPopup = { m, tab, id: r.RowID }; });
       m.on('popupclose', () => { if (this.openRowPopup?.m === m) this.openRowPopup = null; });
@@ -1088,7 +1092,7 @@ export class MapView {
       if (tab === 'sightings' && disp.sighting_lines !== '0' && r.SigLat && r.Lat) {
         const w = +disp.sighting_lines_width || 1.5;
         L.polyline([[+r.Lat, +r.Lon], pos], { color, weight: w, dashArray: dashFor(disp.sighting_lines_style || 'dashed', w), interactive: false,
-          opacity: old ? 0.3 : 1 }).addTo(this.layers.lines);
+          opacity: old ? 0.3 : 1 }).addTo(isRe ? this.layers.resights : this.layers.lines);
       }
       if (tab === 'sightings' && r.FieldID) (byFid[r.FieldID] = byFid[r.FieldID] || []).push({ r, pos, color });
     }
@@ -1103,7 +1107,7 @@ export class MapView {
         L.polyline(pts, { color: this.markerColor(tab, g[0]), weight: w, dashArray: dashFor(disp.resight_lines_style || 'dotted', w), lineCap: 'round',
           opacity: this.isOld(last.DateTime) ? 0.35 : 0.9 })
           .bindTooltip(`Sighting ${esc(g[0].SightNo)}: ${g.length - 1} resight${g.length === 2 ? '' : 's'}`, { sticky: true })
-          .addTo(this.layers.relines);
+          .addTo(this.layers.resights);
       }
     }
     // dotted line joining re-sightings of the same FieldID, oldest to newest

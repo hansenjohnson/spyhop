@@ -200,7 +200,8 @@ def clean_pane_layout(v) -> dict:
     return out
 
 def clean_column_layout(v) -> dict:
-    """{tab: {order: [column keys], widths: {key: px}}}: only known tabs and columns, widths 30–800 px."""
+    """{tab: {order: [column keys], widths: {key: px}, hidden: [column keys]}}: only known tabs and columns,
+    widths 30–800 px. hidden (0.51): columns left out of the table on this computer (still in the data)."""
     out = {}
     for tab, lay in (v or {}).items() if isinstance(v, dict) else []:
         if tab not in schema.TABS or not isinstance(lay, dict):
@@ -214,8 +215,11 @@ def clean_column_layout(v) -> dict:
                     widths[k] = max(30, min(800, int(float(w))))
             except (TypeError, ValueError):
                 pass
-        if order or widths:
-            out[tab] = {"order": list(dict.fromkeys(order)), "widths": widths}
+        hidden = list(dict.fromkeys(k for k in lay.get("hidden") or [] if k in keys))
+        if len(hidden) >= len([c for c in schema.TABS[tab]["columns"] if not c.get("hidden")]):
+            hidden = hidden[:-1]                 # never every column
+        if order or widths or hidden:
+            out[tab] = {"order": list(dict.fromkeys(order)), "widths": widths, **({"hidden": hidden} if hidden else {})}
     return out
 
 class App:

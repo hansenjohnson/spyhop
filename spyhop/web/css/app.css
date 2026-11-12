@@ -304,13 +304,17 @@ table.kv td button { margin-left: 0.6em; }
 
 /* NMEA tab */
 .inst-group h4 { margin: 0.6em 0 0.3em; color: var(--muted); font-weight: 600; }
-.inst-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.5em; }
+.inst-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-flow: row dense; gap: 0.5em; }
 .inst { border: 1px solid var(--line); border-radius: 6px; padding: 0.35em 0.6em; background: var(--panel2); }
 .inst-l { font-size: 0.85em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inst-v { font-size: 1.45em; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; }
 .inst-u { font-size: 0.6em; font-weight: 500; color: var(--muted); }
 .inst-s { font-size: 0.75em; color: var(--muted); }
 .inst.stale { opacity: 0.45; }
+/* 0.51: latitude and longitude take two columns and a smaller size, so they fit in any lat/lon format */
+.inst.inst-ll { grid-column: span 2; min-width: 0; }
+.inst.inst-ll .inst-v { font-size: 1.2em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-chip.col-hidden { opacity: 0.45; text-decoration: line-through; border-style: dashed; }
 .rec-dot { color: var(--alert); }
 
 /* quality control */
@@ -318,6 +322,11 @@ table.kv td button { margin-left: 0.6em; }
 .qc-pill.error { background: #fbe3e1; color: #a1271c; }
 .qc-pill.warning { background: #fdf0d5; color: #8a5a00; }
 .qc-pill.info { background: #e3eef7; color: #1d5a85; }
+/* 0.51: Error check → Highlight in the tables, in the colors of the level pills */
+table.grid td.qc-hl-error { background: #fbe3e1 !important; box-shadow: inset 0 0 0 1px #a1271c80; }
+table.grid td.qc-hl-warning { background: #fdf0d5 !important; box-shadow: inset 0 0 0 1px #8a5a0080; }
+table.grid td.qc-hl-info { background: #e3eef7 !important; box-shadow: inset 0 0 0 1px #1d5a8580; }
+table.grid td.qc-hl.sel { box-shadow: inset 0 0 0 2px var(--accent); }
 .qc-table { width: 100%; }
 .qc-table td { vertical-align: top; }
 .qc-table td:nth-child(2), .qc-table td:nth-child(3), .qc-table td.nowrap { white-space: nowrap; }

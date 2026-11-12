@@ -298,7 +298,10 @@ class App {
       el('button', { onclick: () => this.deleteRow(tab), title: 'Delete the selected row' }, 'Delete row'),
       el('button', { id: `undo-${tab}`, onclick: () => this.undo(tab), title: `Undo${sc('undo')}` }, '↶ Undo'),
       el('button', { id: `redo-${tab}`, onclick: () => this.redo(tab), title: `Redo${sc('redo')}` }, '↷ Redo'),
-      el('button', { id: `columns-${tab}`, class: 'columns-btn', onclick: () => this.columnsDialog(tab), title: 'Change the order of this table’s columns (you can also drag a header)' }, 'Columns…'));
+      el('button', { id: `columns-${tab}`, class: 'columns-btn', onclick: () => this.columnsDialog(tab), title: 'Change the order of this table’s columns (you can also drag a header), or hide some' }, 'Columns…'),
+      // 0.51: only while some columns are hidden (Columns…); they're still in the data
+      el('button', { id: `showcols-${tab}`, class: 'showcols-btn hidden', onclick: () => this.showHiddenColumns(tab),
+        title: 'Show the columns hidden with Columns… (they are kept in the data either way)' }, 'Show hidden columns'));
     if (tab === 'sightings') {
       bar.insertBefore(el('button', { id: 'btn-add-resight', disabled: true, onclick: () => this.addResight(),
         title: `Add a resight of the animals of the selected sighting: a new row linked to their first sighting, with the species, numbers and FieldID filled in${sc('add-resight')}` },
@@ -315,7 +318,9 @@ class App {
   async columnsDialog(tab) {
     const g = this.grids[tab];
     if (!g) return;
-    let order = g.cols.map((c) => ({ key: c.key, label: c.label || c.key, help: c.help || '' }));
+    // 0.51: hidden columns are in the list too (greyed); Hide / Show change the selected ones
+    const hidden = new Set(g.layout().hidden || []);
+    let order = g.orderedCols().map((c) => ({ key: c.key, label: c.label || c.key, help: c.help || '' }));
     const sel = new Set();
     let anchor = null;
     const box = el('div', { class: 'col-chips', id: 'columns-list' });
@@ -323,8 +328,10 @@ class App {
     const count = el('span', { class: 'hint', id: 'columns-count' });
     const chips = () => [...box.querySelectorAll('.col-chip')];
     const draw = () => {
-      box.replaceChildren(...order.map((c) => el('span', { class: `col-chip${sel.has(c.key) ? ' selected' : ''}`, 'data-key': c.key, title: c.help, tabindex: 0, role: 'option', 'aria-selected': sel.has(c.key) ? 'true' : 'false' }, c.label)), mark);
-      count.textContent = sel.size ? `${sel.size} selected` : 'Click columns to select them, then drag';
+      box.replaceChildren(...order.map((c) => el('span', { class: `col-chip${sel.has(c.key) ? ' selected' : ''}${hidden.has(c.key) ? ' col-hidden' : ''}`, 'data-key': c.key,
+        title: `${c.help}${hidden.has(c.key) ? ' (hidden)' : ''}`, tabindex: 0, role: 'option', 'aria-selected': sel.has(c.key) ? 'true' : 'false' }, c.label)), mark);
+      count.textContent = (sel.size ? `${sel.size} selected` : 'Click columns to select them, then drag') + (hidden.size ? ` · ${hidden.size} hidden` : '');
+      if (hideBtn) { hideBtn.disabled = !sel.size || [...sel].every((k) => hidden.has(k)); showBtn.disabled = ![...sel].some((k) => hidden.has(k)); }
     };
     const moveTo = (idx) => {                     // put the selected ones at idx of the rest, in their order
       const moving = order.filter((c) => sel.has(c.key)), rest = order.filter((c) => !sel.has(c.key));
@@ -332,6 +339,12 @@ class App {
       order = rest;
       draw();
     };
+    const hideSel = (on) => {
+      for (const k of sel) on ? hidden.add(k) : hidden.delete(k);
+      if (hidden.size >= order.length) { hidden.delete(order.find((c) => sel.has(c.key))?.key); toast('At least one column has to stay in view.', 'warn'); }
+      draw();
+    };
+    let hideBtn = null, showBtn = null;
     const shift = (d) => {                        // ← / →: the selection one place left or right
       if (!sel.size) return;
       const rest = order.filter((c) => !sel.has(c.key));
@@ -398,18 +411,29 @@ class App {
     });
     draw();
     const name = { sightings: 'Sightings', effort: 'Effort', events: 'Events', marks: 'Waypoints' }[tab] || tab;
+    setTimeout(draw, 0);                          // once the Hide / Show buttons exist
     const how = await modal({ title: `Columns: ${name}`, width: 'min(46em, 92vw)',
       body: el('div', {},
-        el('p', { class: 'hint' }, 'The columns left to right. Click to select one or more (Shift+click for a range), then drag them to their new place, or move them with ← / →. Kept on this computer only; widths stay as they are.'),
+        el('p', { class: 'hint' }, 'The columns left to right. Click to select one or more (Shift+click for a range), then drag them to their new place, or move them with ← / →. Hide takes the selected columns out of the table (greyed here) to save space: they stay in the data, the files and exports. Kept on this computer only; widths stay as they are.'),
         box,
         el('div', { class: 'btnrow' },
           el('button', { id: 'columns-left', title: 'Move the selected columns one place left', onclick: () => shift(-1) }, '← Left'),
           el('button', { id: 'columns-right', title: 'Move the selected columns one place right', onclick: () => shift(1) }, 'Right →'),
+          (hideBtn = el('button', { id: 'columns-hide', title: 'Hide the selected columns in this table (they stay in the data)', onclick: () => hideSel(true) }, 'Hide')),
+          (showBtn = el('button', { id: 'columns-show', title: 'Show the selected hidden columns again', onclick: () => hideSel(false) }, 'Show')),
           el('button', { id: 'columns-none', onclick: () => { sel.clear(); draw(); } }, 'Clear selection'),
           count)),
       buttons: [{ label: 'Reset to the standard order', value: 'reset' }, { label: 'Cancel', value: null }, { label: 'Save', value: 'save', primary: true }] });
-    if (how === 'save') await g.saveLayout({ ...g.layout(), order: order.map((c) => c.key) });
-    else if (how === 'reset') { const { order: _o, ...rest } = g.layout(); await g.saveLayout(Object.keys(rest).length ? rest : null); }
+    if (how === 'save') await g.saveLayout({ ...g.layout(), order: order.map((c) => c.key), hidden: [...hidden] });
+    else if (how === 'reset') { const { order: _o, hidden: _h, ...rest } = g.layout(); await g.saveLayout(Object.keys(rest).length ? rest : null); }
+  }
+
+  // 0.51: the toolbar's Show hidden columns: every column back in view (the order and widths stay)
+  async showHiddenColumns(tab) {
+    const g = this.grids[tab];
+    if (!g) return;
+    const { hidden: _h, ...rest } = g.layout();
+    await g.saveLayout(Object.keys(rest).length ? rest : null);
   }
 
   buildBottom() {
@@ -656,10 +680,10 @@ class App {
     this.grids[tab].select(res.row.RowID, 'DateTime');
   }
 
-  async addResight() {
+  async addResight(focus = '') {
     const r = this.selectedSighting();
     if (!r) { toast('Select a sighting first: the resight is linked to it.', 'warn'); this.showTab('sightings'); return; }
-    const key = this.grids.sightings.sel?.key || 'DateTime';
+    const key = (focus && this.grids.sightings.cols.some((c) => c.key === focus) ? focus : '') || this.grids.sightings.sel?.key || 'DateTime';
     let res;
     try { res = await api('/api/sightings/resight', { id: r.RowID }); } catch { return; }
     const t = this.S.tables.sightings;
@@ -981,7 +1005,8 @@ class App {
   }
 
   // ---------------------------------------------------------------- data actions
-  async addRow(tab, prefill = {}, latlng = null) {
+  // focus (0.51): the column to select in the new row (a shortcut's Focus), if it's shown; else the first empty one
+  async addRow(tab, prefill = {}, latlng = null, focus = '') {
     if (!this.grids[tab]) return;
     if (tab !== 'marks' && !this.S.survey) {
       toast('No survey is open — start or open one in the Survey tab.', 'warn');
@@ -1000,7 +1025,7 @@ class App {
     if (!t.rows.some((r) => r.RowID === res.row.RowID)) { t.rows.push(res.row); t.can_undo = true; this.renderTab(tab); this.map.drawMarkers(tab); }
     this.showTab(tab);
     const g = this.grids[tab];
-    g.select(res.row.RowID, g.firstEmptyEditable(res.row));
+    g.select(res.row.RowID, focus && g.cols.some((c) => c.key === focus) ? focus : g.firstEmptyEditable(res.row));
   }
 
   async toggleEffort() {
@@ -1461,7 +1486,12 @@ class App {
       else {
         kids.push(el('div', { class: 'btnrow' }, el('span', { class: 'hint' }, 'Show:'),
           ...['error', 'warning', 'info'].map((k) => el('label', { class: 'inline' }, el('input', { type: 'checkbox', checked: f[k],
-            onchange: (e) => { f[k] = e.target.checked; this.renderQc(); } }), `${LEVEL[k]}s (${c[k]})`))));
+            onchange: (e) => { f[k] = e.target.checked; this.renderQc(); this.refreshQcHighlight(); } }), `${LEVEL[k]}s (${c[k]})`)),
+          // 0.51: color the cells (or the row number, for a problem with a whole row) in the tables
+          el('label', { class: 'inline', title: 'Color each cell with a problem in its table, in the color of its level (the levels shown here)' },
+            el('input', { type: 'checkbox', id: 'qc-highlight', checked: this.qcHighlightOn(),
+              onchange: (e) => { try { localStorage.setItem('wsr.qc.highlight', e.target.checked ? '1' : '0'); } catch {} this.refreshQcHighlight(); } }),
+            'Highlight in the tables')));
         const shown = rep.issues.filter((x) => f[x.level]);
         const when = (iso) => { const p = iso && timeParts(iso, this.clock()); return p ? `${p.time.slice(0, 5)} ${p.abbr}` : ''; };
         kids.push(el('table', { class: 'summary qc-table' },
@@ -1499,12 +1529,34 @@ class App {
     await this.runQc();
   }
 
+  // 0.51: Error check → Highlight in the tables (this computer; off unless ticked)
+  qcHighlightOn() { try { return localStorage.getItem('wsr.qc.highlight') === '1'; } catch { return false; } }
+  refreshQcHighlight() { for (const t of ['sightings', 'effort', 'events']) if (this.grids[t]) this.grids[t].render(); }
+  // {`${RowID}|${column}` or `${RowID}|#` (the whole row): {level, msgs}} for a table, from the last check
+  qcCells(tab) {
+    const rep = this.qcReport;
+    if (!rep || !this.qcHighlightOn() || rep.survey !== this.S.survey?.prefix) return null;
+    const f = this.qcFilter || { error: true, warning: true, info: true };
+    const rank = { error: 3, warning: 2, info: 1 };
+    const g = this.grids[tab], shown = new Set((g?.cols || []).map((c) => c.key));
+    const out = new Map();
+    for (const x of rep.issues) {
+      if (x.tab !== tab || !x.row_id || !f[x.level]) continue;
+      const k = `${x.row_id}|${x.column && shown.has(x.column) ? x.column : '#'}`;
+      const cur = out.get(k);
+      if (!cur) out.set(k, { level: x.level, msgs: [x.message] });
+      else { cur.msgs.push(x.message); if (rank[x.level] > rank[cur.level]) cur.level = x.level; }
+    }
+    return out;
+  }
+
   async runQc() {
     let r;
     try { r = await api('/api/qc', {}); } catch { return; }
     this.qcReport = r.report;
     this.qcStale = false;
     this.renderQc();
+    this.refreshQcHighlight();
     const c = r.report.counts;
     const n = (k, w) => `${c[k]} ${w}${c[k] === 1 ? '' : 's'}`;
     toast(c.error + c.warning ? `Error check: ${n('error', 'error')}, ${n('warning', 'warning')}, ${n('info', 'note')}` : 'Error check: no problems found');
@@ -1850,12 +1902,12 @@ class App {
       e.stopPropagation();
       const g = this.grids[this.tab];
       if (g?.editing) g.commit(g.pendingValue());
-      this.runAction(s.action, s.prefill);
+      this.runAction(s.action, s.prefill, s.focus);
       return;
     }
   }
 
-  runAction(action, prefillStr) {
+  runAction(action, prefillStr, focus = '') {
     const prefill = {};
     for (const part of (prefillStr || '').split(';')) {
       const i = part.indexOf('=');
@@ -1864,10 +1916,10 @@ class App {
     const [verb, arg] = action.split(':');
     const tabs = this.allTabs();
     switch (verb) {
-      case 'add': this.addRow(arg, prefill); break;
+      case 'add': this.addRow(arg, prefill, null, focus); break;
       // the data table in view (Sightings, Effort or Events), whichever pane has the focus; never waypoints
-      case 'add-current': this.addRow(this.topTabs().includes(this.dataTab) ? this.dataTab : 'sightings', prefill); break;
-      case 'add-resight': this.addResight(); break;
+      case 'add-current': this.addRow(this.topTabs().includes(this.dataTab) ? this.dataTab : 'sightings', prefill, null, focus); break;
+      case 'add-resight': this.addResight(focus); break;
       case 'toggle-effort': this.toggleEffort(); break;
       case 'undo': this.undo(); break;
       case 'redo': this.redo(); break;
@@ -2644,7 +2696,7 @@ class App {
   renderShortcuts() {
     const pane = $('#pane-shortcuts');
     if (!pane) return;
-    const saved = this.S.config.shortcuts.map((s) => ({ combo: s.combo || '', action: s.action || '', prefill: s.prefill || '' }));
+    const saved = this.S.config.shortcuts.map((s) => ({ combo: s.combo || '', action: s.action || '', prefill: s.prefill || '', focus: s.focus || '' }));
     const rows = this.scDraft || saved;
     const dirty = !!this.scDraft && JSON.stringify(this.scDraft) !== JSON.stringify(saved);
     const actions = this.shortcutActions();
@@ -2668,6 +2720,11 @@ class App {
           if (e.key === 'Escape') { this.comboCapture = null; this.renderShortcuts(); return; }
           const c = this.comboFromEvent(e);
           if (!c) return;
+          // 0.51: on a Mac, Mod is ⌘ (Command); the Control key isn't used for shortcuts at all
+          if (IS_MAC && e.ctrlKey && !e.metaKey) {
+            toast('On a Mac, shortcuts use ⌘ (Command), shown as Mod, not the Control key. Press ⌘ with the key instead (or Option, or F1–F12).', 'warn', 7000);
+            return;
+          }
           if (!/(^|\+)(Mod|Alt)\+/.test(c) && !/^(Shift\+)?F([1-9]|1[0-9]|2[0-4])$/.test(c)) {
             toast('A shortcut needs Mod or Alt (or use F1–F12), so it doesn’t get in the way of typing.', 'warn');
             return;
@@ -2686,9 +2743,20 @@ class App {
     const body = rows.map((r, i) => {
       const verb = r.action.split(':')[0];
       const canPrefill = verb === 'add' || r.action === 'add-current';
+      const canFocus = canPrefill || r.action === 'add-resight';
+      // 0.51: Focus: the column selected in the new row (blank: the first empty one, as without a shortcut)
+      const focusTabs = verb === 'add' ? [r.action.split(':')[1]] : r.action === 'add-resight' ? ['sightings'] : ['sightings', 'effort', 'events'];
+      const focusCols = [...new Map(focusTabs.flatMap((tb) => (this.S.schema.tabs[tb]?.columns || [])
+        .filter((c) => !c.hidden && !c.readonly && !c.auto && c.type !== 'seq' && !['RowID', 'Map'].includes(c.key))
+        .map((c) => [c.key, focusTabs.length > 1 ? `${c.label || c.key} (${c.key})` : (c.label || c.key)]))).entries()];
+      const foc = el('select', { class: 'sc-focus', disabled: !canFocus, title: 'The column selected in the new row, ready to type in',
+        onchange: (e) => { edit()[i].focus = e.target.value; markDirty(); } },
+        el('option', { value: '', selected: !r.focus }, canFocus ? '— first empty column' : ''),
+        ...(canFocus ? focusCols : []).map(([k, l]) => el('option', { value: k, selected: r.focus === k }, l)),
+        ...(r.focus && canFocus && !focusCols.some(([k]) => k === r.focus) ? [el('option', { value: r.focus, selected: true }, `${r.focus} (not in this table)`)] : []));
       const dup = r.combo && count[norm(r.combo)] > 1;
       const warn = RESERVED.includes(r.combo);
-      const sel = el('select', { onchange: (e) => { edit()[i].action = e.target.value; if (!/^add/.test(e.target.value)) edit()[i].prefill = ''; this.renderShortcuts(); } },
+      const sel = el('select', { onchange: (e) => { edit()[i].action = e.target.value; if (!/^add/.test(e.target.value)) { edit()[i].prefill = ''; edit()[i].focus = ''; } this.renderShortcuts(); } },
         (label[r.action] ? [] : [el('option', { value: r.action, selected: true }, r.action ? `${r.action} (unknown)` : 'Choose…')]),
         actions.map(([v, l]) => el('option', { value: v, selected: v === r.action }, l)));
       // wide enough for the longest pre-fill in the table (and it grows as you type)
@@ -2698,21 +2766,21 @@ class App {
       return el('tr', { class: dup ? 'bad' : null },
         el('td', {}, keyCell(r, i), dup ? el('div', { class: 'cell-err' }, 'Used twice') : null,
           warn ? el('div', { class: 'cell-warn', title: 'The browser or the computer may use these keys itself' }, '⚠ may be taken by the browser') : null),
-        el('td', {}, sel), el('td', {}, pre),
+        el('td', {}, sel), el('td', {}, pre), el('td', {}, foc),
         el('td', { class: 'rowbtns' },
           el('button', { title: 'Move up', disabled: i === 0, onclick: () => { const d = edit(); [d[i - 1], d[i]] = [d[i], d[i - 1]]; this.renderShortcuts(); } }, '↑'),
           el('button', { title: 'Move down', disabled: i === rows.length - 1, onclick: () => { const d = edit(); [d[i + 1], d[i]] = [d[i], d[i + 1]]; this.renderShortcuts(); } }, '↓'),
           el('button', { title: 'Delete', class: 'danger-outline', onclick: () => { edit().splice(i, 1); this.renderShortcuts(); } }, '✕')));
     });
     pane.replaceChildren(el('section', { class: 'settings-sec' }, el('h3', {}, 'Keyboard shortcuts'),
-      el('p', {}, `Click a shortcut’s keys to change them, choose what it does, and press Save. “Mod” is ${MOD} on this computer. Shortcuts that add a row can pre-fill columns, e.g. `,
-        el('span', { class: 'mono' }, 'Species=Fin whale;Obs=OBS1'), ' (the column names are listed below the table).'),
+      el('p', {}, `Click a shortcut’s keys to change them, choose what it does, and press Save. “Mod” is ⌘ (Command) on a Mac and Ctrl on Windows and Linux (${MOD} on this computer), so one template works on both; on a Mac the Control key isn’t used. Shortcuts that add a row can pre-fill columns, e.g. `,
+        el('span', { class: 'mono' }, 'Species=Fin whale;Obs=OBS1'), ' (the column names are listed below the table), and choose the column to select in the new row (Focus), ready to type in.'),
       el('table', { class: 'summary edit-table shortcut-edit' },
-        el('thead', {}, el('tr', {}, ['Keys', 'What it does', 'Pre-fill', ''].map((h) => el('th', {}, h)))),
+        el('thead', {}, el('tr', {}, ['Keys', 'What it does', 'Pre-fill', 'Focus', ''].map((h) => el('th', {}, h)))),
         el('tbody', {}, body)),
       el('div', { class: 'btnrow' },
-        el('button', { onclick: () => { edit().push({ combo: '', action: 'add:sightings', prefill: '' }); this.renderShortcuts(); } }, 'Add shortcut'),
-        el('button', { onclick: () => { this.scDraft = this.S.config.default_shortcuts.map((s) => ({ combo: s.combo, action: s.action, prefill: s.prefill || '' })); this.renderShortcuts(); } }, 'Restore the default shortcuts')),
+        el('button', { onclick: () => { edit().push({ combo: '', action: 'add:sightings', prefill: '', focus: '' }); this.renderShortcuts(); } }, 'Add shortcut'),
+        el('button', { onclick: () => { this.scDraft = this.S.config.default_shortcuts.map((s) => ({ combo: s.combo, action: s.action, prefill: s.prefill || '', focus: s.focus || '' })); this.renderShortcuts(); } }, 'Restore the default shortcuts')),
       el('details', { class: 'hint', id: 'sc-columns' }, el('summary', {}, 'Column names for pre-fills'),
         ...this.dataTabs().map((tb) => el('p', {}, el('b', {}, `${this.S.schema.tabs[tb].title}: `),
           el('span', { class: 'mono' }, this.S.schema.tabs[tb].columns.filter((c) => !['RowID', 'Map'].includes(c.key)).map((c) => c.key).join(', '))))),
@@ -3176,7 +3244,7 @@ class App {
         if (ll) r.unit = '';
         const age = r.age < 2 ? 'now' : r.age < 90 ? `${Math.round(r.age)} s ago` : `${Math.round(r.age / 60)} min ago`;
         const plottable = typeof r.value === 'number' && !ll;
-        return el('div', { class: `inst${r.age > 15 ? ' stale' : ''}${plottable ? ' plottable' : ''}`, 'data-key': k,
+        return el('div', { class: `inst${r.age > 15 ? ' stale' : ''}${plottable ? ' plottable' : ''}${ll ? ' inst-ll' : ''}`, 'data-key': k,
           title: `${r.sentence} from ${r.source || 'input'}${plottable ? ' — click to plot since the start of the survey' : ''}`,
           onclick: plottable ? () => openInstrumentPlot(this, k) : null },
           el('div', { class: 'inst-l' }, r.label),

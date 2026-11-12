@@ -168,7 +168,7 @@ The **map** (top left), **Survey, Tools and Settings** (top right), and the **da
   - 📏 measure: click to add points, double-click or Esc to finish, click again to clear. Each leg shows the true and magnetic bearing and the distance, and the total.
   - ◎ range rings
   - ⤢ zoom to the whole survey. When Spyhop starts with a survey open, the map starts zoomed to the whole survey, with following off (⌖ turns it back on).
-- **Layers menu** (top right): **Layers** (the **Platform icon**, **Effort** (the on-effort track), **Track** (the off-effort track), sightings, events, waypoints, routes, imported overlays, range rings, a **graticule** (a lat/lon grid that adapts to the zoom), and each **other** GPS source in use) and **Online overlays** (AIS, weather radar, map feeds).
+- **Layers menu** (top right): **Layers** (the **Platform icon**, **Effort** (the on-effort track), **Track** (the off-effort track), sightings, **resights** (their markers and the lines to and through them; the first sightings stay when it's off), events, waypoints, routes, imported overlays, range rings, a **graticule** (a lat/lon grid that adapts to the zoom), and each **other** GPS source in use) and **Online overlays** (AIS, weather radar, map feeds).
 - **Right-click menu:** add a sighting, event or waypoint at that point; measure from here; copy the position.
 - **Readout (bottom left):** the cursor position, its bearing and distance from the vessel, the depth at the cursor on the Seascape map, and a scale.
 
@@ -229,6 +229,7 @@ A resight is another sighting of animals already recorded: closing in for photos
 
 - Select the sighting and press **Add resight** (Ctrl/⌘+Shift+L). The new row gets the time and position as usual, **ResNo** (right after Calves; the CSV column is ResightOf) holds the first sighting's SigNo, and the species, Num, Calves, NumConf, IDrel and FieldID are copied, ready to correct. A resight of a resight is linked to the first sighting. You can also type a SigNo in **ResNo** to link rows afterwards, or clear it to unlink one.
 - Resights aren't counted again in the Summary or in reports, and the Error check doesn't list them as off-effort sightings or their observer as off watch.
+- **Resights** in the map's layers menu switches the resights on the map on or off.
 - **Settings → General → Resights:** list the Sightings table in time order or with each sighting's **resights nested** under it; the resight markers' shape (or hidden), fill, size and labels.
 - **Tools → Resights** lists each sighting that has resights: its FieldID, the number of resights, the time span, the distance along the resights, the **average swim speed**, the **net speed** (first sighting to last resight in a straight line), and the **dive times** (from a resight with a dive behavior, e.g. Fluke-up dive, to the next resight with First surfacing; choose the behaviors there). **Resights…** shows each interval and dive; **Save as CSV…** saves them all. Speeds use SigLat/SigLon worked out from bearings and distances, so distance errors show up as speed, most of all over short intervals.
 - In the merged CSV, keep the rows where **ResightOf** is blank for first detections only (e.g. for encounter rates or detection distances).
@@ -251,7 +252,9 @@ A resight is another sighting of animals already recorded: closing in for photos
 ### Insert row, columns and row colors
 
 - **Insert row…** (every data tab): select a row, then choose whether the new row goes **after** or **before** it, and how its time and position are filled in: the **average** of the rows either side, **copied** from the row before or after, or **Use this time and the nearest vessel position** (type a time, e.g. `14:05`: the row goes in time order and its position is the vessel's at that time from the trackline). Its Notes say how. You can insert rows into an ended survey to fill a gap; nothing can go before the Start row or after the End row.
-- **Columns:** drag a column's header to move it, or use **Columns…**: the columns as chips; click to select one or more (Shift+click for a range) and drag them together to a new place, or move them with ← / →; **Save**, or **Reset** to the standard order. Drag the right edge of a header to change its width (double-click it for the default). The order and widths are kept on this computer only; **Settings → General → Tables** resets them all.
+- **Columns:** drag a column's header to move it, or use **Columns…**: the columns as chips; click to select one or more (Shift+click for a range) and drag them together to a new place, or move them with ← / →; **Save**, or **Reset** to the standard order. Drag the right edge of a header to change its width (double-click it for the default).
+  - **Hiding columns:** in **Columns…**, select columns and press **Hide** (greyed there; **Show** puts selected ones back) to save screen space. Hidden columns are only left out of the table on screen: they're still recorded, in the files and in every export. While any are hidden, a **Show hidden columns** button next to Columns… brings them all back.
+  - The order, widths and hidden columns are kept on this computer only; **Settings → General → Tables** resets them all.
 - **Sightings row colors** (Settings → General → Tables): **None**, **Alternating**, **Highlight resights** (the default) or **Group resights** (each sighting and its resights in a color of their own).
 
 ### Keyboard shortcuts
@@ -268,6 +271,8 @@ A resight is another sighting of animals already recorded: closing in for photos
 | Ctrl+PageUp/PageDown, Alt+←/→ | Previous/next tab |
 | Ctrl+Shift+C | Center on the vessel |
 | Ctrl+Shift+M | Minimize / restore the data tables |
+
+**Mod** in Settings → Shortcuts is ⌘ (Command) on a Mac and Ctrl on Windows and Linux, so one template works on both. On a Mac the Control key isn't used for shortcuts.
 
 These are the defaults; the shortcuts are part of the template. To change them, see [Editing the shortcuts](#editing-the-shortcuts).
 
@@ -360,7 +365,11 @@ Every time in Spyhop comes from the computer's clock, so Spyhop compares it with
 
 ## Error check
 
-**Tools → Error check:** press **Run error check** before you finish a survey (or any time). It lists problems as **errors** (must fix), **warnings** (probably wrong) and **notes** (worth a look). **Show** takes you to the row and column in the data table (the row flashes). It doesn't change anything, except when you press a **Fix** button. **Save report…** downloads the list as a CSV. It checks:
+**Tools → Error check:** press **Run error check** before you finish a survey (or any time). It lists problems as **errors** (must fix), **warnings** (probably wrong) and **notes** (worth a look). **Show** takes you to the row and column in the data table (the row flashes). It doesn't change anything, except when you press a **Fix** button. **Save report…** downloads the list as a CSV.
+
+**Highlight in the tables** (next to the Show filter) colors each cell with a problem in the Sightings, Effort and Events tables, in the color of its level (red for errors, amber for warnings, blue for notes), for the levels ticked in Show. A problem with a whole row colors the row number; hover over a cell to read its problems. The colors are from the last check: run it again after fixing things. It's remembered on this computer.
+
+It checks:
 
 - **Survey details:** every field filled in (the station position and altitude only when needed), and a valid email.
 - **Required fields:** Sightings: everything except Behaviors, Bearing, Ref, Dist, Unit, Alt, ResNo, FieldID and Notes. Effort: everything except Notes (Start and End rows need only the time and position). Events: everything except ID and Notes.
@@ -497,7 +506,8 @@ Every computer has a **current template**: the one in use, kept unzipped in `tem
 In **Settings → Shortcuts**, click a shortcut's keys and press the new ones, choose what it does from the list, and press **Save**.
 
 - Shortcuts that add a row can pre-fill columns, e.g. `Species=Fin whale;Obs=OBS1`.
-- Keys need Ctrl (⌘ on a Mac) or Alt, so they don't get in the way of typing; F1–F12 work alone.
+- **Focus:** the column selected in the new row of a shortcut that adds a row (or a resight), ready to type in; for example, Num for a species shortcut, so you can type the number straight away. Blank selects the first empty column, as Add row does.
+- Keys need Mod (⌘ Command on a Mac, Ctrl on Windows and Linux) or Alt (Option on a Mac), so they don't get in the way of typing; F1–F12 work alone. On a Mac the Control key can't be used.
 - Keys used twice are flagged, and combinations the browser or the computer may take (e.g. Ctrl+W) are marked.
 - **Restore the default shortcuts** puts the original set back (press Save to keep it), and **Revert** discards unsaved changes.
 - For many changes at once, edit `shortcuts.csv` the same way as the lists, and press **Reload from the file**.

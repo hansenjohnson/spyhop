@@ -30,6 +30,12 @@ export class Grid {
   // in this computer's order (dragged headers or Columns…), a column not in that order after the
   // column it follows in the schema
   visibleCols() {
+    const hide = new Set(this.layout().hidden || []);           // 0.51: hidden with Columns… (still in the data)
+    const out = this.orderedCols().filter((c) => !hide.has(c.key));
+    return out.length ? out : this.orderedCols();
+  }
+  // every column that can be shown, in this computer's order, hidden ones (Columns…) included
+  orderedCols() {
     const cols = this.spec.columns.filter((c) => !c.hidden && this.app.columnShown(c));
     const order = this.layout().order || [];
     if (!order.length) return cols;
@@ -65,8 +71,12 @@ export class Grid {
     const from = keys.indexOf(key);
     if (from < 0) return;
     keys.splice(from, 1);
-    keys.splice(Math.max(0, Math.min(keys.length, toIndex)), 0, key);
-    return this.saveLayout({ ...this.layout(), order: keys });
+    toIndex = Math.max(0, Math.min(keys.length, toIndex));
+    // hidden columns (0.51) keep their places in the full order: put the column before the shown one it lands on
+    const full = this.orderedCols().map((c) => c.key).filter((k) => k !== key);
+    const at = toIndex < keys.length ? full.indexOf(keys[toIndex]) : full.length;
+    full.splice(at, 0, key);
+    return this.saveLayout({ ...this.layout(), order: full });
   }
 
   setWidth(key, w) {
@@ -207,11 +217,17 @@ export class Grid {
       let n = 0;
       for (const g of rs.groups()) if (g.length > 1) this._groupTint.set(g[0].RowID, n++ % 6);
     }
+    const qc = this.app.qcCells?.(this.tab);      // 0.51: Error check → Highlight in the tables
+    const LV = { error: 'Error', warning: 'Warning', info: 'Note' };
+    const mark = (td, hit) => { td.classList.add(`qc-hl`, `qc-hl-${hit.level}`); td.title = hit.msgs.map((m) => `${LV[hit.level]}: ${m}`).join('\n'); };
     rows.forEach((r, i) => {
       const re = rs?.isResight(r);
       const cls = [this.sel?.id === r.RowID ? 'selrow' : '', re ? 'resight' : '', re && nested ? 'nested' : '', this.rowTint(r, i, rs)].filter(Boolean).join(' ');
       const tr = el('tr', { 'data-id': r.RowID, class: cls || null });
-      tr.append(el('td', { class: 'rownum', title: 'Select row' }, i + 1));
+      const num = el('td', { class: 'rownum', title: 'Select row' }, i + 1);
+      const rowHit = qc?.get(`${r.RowID}|#`);
+      if (rowHit) mark(num, rowHit);
+      tr.append(num);
       for (const c of this.cols) {
         const v = r[c.key] ?? '';
         const td = el('td', { 'data-key': c.key, class: `t-${c.type}${c.auto || c.readonly ? ' auto' : ''}` });
@@ -232,6 +248,8 @@ export class Grid {
         } else {
           td.textContent = this.display(c, v);
         }
+        const hit = qc?.get(`${r.RowID}|${c.key}`);
+        if (hit) mark(td, hit);
         if (this.sel && this.sel.id === r.RowID && this.sel.key === c.key) td.classList.add('sel');
         tr.append(td);
       }
@@ -246,6 +264,7 @@ export class Grid {
         : `No ${this.spec.title.toLowerCase()} yet. Use “Add row” or a keyboard shortcut.`));
     }
     [this.wrap.scrollLeft, this.wrap.scrollTop] = scroll;
+    document.getElementById(`showcols-${this.tab}`)?.classList.toggle('hidden', !(this.layout().hidden || []).length);
   }
 
   td(id, key) {

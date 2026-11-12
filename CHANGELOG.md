@@ -6,6 +6,16 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.51.0 — 2026-11-12
+
+- **Columns… can hide columns:** select columns and press **Hide** to save screen space. Hidden columns stay in the data, the files and the exports, and are shown greyed in Columns…. While any are hidden, **Show hidden columns** appears next to Columns… and brings them all back. This applies to this computer only.
+- **Resights layer:** the map's layers menu has **Resights**, which switches resights on and off. That covers their markers, the lines to them from the vessel, and the lines through them. The first sightings stay on the map.
+- **Shortcuts: a Focus column.** It sets the column selected in the new row of a shortcut that adds a row (or a resight), ready to type in; for example, Num for a species shortcut. Leave it blank for the first empty column, as before.
+- **Error check → Highlight in the tables:** colors each cell with a problem in its table, in the color of its level (error, warning or note), following the Show filter. A problem with a whole row colors the row number. Hover over a cell to see the problems.
+- **Instruments:** the latitude and longitude tiles are wider, so the position fits in any lat/lon format.
+- **Shortcuts on a Mac:** pressing Control now explains that Mac shortcuts use ⌘ (Command), not Control. The help says that Mod is ⌘ on a Mac and Ctrl on Windows and Linux.
+- Using a template sets this computer's default distance unit (and its other shared settings) for new sightings, before or during a survey. A test now checks this.
+
 ## 0.50.0 — 2026-11-12
 
 - **Settings → Guide:** the contents stay in view while you scroll. In a wide pane they sit beside the guide. In a narrow pane they become a bar across the top that names the section you're in; click it to open the list.

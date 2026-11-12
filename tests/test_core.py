@@ -1178,8 +1178,8 @@ def test_save_lists_and_shortcuts(tmp_path):
     tabs = {"sightings": {"Species", "Obs"}, "effort": set(), "events": {"EventType"}, "marks": set()}
     cfg.save_shortcuts([{"combo": "shift+mod+b", "action": "add:sightings", "prefill": "Species=Fin whale;Obs=HJ"},
                         {"combo": "Mod+1", "action": "tab:sightings"}, {"combo": "", "action": "", "prefill": ""}], tabs)
-    assert cfg.shortcuts == [{"combo": "Mod+Shift+B", "action": "add:sightings", "prefill": "Species=Fin whale;Obs=HJ"},
-                             {"combo": "Mod+1", "action": "tab:sightings", "prefill": ""}]
+    assert cfg.shortcuts == [{"combo": "Mod+Shift+B", "action": "add:sightings", "prefill": "Species=Fin whale;Obs=HJ", "focus": ""},
+                             {"combo": "Mod+1", "action": "tab:sightings", "prefill": "", "focus": ""}]
     for bad, words in (([{"combo": "Mod+1", "action": "undo"}, {"combo": "mod+1", "action": "redo"}], "already used"),
                        ([{"combo": "Mod+1", "action": "fly"}], "isn't an action"),
                        ([{"combo": "Mod+1", "action": "add:surfacings"}], "no surfacings table"),
@@ -3068,3 +3068,42 @@ def test_stationary_station_position(tmp_path):
     assert r.read_meta()["platform_lat"] == "41.900833"
     r.set_meta({"platform_type": "Shipboard"})
     assert not r.vessel().get("station")
+
+
+def test_shortcut_focus_hidden_columns_and_template_units(tmp_path):
+    """0.51: a shortcut's Focus column; hidden columns in the column layout; a template's default
+    distance unit is what new sightings get (before and during a survey)."""
+    from spyhop.server import App, clean_column_layout
+    from spyhop import schema
+    a = App(tmp_path / "a")
+    cfg = a.rec.cfg
+    tabs = {k: {c["key"] for c in v["columns"]} for k, v in schema.TABS.items()}
+    rows = [dict(s) for s in cfg.shortcuts]
+    rows.append({"combo": "Mod+Shift+B", "action": "add:sightings", "prefill": "Species=Fin whale", "focus": "Count"})
+    rows.append({"combo": "Mod+Alt+L", "action": "add-resight", "prefill": "", "focus": "Behaviors"})
+    out = cfg.save_shortcuts(rows, tabs)
+    assert {r["combo"]: r["focus"] for r in out}["Mod+Shift+B"] == "Count"
+    assert next(r for r in cfg.shortcuts if r["combo"] == "Mod+Shift+B")["focus"] == "Count"
+    for bad, msg in ((("add:effort", "Count"), "no column"), (("undo", "Count"), "only shortcuts that add")):
+        with pytest.raises(ValueError, match=msg):
+            cfg.save_shortcuts(rows + [{"combo": "Mod+Alt+Q", "action": bad[0], "focus": bad[1]}], tabs)
+    lay = clean_column_layout({"sightings": {"hidden": ["Images", "Images", "Nope", "FieldID"]}, "effort": {"order": ["Notes"]}})
+    assert lay["sightings"] == {"order": [], "widths": {}, "hidden": ["Images", "FieldID"]} and "hidden" not in lay["effort"]
+    every = [c["key"] for c in schema.TABS["events"]["columns"] if not c.get("hidden")]
+    assert len(clean_column_layout({"events": {"hidden": every}})["events"]["hidden"]) == len(every) - 1
+    # the template's distance unit takes effect for new rows, whether or not a survey is under way
+    b = App(tmp_path / "b")
+    for during in (False, True):
+        cfg.save_settings({"distance_unit": "km" if not during else "reticles-incl"})
+        r = _run(a.templates_save(_Req({"by": "H", "notes": "x", "name": f"u{int(during)}"})))
+        b.rec.cfg.saved_dir.mkdir(parents=True, exist_ok=True)
+        (b.rec.cfg.saved_dir / r["name"]).write_bytes((cfg.saved_dir / r["name"]).read_bytes())
+        if during:
+            b.rec.start_survey("S1", {"platform_type": "Shipboard", "platform_name": "x"})
+        chk = _run(b.templates_check(_Req({"template": r["name"]})))
+        _run(b.templates_use(_Req({"token": chk["token"]})))
+        if not during:
+            b.rec.start_survey("S0", {"platform_type": "Shipboard", "platform_name": "x"})
+        assert b.rec.new_row("sightings", {})["row"]["DistUnit"] == ("km" if not during else "reticles-incl")
+        if not during:
+            b.rec.end_survey(); b.rec.close_survey()
