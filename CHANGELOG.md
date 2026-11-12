@@ -6,6 +6,13 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.50.0 — 2026-11-12
+
+- **Settings → Guide:** the contents stay in view while you scroll. In a wide pane they sit beside the guide. In a narrow pane they become a bar across the top that names the section you're in; click it to open the list.
+- **The Quick start's parts are lettered** a to i (*a. Find your way around*, *b. Try it with the simulator*, …).
+- The user guide no longer has the comparison with the OpenCPN plugin, or the section on starting Spyhop from a terminal (not supported). Quitting, updates and diagnostics now have a section of their own.
+- Fixed: in 0.49 the contents never stayed beside the guide in a wide pane.
+
 ## 0.49.0 — 2026-11-12
 
 - **One user guide:** the tutorial and the user guide are now one document, `docs/USER_GUIDE.md`, which starts with a **Quick start** (the old tutorial). It's shown in **Settings → Guide**. `docs/TUTORIAL.md` is gone.

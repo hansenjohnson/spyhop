@@ -1581,10 +1581,19 @@ class App {
       }
     }
     const top = el('a', { href: '#', class: 'guide-top', onclick: (e) => { e.preventDefault(); wrap.scrollIntoView({ block: 'start' }); } }, '↑ Top');
-    const nav = el('nav', { class: 'guide-toc', 'aria-label': 'Guide contents' }, el('b', {}, 'Contents'), el('ol', {}, items.map((i) => i.li)), top);
+    // the contents stay in view while you scroll: beside the guide in a wide pane; in a narrow one, a bar
+    // across the top naming the section you're in, which opens the list when clicked (0.50)
+    const current = el('span', { class: 'guide-current' });
+    const head = el('button', { type: 'button', class: 'guide-toc-head', 'aria-expanded': 'false',
+      onclick: () => { const o = nav.classList.toggle('open'); head.setAttribute('aria-expanded', String(o)); } },
+      el('b', {}, 'Contents'), current);
+    const nav = el('nav', { class: 'guide-toc', 'aria-label': 'Guide contents' }, head, el('ol', {}, items.map((i) => i.li)), top);
+    nav.addEventListener('click', (e) => { if (e.target.closest('ol a')) { nav.classList.remove('open'); head.setAttribute('aria-expanded', 'false'); } });
     const mark = (id) => {
       links.forEach((a) => a.classList.toggle('active', a.dataset.sec === id));
       items.forEach((i) => i.li.classList.toggle('open', i.ids.includes(id)));
+      const h = heads.find((x) => x.id === id), sec = items.find((i) => i.ids.includes(id));
+      current.textContent = sec ? (h && h.tagName === 'H5' ? `${sec.li.firstChild.textContent} › ${h.textContent}` : sec.li.firstChild.textContent) : '';
     };
     const wrap = el('div', { class: 'guide-wrap' }, nav, tut.cloneNode(false));
     const body = wrap.lastChild;
@@ -1593,12 +1602,17 @@ class App {
     mark(heads[0].id);
     // the section being read: the last heading at or above the top of the pane (plus a little)
     const scroller = $('#pane-guide');
+    // the contents list is never taller than the pane, so all of it can be reached while it stays put
+    const fit = () => { if (scroller) nav.style.setProperty('--guide-pane-h', `${scroller.clientHeight}px`); };
+    fit();
+    try { new ResizeObserver(fit).observe(scroller); } catch { /* old browser: CSS fallback */ }
     let raf = 0;
     scroller?.addEventListener('scroll', () => {
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
-        const top = scroller.getBoundingClientRect().top + 14;
+        const top = getComputedStyle(nav).flexBasis === '100%' ? nav.getBoundingClientRect().bottom + 24   // below the bar
+          : scroller.getBoundingClientRect().top + 14;
         let at = heads[0];
         for (const h of heads) { if (h.getBoundingClientRect().top <= top) at = h; else break; }
         mark(at.id);

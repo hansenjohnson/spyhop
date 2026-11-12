@@ -554,7 +554,7 @@ h2 .help-btn, h3 .help-btn, h4 .help-btn { font-size: 0.72rem; }
 #help-pop p:last-child { margin-bottom: 0; }
 
 /* Settings → Guide: contents beside the guide, or above it in a narrow pane (0.39) */
-#tutorial-section { container-type: inline-size; max-width: none; }
+#guide-section { container-type: inline-size; max-width: none; }
 .guide-wrap { display: flex; flex-wrap: wrap; gap: 1em 2em; align-items: flex-start; }
 .guide-wrap .tutorial { flex: 1 1 30em; min-width: 0; }
 .guide-toc { flex: 0 0 15em; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); padding: 0.6em 0.9em; }
@@ -566,8 +566,25 @@ h2 .help-btn, h3 .help-btn, h4 .help-btn { font-size: 0.72rem; }
 .guide-toc a:hover { text-decoration: underline; }
 .guide-toc a.active { font-weight: 700; }
 .guide-toc .guide-top { font-size: 0.9em; }
-@container (min-width: 50em) { .guide-toc { position: sticky; top: 0.5em; max-height: calc(100vh - 6em); overflow: auto; } }
-@container (max-width: 49.99em) { .guide-toc { flex-basis: 100%; } .guide-toc .guide-top { display: none; } }
+.guide-toc-head { all: unset; display: flex; gap: 0.6em; align-items: baseline; width: 100%; box-sizing: border-box; }
+.guide-current { display: none; color: var(--muted); font-size: 0.92em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.guide-toc { position: sticky; top: 0; z-index: 5; }
+/* wide pane: the contents beside the guide, as tall as the pane at most */
+@container (min-width: 50em) {
+  .guide-toc { top: 0.5em; max-height: calc(var(--guide-pane-h, 70vh) - 1.5em); overflow: auto; box-sizing: border-box; }
+}
+/* narrow pane: a bar across the top naming the section you're in; click it for the list */
+@container (max-width: 49.99em) {
+  /* top: the pane's own top padding, so no text shows above the bar */
+  .guide-toc { flex-basis: 100%; top: -0.6em; padding: 0.45em 0.8em; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12); border-top-left-radius: 0; border-top-right-radius: 0; }
+  .guide-toc-head { cursor: pointer; }
+  .guide-toc-head::after { content: '▾'; margin-left: auto; color: var(--muted); }
+  .guide-toc.open .guide-toc-head::after { content: '▴'; }
+  .guide-current { display: block; }
+  .guide-toc > ol, .guide-toc .guide-top { display: none; }
+  .guide-toc.open > ol { display: block; max-height: calc(var(--guide-pane-h, 60vh) - 5em); overflow: auto; }
+  .tutorial h4, .tutorial h5 { scroll-margin-top: 3.2em; }
+}
 
 /* Tools → Routes: Saved Routes, then Create New Route (0.39) */
 .route-fixed { margin: 0.2em 0 0.6em; }

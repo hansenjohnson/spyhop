@@ -6,7 +6,7 @@ A word used throughout: a **template** is a team's whole setup in one file: the 
 
 ## Quick start
 
-### Find your way around
+### a. Find your way around
 
 The window has **three panes** under the status bar:
 
@@ -24,7 +24,7 @@ The window has **three panes** under the status bar:
   - If the GPS fix is lost, it says **NO GPS** or **GPS LOST**. If the computer's clock is more than 2 seconds off the GPS time, it says so.
   - Click the version number for Settings → About.
 
-### Try it with the simulator
+### b. Try it with the simulator
 
 You don't need a GPS to try Spyhop. The simulator is a pretend vessel that steams on a fixed heading and speed, sending positions just as a real GPS would, plus made-up depth, wind, weather and engine readings. Use it to learn Spyhop, to train observers, or to test a setup before a survey.
 
@@ -54,7 +54,7 @@ You don't need a GPS to try Spyhop. The simulator is a pretend vessel that steam
 
 Untick or delete the simulator in Settings → Inputs, make your real GPS the **Primary**, and press **Apply** before a real survey. While the simulator is the primary, its pretend positions go into the data like real ones.
 
-### Set up your template
+### c. Set up your template
 
 The lists, shortcuts and settings Spyhop records with are the **current template**. If your team shares a template, start with that:
 
@@ -69,7 +69,7 @@ To change the template yourself:
 
 The lists can't be changed while a survey is under way (only their colors), so set them up beforehand; every list has an **Other** entry for anything unexpected. When it's ready, **Settings → Templates → Save as a new template…** keeps it as one file to share with the team. See [Templates](#templates) for the details.
 
-### Plan a route
+### d. Plan a route
 
 1. Open **Tools → Routes**. Saved routes are at the top; design a new one under **Create New Route**.
 2. Set the **survey speed**, and choose **Manual**, **Systematic — parallel legs** or **Systematic — sawtooth**:
@@ -80,7 +80,7 @@ The lists can't be changed while a survey is under way (only their colors), so s
 4. Press **Activate route**. The waypoints lock, the route stays on the map from every tab, and clicking a waypoint shows its distance, bearing and ETA from the vessel.
 5. **Save route** (at the bottom) keeps it in the routes folder. **Export GPX…** downloads a copy for a chart plotter.
 
-### Start a survey
+### e. Start a survey
 
 1. In **Survey**, press **Start New Survey…**.
 2. Enter the survey name in your team's own convention (it becomes the start of the file names), and the survey details: platform name and type, altitude, organization and chief scientist. For a **stationary** platform (a shore station or tower), you can type its position instead of using a GPS.
@@ -88,7 +88,7 @@ The lists can't be changed while a survey is under way (only their colors), so s
 
 If Spyhop is closed or crashes during a survey, it reopens the survey the next time and asks whether to continue.
 
-### Record data
+### f. Record data
 
 - **Effort:**
   - choose the effort value (ON, TRANSECT, DIRECTED, PHOTO-ID, FOLLOW or OFF by default, from Settings → Dropdowns → Effort), or add a row with Ctrl/⌘+Shift+F, which toggles between on effort and OFF and copies the current conditions
@@ -106,13 +106,13 @@ If Spyhop is closed or crashes during a survey, it reopens the survey the next t
   - Type `14:05` in a time cell to change only the time of day.
 - **Instruments:** **Tools → Instruments** shows depth, wind, water temperature and so on, from every input. Click one to plot it.
 
-### End the survey and check for errors
+### g. End the survey and check for errors
 
 Open **Tools → Error check** and press **Run error check**. It lists **errors** (must fix: required fields left blank, values that aren't in the lists, impossible numbers), **warnings** (probably wrong: a sighting beyond the visibility, positions on land, GPS jumps) and **notes** (worth a look). **Show** takes you to the row. A GPS jump or gap has a **Fix** button, which marks that stretch with an ERROR row in the Effort table: the trackline is broken there and the stretch counts as off effort.
 
 Then, in **Survey**, press **End Survey…**. This adds the **End** row and stops the trackline. An ended survey can still be corrected, and deleting the End row makes it active again. **Close Survey…** puts a survey away without ending it.
 
-### Summary, reports and export
+### h. Summary, reports and export
 
 - **Tools → Summary** (Ctrl/⌘+4): totals, survey details, species, observers, conditions and right whale sightings. **Save as HTML…** (with an interactive map) or **Save as PDF…**.
 - **Tools → Reports** picks part of a table: choose the table, click the species or event types you want, pick the columns and any conditions, and **Export CSV…**, **HTML…** or **PDF…**. **Save report…** keeps it by name; **Run Reports…** saves all your saved reports at once. Reports are available once the survey has ended.
@@ -121,7 +121,7 @@ Then, in **Survey**, press **End Survey…**. This adds the **End** row and stop
 
 Your data are always on disk as plain CSV files in the survey's own folder (**Survey → Saved Surveys → Open Data Folder**), saved as you type, with a copy of the template the survey was started with.
 
-### Keep Spyhop up to date
+### i. Keep Spyhop up to date
 
 When Spyhop starts, it checks for a newer version (if there's internet) and asks before installing anything. You can also check any time in **Settings → About → Updates**. **Install** it and restart Spyhop when it asks. Your data and settings aren't touched, and the old version is kept as a backup. It's best to update between surveys, with internet.
 
@@ -300,7 +300,7 @@ Inputs are set up in **Settings → Inputs** (GPS / NMEA inputs).
 | **TCP** | NMEA servers (multiplexers, Signal K's NMEA 0183 TCP stream on port 10110). |
 | **GPSD** | Linux gpsd. |
 | **File** | Replays an NMEA log in real time (or faster, with *Speed ×*). Spyhop's own raw logs are replayed at the pace they were recorded; plain NMEA files at the pace of their RMC/GGA times. Make it the primary to replay a survey's track. |
-| **Simulator** | Practice and testing (see the [Quick start](#try-it-with-the-simulator)). |
+| **Simulator** | Practice and testing (see the [Quick start](#b-try-it-with-the-simulator)). |
 
 Spyhop reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG and HDM for heading. For the Instruments panel it also reads VHW and VBW (speed through water), DPT, DBT, DBS and DBK (depth), MWV, VWR, VWT and MWD (wind), MTW, MTA, MHU, MMB and MDA (weather), RPM (engines), ROT, RSA, and XDR transducers. The raw NMEA monitor at the bottom of Settings → Inputs shows exactly what is arriving.
 
@@ -419,7 +419,7 @@ Every time in Spyhop comes from the computer's clock, so Spyhop compares it with
 - **Tables:** **Legs** (from/to, course, distance, time, running totals and the ETA if you start now), **Totals** and **Waypoints**. Times assume the survey speed and no time for turns.
 - **Appearance:** color, line style, line width and waypoint size, saved with the route.
 - **Active route waypoints:** click one for its position, its distance and bearing from the vessel, and its **ETA** following the route from where the vessel is now (or *passed*), kept up to date as the vessel moves.
-- **Save route** keeps it in the routes folder under its name; **Save as new…** saves a copy under another name. **Export GPX…** downloads it for a chart plotter or OpenCPN. A GPX saved by Spyhop holds the whole design, so it opens again exactly.
+- **Save route** keeps it in the routes folder under its name; **Save as new…** saves a copy under another name. **Export GPX…** downloads it for a chart plotter or other navigation software. A GPX saved by Spyhop holds the whole design, so it opens again exactly.
 
 ## Overlays and maps
 
@@ -584,43 +584,11 @@ The survey data folder is always `data/` inside Spyhop's folder, so every comput
 
 One format is saved and downloaded as that file; several come as **one zip**. Everything is also kept in the survey folder's `exports/`.
 
-## Running Spyhop from a terminal
+## Quitting, updates and diagnostics
 
-Spyhop normally starts from its icon. It can also be started from a terminal in the Spyhop folder (with its `.venv` Python), which allows a few options:
-
-```
-python -m spyhop --sim
-python -m spyhop --sim --sim-heading 135
-```
-
-`--sim` adds a simulator for that session only (default 000°T at 10 kn, from Cape Cod Bay); it's listed in Settings → Inputs marked *this session only* and isn't saved. Other options: `--nmea serial:COM4:4800`, `--nmea udp:10110`, `--nmea tcp:192.168.1.5:10110`, `--nmea gpsd:127.0.0.1`, `--nmea file:mylog.nmea`, `--port 8765`, `--data-dir PATH`, `--window` (a native window, needs `pip install pywebview`), `--browser` (a normal browser tab), `--host 0.0.0.0` (lets a tablet on the boat network connect to the same recorder), `--no-browser` and `--install-shortcut` (make the Spyhop icon again).
-
-- **One Spyhop at a time:** only one Spyhop runs on a computer, whichever program folder or port it was started with, so every survey is recorded in one place. Starting it again just opens a window onto the one that's running.
-- **Quitting:** close the Terminal/console window, or press Ctrl+C in it. Your data are saved as you go, so quitting never loses anything. Closing only Spyhop's own window leaves it running, still recording the track; open the icon again to get the window back.
-- **Diagnostic logs:** Spyhop keeps a log in `logs/` in its folder (`spyhop.log`, rotated at 5 MB). It records the version and system at start-up, each action and whether it worked (never the data itself), errors, slow moments and a performance snapshot every 5 minutes. `crash.log` catches hard crashes. **Settings → About → Save diagnostics…** zips the logs, settings, a listing of Spyhop's folders and system details into one file to send with a bug report. It has no survey data and no team or observer names.
+- **One Spyhop at a time:** only one Spyhop runs on a computer, so every survey is recorded in one place. Opening the icon again just opens a window onto the one that's running.
+- **Quitting:** close the Terminal (or console) window that opened with Spyhop, or press Ctrl+C in it. Your data are saved as you go, so quitting never loses anything. Closing only Spyhop's own window leaves it running, still recording the track; open the icon again to get the window back.
+- **Updates** (Settings → About → Updates): Spyhop checks for a newer version when it starts (if there's internet), and **Check for updates** looks any time. It always asks before installing, keeps a backup of the old version, and restarts.
+- **Reinstall a clean copy…** replaces the program with the latest version and restarts, keeping your surveys and (unless you tick reset) your settings. **Uninstall Spyhop…** removes the program and its shortcuts; your settings and survey data are deleted only if you tick them. Neither works during a survey.
+- **Diagnostic logs:** Spyhop keeps a log in `logs/` in its folder. It records the version and system at start-up, each action and whether it worked (never the data itself), errors, slow moments and a performance snapshot every 5 minutes. **Settings → About → Save diagnostics…** zips the logs, settings, a listing of Spyhop's folders and system details into one file to send with a bug report. It has no survey data and no team or observer names.
 - **If Spyhop feels slow:** the Terminal window prints a line starting `spyhop.slow` whenever something takes too long. Copy those lines when reporting slowness.
-- **Updates, uninstall and reinstall** (Settings → About): **Check for updates** looks on GitHub for a newer Spyhop and can install it (keeping a backup) and restart; Spyhop also checks when it starts, and always asks before installing. **Reinstall a clean copy…** replaces the program with the latest version and restarts, keeping your surveys and (unless you tick reset) your settings. **Uninstall Spyhop…** removes the program and its shortcuts; your settings and survey data are deleted only if you tick them. Neither works during a survey.
-
-## Compared with the OpenCPN plugin
-
-Kept from the OpenCPN *spotter* plugin (Spyhop doesn't need OpenCPN):
-
-- the Sightings, Effort and Events tables, the status bar and the reminder countdown
-- copy-forward of Effort rows, autocomplete drop-downs, the Behaviors checklist and per-table undo/redo
-- the NumConf and IDrel lists, SigNo with a confirmation before it's changed
-- DDM/DD/DMS display and lenient position parsing
-- immediate saves, and `.bak` files when columns change
-- editable lists and remappable shortcuts (now kept in templates)
-
-New or different:
-
-- a three-pane window, a live chart with clickable markers and popups, measuring, range rings, right-click "add here", lines to sightings, overlays and offline charts
-- templates, to share a team's setup across computers, locked during a survey
-- several GPS / NMEA inputs at once, with primary, secondary and other roles, a raw NMEA monitor and logging, and an Instruments tab with plots
-- route planning, the Error check, the Summary, Reports, resights and reticle distances
-- a clock in local time, UTC, any offset or the zone at the platform's position, and a clock check against the GPS
-- per-row bearing reference and distance unit; FieldID on Sightings and ID on Events; glare bearings and effort segments on Effort
-- GeoJSON, GPX and merged-CSV export, and survey packages
-- the Surfacings tab was dropped
-
-**Check these before relying on old pipelines:** the CSV column names are Spyhop's own (see `spyhop/schema.py`) and may not match the plugin's `column_definitions.csv` exactly; sea state is 0–9.

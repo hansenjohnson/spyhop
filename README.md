@@ -172,7 +172,7 @@ The **Quick start** of the user guide, in **Settings → Guide** (also [docs/USE
 
 ## Documentation
 
-- [docs/USER_GUIDE.md](docs/USER_GUIDE.md): the user guide (also in Spyhop under **Settings → Guide**): a quick start that walks through a survey, then every tab, templates, the files Spyhop writes, export formats, offline maps, and the differences from the OpenCPN plugin.
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md): the user guide (also in Spyhop under **Settings → Guide**): a quick start that walks through a survey, then every tab, templates, the files Spyhop writes, export formats and offline maps.
 - [docs/TEMPLATES.md](docs/TEMPLATES.md): sharing a team's template (lists, settings, saved reports and more) across computers.
 - [docs/DEVELOPERS.md](docs/DEVELOPERS.md): running from source, the code layout and the tests.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
