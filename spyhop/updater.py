@@ -257,4 +257,5 @@ def restart():
     log.info("restarting Spyhop after an update")
     logging.shutdown()
     os.chdir(PROGRAM_DIR)
+    os.environ["SPYHOP_RESTARTED"] = "1"          # 0.46: wait for the old one to let go of the one-Spyhop lock
     os.execv(sys.executable, [sys.executable, "-m", "spyhop", *args])

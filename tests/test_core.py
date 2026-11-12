@@ -884,10 +884,11 @@ def test_track_break_fix(rec):
     r = _qc(rec)
     tr2 = [x for x in r["issues"] if x["check"] == "Trackline plausible"]
     assert len(tr2) == 1 and "No track points" in tr2[0]["message"]
-    # 0.45: the limits are the Error check's own (120 s; 30 kn, 200 kn for aerial), changeable for a run
+    # 0.45: the limits are the Error check's own (120 s; 30 kn, 200 kn for aerial)
     from spyhop.qc import run_qc, track_limit_defaults
     assert r["track_limits"]["gap_s"] == 120 and r["track_limits"]["speed_kn"] == 30
-    assert not [x for x in run_qc(rec, {"gap_s": 600})["issues"] if x["check"] == "Trackline plausible"]
+    with pytest.raises(TypeError):                 # 0.46: the limits are fixed (no override)
+        run_qc(rec, {"gap_s": 600})
     rec.set_meta({"platform_type": "Aerial"})
     assert track_limit_defaults(rec)["speed_kn"] == 200
     assert "track_break_kn" not in rec.cfg.settings and "track_break_kn" not in __import__("spyhop.config", fromlist=["x"]).LOCKED_SETTINGS
@@ -2987,3 +2988,23 @@ def test_external_tracks_recorded_and_styled(rec):
     rec.open_survey(prefix)
     assert len(rec.external_tracks(inputs)["Drone 1"]) == 2                          # read back from the file
     d.primary, d.externals = None, set()
+
+
+def test_only_one_spyhop_per_computer(tmp_path, monkeypatch):
+    """0.46: a second Spyhop can't take the lock while one runs (any port); it's free again once that ends."""
+    import subprocess, sys, textwrap, time
+    from spyhop import instance
+    monkeypatch.setenv("SPYHOP_LOCK_DIR", str(tmp_path))
+    holder = subprocess.Popen([sys.executable, "-c", textwrap.dedent("""
+        import sys, time
+        from spyhop import instance
+        print(instance.acquire(8765), flush=True)
+        time.sleep(30)""")], stdout=subprocess.PIPE, text=True, env={**__import__("os").environ, "SPYHOP_LOCK_DIR": str(tmp_path)})
+    try:
+        assert holder.stdout.readline().strip() == "True"
+        assert instance.running()["port"] == 8765 and instance.running()["pid"] == holder.pid
+        assert instance.acquire(9999) is False                     # another port doesn't help
+    finally:
+        holder.kill(); holder.wait()
+    assert instance.acquire(9999, wait_s=2) is True                 # released when the process ends (no stale lock)
+    assert instance.running()["port"] == 9999

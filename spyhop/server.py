@@ -472,9 +472,7 @@ class App:
         loop = asyncio.get_running_loop()
         if self.rec.survey is None:
             raise ValueErrorMsg("Open a survey to check it.")
-        body = await request.json() if request.can_read_body else {}
-        lim = body.get("track_limits") if isinstance(body, dict) else None
-        return json_ok(report=await loop.run_in_executor(None, run_qc, self.rec, lim if isinstance(lim, dict) else None))
+        return json_ok(report=await loop.run_in_executor(None, run_qc, self.rec))
 
     async def toggle_effort(self, request):
         return json_ok(self.rec.toggle_effort())

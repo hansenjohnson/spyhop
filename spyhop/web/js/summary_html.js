@@ -6,7 +6,7 @@
 // the survey, on Esri Ocean when its tiles load (else the offline coastline), with no point
 // labels or map buttons, and a legend of the point symbols under the map.
 /* global topojson */
-import { esc, timeParts, trackStates, dashFor, isOn, effortColor } from './util.js';
+import { esc, timeParts, trackStates, trackBreaks, dashFor, isOn, effortColor } from './util.js';
 import { shapeSvg } from './map.js';
 import { Resights } from './resights.js';
 
@@ -90,12 +90,12 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
   const data = {
     // [lat, lon, on effort?, break before this point?, color]; ERROR stretches are left out
     track: (() => {
-      const st = trackStates(S.track, S.tables.effort.rows), out = [];
+      const st = trackStates(S.track, S.tables.effort.rows), tb = trackBreaks(S.track, S.tables.effort.rows), out = [];
       let prev = null, prevSt = null;
       S.track.forEach((p, i) => {
         if (isNaN(+p.Lat)) return;
         if (st[i] === 'ERROR') { prev = p; prevSt = 'ERROR'; return; }
-        const brk = !prev || prevSt === 'ERROR';
+        const brk = !prev || prevSt === 'ERROR' || tb[i];      // 0.46: the same breaks as the map
         out.push([+p.Lat, +p.Lon, isOn(st[i]) ? 1 : 0, brk ? 1 : 0, effortColor(st[i])]);
         prev = p; prevSt = st[i];
       });

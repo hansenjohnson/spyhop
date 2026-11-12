@@ -621,3 +621,8 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 .external-input .ext-wrap.lost .ext-rot { opacity: 0.55; }
 .external-input .ext-x { position: absolute; left: 0; top: 0; pointer-events: none; }
 .ext-lost-note { color: #b00000; font-weight: 600; }
+/* 0.46: Columns… dialog */
+.columns-list { margin: 0.4em 0; padding-left: 2em; max-height: 60vh; overflow-y: auto; }
+.columns-list li { display: flex; align-items: center; gap: 0.4em; padding: 0.1em 0; }
+.columns-list .col-name { flex: 1; min-width: 10em; }
+.toolbar .columns-btn { margin-left: auto; }

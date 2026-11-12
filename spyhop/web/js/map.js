@@ -1,7 +1,7 @@
 // Interactive chart: base layers, vessel, track, data markers, popups, measure tool.
 /* global L, topojson */
 import { Resights } from './resights.js';
-import { el, esc, fmtCoord, fmtPos, distM, bearing, destination, fmtDist, fmtBrg, timeParts, toast, api, trackStates, dashFor, isOn, effortColor } from './util.js';
+import { el, esc, fmtCoord, fmtPos, distM, bearing, destination, fmtDist, fmtBrg, timeParts, toast, api, trackStates, trackBreaks, effortRowAt, dashFor, isOn, effortColor } from './util.js';
 import { DepthProbe } from './depth.js';
 
 const SHAPES = ['Diamond', 'Square', 'Triangle', 'Circle', 'Star'];
@@ -910,20 +910,50 @@ export class MapView {
     this.trackSeg = null;
     this.trackPrev = null;
     const S = this.app.S;
-    const states = trackStates(S.track, S.tables.effort?.rows);
-    S.track.forEach((p, i) => this.appendTrack(p, false, states[i]));
+    const rows = S.tables.effort?.rows;
+    const states = trackStates(S.track, rows), brks = trackBreaks(S.track, rows);
+    S.track.forEach((p, i) => this.appendTrack(p, false, states[i], brks[i]));
+    this.drawErrorRows();
   }
 
-  // Add a point to the drawn trackline. The line is broken (not joined to the previous point) only
-  // around points in an ERROR effort stretch (0.45: no hidden breaks; Error check → Fix adds ERROR rows).
-  appendTrack(p, live = true, state = p.Effort) {
+  // 0.46: each ERROR row in the Effort table as a red point where it was entered (with a popup)
+  drawErrorRows() {
+    const rows = (this.app.S.tables.effort?.rows || []).filter((r) => r.Effort === 'ERROR');
+    const fmt = this.app.S.config.settings.latlon_format;
+    for (const r of rows) {
+      if (r.Lat === '' || r.Lon === '' || isNaN(+r.Lat) || isNaN(+r.Lon)) continue;
+      const t = timeParts(r.DateTime, this.app.clock());
+      L.circleMarker([+r.Lat, +r.Lon], { pane: 'tracks', radius: 6, color: '#ffffff', weight: 2, fillColor: effortColor('ERROR'), fillOpacity: 1, className: 'effort-error-point' })
+        .bindPopup(`<b>Effort: ERROR</b><table class="pop">
+          <tr><th>Time</th><td>${t ? `${t.date} ${t.time} ${t.abbr}` : esc(r.DateTime)}</td></tr>
+          <tr><th>Position</th><td>${fmtPos(r.Lat, r.Lon, fmt)}</td></tr>
+          ${r.Segment ? `<tr><th>Segment</th><td>${esc(r.Segment)}</td></tr>` : ''}
+          ${r.Notes ? `<tr><th>Notes</th><td>${esc(r.Notes)}</td></tr>` : ''}</table>
+          <div class="hint">The trackline is broken from here until the next Effort row.</div>`)
+        .addTo(this.layers.track);
+    }
+  }
+
+  // Add a point to the drawn trackline. The line is broken (not joined to the previous point) only at
+  // ERROR rows in the Effort table (trackBreaks; 0.45: no hidden breaks; Error check → Fix adds them).
+  // A point inside an ERROR stretch is drawn as a small red point of its own, never joined (0.46).
+  appendTrack(p, live = true, state = p.Effort, brk = null) {
     const disp = this.app.S.config.display;
     const ll = [+p.Lat, +p.Lon];
     if (isNaN(ll[0])) return;
     const prev = this.trackPrev;
+    if (live) {                                   // a new point: its state and break from the Effort table now
+      const rows = this.app.S.tables.effort?.rows;
+      state = trackStates([p], rows)[0];
+      brk = prev ? trackBreaks([prev.p, p], rows)[1] : false;
+    }
     this.trackPrev = { p, state };
-    if (state === 'ERROR') { this.trackSeg = null; return; }
-    const brk = prev && prev.state === 'ERROR';
+    if (state === 'ERROR') {
+      this.trackSeg = null;
+      L.circleMarker(ll, { pane: 'tracks', radius: 3, stroke: false, fillColor: effortColor('ERROR'), fillOpacity: 0.9, className: 'track-error-point' })
+        .on('click', (e) => this.trackPopup(e, p)).addTo(this.layers.track);
+      return;
+    }
     if (brk) this.trackSeg = null;
     const on = isOn(state), old = this.isOld(p.DateTime), color = effortColor(state), key = `${on}|${color}|${old}`;
     if (!this.trackSeg || this.trackSeg.key !== key) {
@@ -945,20 +975,24 @@ export class MapView {
     }
   }
 
-  trackPopup(e) {
+  trackPopup(e, point = null) {
     const pts = this.app.S.track;
     if (!pts.length) return;
-    let best = null, bd = Infinity;
-    for (const p of pts) {
+    let best = point, bd = Infinity;
+    if (!best) for (const p of pts) {
       const d = distM([e.latlng.lat, e.latlng.lng], [+p.Lat, +p.Lon]);
       if (d < bd) { bd = d; best = p; }
     }
+    // 0.46: the effort and segment in force at that point, from the Effort table as it is now
+    const rows = this.app.S.tables.effort?.rows, er = effortRowAt(rows, best.DateTime);
+    const st = trackStates([best], rows)[0];
     const fmt = this.app.S.config.settings.latlon_format, t = timeParts(best.DateTime, this.app.clock());
     L.popup().setLatLng([+best.Lat, +best.Lon]).setContent(`<b>Track point</b><table class="pop">
       <tr><th>Time</th><td>${t ? `${t.date} ${t.time} ${t.abbr}` : esc(best.DateTime)}</td></tr>
       <tr><th>Position</th><td>${fmtPos(best.Lat, best.Lon, fmt)}</td></tr>
       <tr><th>SOG</th><td>${esc(best.SOG)} kn</td></tr><tr><th>COG</th><td>${esc(best.COG)}°T</td></tr>
-      <tr><th>Effort</th><td>${esc(best.Effort)}</td></tr></table>`).openOn(this.map);
+      <tr><th>Effort</th><td>${esc(st)}</td></tr>
+      <tr><th>Segment</th><td>${er?.Segment ? esc(er.Segment) : '—'}</td></tr></table>`).openOn(this.map);
   }
 
   // ---------------------------------------------------------------- markers

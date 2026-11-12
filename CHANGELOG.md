@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.46.0 — 2026-11-12
+
+- **One Spyhop per computer:** a lock in Spyhop's folder (released by the operating system when Spyhop ends, even after a crash). A second start, from any program folder or on any port, opens a window onto the running one.
+- **Fixed: ERROR rows didn't break the trackline** for a GPS gap or a one-way jump (no track point fell inside the ERROR stretch, since Fix puts the ERROR row just after the last good point and the restoring row at the next one). The map, the Summary distances and the HTML summary now break at the ERROR row's time.
+- **ERROR on the map:** each ERROR Effort row is a red point (with a popup); track points inside an ERROR stretch are small red points, never joined.
+- **Track point popup** shows the effort segment (Seg), and the effort from the Effort table as it is now.
+- **Error check:** the GPS gap and speed boxes are gone; the limits are fixed (120 s; 30 kn shipboard/stationary, 200 kn aerial/other) and stated above the check.
+- **Columns…** is back on each table's toolbar: ↑ / ↓ per column, Save, or Reset to the standard order (dragging headers still works).
+
 ## 0.45.0 — 2026-11-11
 
 - **Trackline breaks only at ERROR rows:** the trackline on the map, in the HTML summary and in the Summary's distances is broken only where the Effort table has an ERROR row; the trackline-break settings are gone. The Error check flags GPS jumps faster than 30 kn (shipboard, stationary) or 200 kn (aerial, other) and gaps over 120 s (or 3 track intervals), on or off effort, each with **Fix**; the limits can be changed in the Error check.

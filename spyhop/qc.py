@@ -35,7 +35,8 @@ LIMITS = {
 
 # 0.45: trackline checks. The map, the HTML summary and the Summary distances break the trackline only
 # at ERROR rows in the Effort table; these limits decide which jumps and gaps the Error check flags (and
-# Fix marks with an ERROR row). The Error check tab can change them for a run (`track_limits`).
+# Fix marks with an ERROR row). 0.46: fixed (no longer changeable in the Error check) until there's been
+# more testing, so every check of every survey uses the same ones.
 TRACK_GAP_S = 120                 # no track points for longer than this (or 3 track intervals, if longer)
 TRACK_SPEED_KN = {"Shipboard": 30.0, "Stationary": 30.0, "Aerial": 200.0, "Other": 200.0}
 TRACK_SPEED_DEFAULT = 30.0        # platform type not set
@@ -222,7 +223,7 @@ def visibility_nm(v) -> float | None:
 
 
 # ----------------------------------------------------------------- the checks
-def run_qc(rec, track_limits: dict | None = None) -> dict:
+def run_qc(rec) -> dict:
     if rec.survey is None:
         raise ValueError("Open a survey to check it.")
     L = LIMITS
@@ -456,13 +457,6 @@ def run_qc(rec, track_limits: dict | None = None) -> dict:
 
     interval = float(cfg.settings.get("tracking_interval", 10) or 10)
     lim = track_limit_defaults(rec)
-    for k in ("gap_s", "speed_kn"):
-        try:
-            v = float((track_limits or {}).get(k) or 0)
-        except (TypeError, ValueError):
-            v = 0
-        if v > 0:
-            lim[k] = v
     max_kn = lim["speed_kn"]
     gap_limit = max(lim["gap_s"], interval * 3)
     used_limits.update(lim, gap_used_s=gap_limit)
@@ -720,7 +714,7 @@ CHECKS = [
      f"relative bearings have a heading, animals within {LIMITS['max_sighting_nm']:g} nm of the vessel."),
     ("Positions match the trackline", f"Vessel positions within {LIMITS['pos_vs_track_nm']:g} nm of the trackline at that time."),
     ("Positions at sea", f"Positions more than {LIMITS['land_buffer_km']:g} km inside the 1:10m coastline are flagged."),
-    ("Trackline plausible", "No jumps faster than the speed limit (30 kn for shipboard or stationary surveys, 200 kn for aerial or other; changeable above) and no gaps in the track longer than the gap limit (120 s, or 3 track intervals if longer). The trackline is broken only where the Effort table has an ERROR row: a stretch already marked is skipped; Fix adds one."),
+    ("Trackline plausible", "No jumps faster than the speed limit (30 kn for shipboard or stationary surveys, 200 kn for aerial or other) and no gaps in the track longer than the gap limit (120 s, or 3 track intervals if longer). The trackline is broken only where the Effort table has an ERROR row: a stretch already marked is skipped; Fix adds one."),
     ("Conditions recorded regularly", f"On effort, a new Effort row at least every {LIMITS['conditions_gap_factor']:g} × the reminder interval."),
     ("Observers in one position at a time", "Nobody is in two of Port / Recorder / Stbd at once (NA / None, an empty position, and Other, the placeholder, can be in several)."),
     ("Sighting observer on watch", "On effort, the sighting's Obs is one of the observers on watch."),

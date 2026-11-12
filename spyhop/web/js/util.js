@@ -278,6 +278,35 @@ export function trackStates(points, effortRows) {
   });
 }
 
+// 0.46: where the trackline is broken: brk[i] = don't join point i-1 to point i. Broken when the
+// Effort row in force at point i-1 (an ERROR row in the same second counts: Error check → Fix puts it at
+// the last good point) is ERROR, or an ERROR row falls between the two points. (Point states alone
+// missed a gap or a one-way jump, where no point lies inside the ERROR stretch.)
+export function trackBreaks(points, effortRows) {
+  const rows = (effortRows || []).map((r) => [new Date(r.DateTime).getTime(), r.Effort || ''])
+    .filter(([t]) => Number.isFinite(t)).sort((x, y) => x[0] - y[0]);
+  const errs = rows.filter(([, e]) => e === 'ERROR').map(([t]) => t);
+  let k = -1, state = '', prevT = null, prevState = '';
+  return points.map((p) => {
+    const t = new Date(p.DateTime).getTime();
+    while (k + 1 < rows.length && rows[k + 1][0] <= t) { k++; state = rows[k][1]; }
+    const brk = prevT !== null && (prevState === 'ERROR' || errs.some((e) => e > prevT && e < t));
+    prevT = t; prevState = state;
+    return brk;
+  });
+}
+
+// 0.46: the Effort row in force at a time (for the track point popup's segment number)
+export function effortRowAt(effortRows, when) {
+  const t = new Date(when).getTime();
+  let best = null, bt = -Infinity;
+  for (const r of effortRows || []) {
+    const rt = new Date(r.DateTime).getTime();
+    if (Number.isFinite(rt) && rt <= t && rt >= bt) { best = r; bt = rt; }
+  }
+  return best;
+}
+
 // 'NA' (None) and the like stand for an empty watch position, not an observer
 export function isPlaceholderObs(name, fullName = '') {
   return ['NA', 'N/A', 'NONE', '-', '—'].includes(String(name || '').trim().toUpperCase()) || String(fullName || '').trim().toLowerCase() === 'none';

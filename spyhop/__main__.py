@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import socket
 import sys
 import threading
@@ -24,7 +25,7 @@ from aiohttp import web
 from . import __version__
 from .browser import open_app_window
 from .config import default_data_dir
-from . import diag
+from . import diag, instance
 from .server import App
 
 
@@ -85,9 +86,21 @@ def main(argv=None):
     if args.sim:
         extra.append({"type": "sim", "heading": args.sim_heading})
 
+    # 0.46: one Spyhop per computer (whatever program folder, data folder or port it was started with)
+    restarted = bool(os.environ.pop("SPYHOP_RESTARTED", ""))
+    if not instance.acquire(args.port, wait_s=15 if restarted else 2):
+        other = instance.running() or {}
+        url = f"http://127.0.0.1:{other.get('port') or args.port}/"
+        print("Spyhop is already running on this computer"
+              + (f" (from {other['program']})" if other.get("program") else "")
+              + f". Only one Spyhop can run at a time, so every survey is recorded in one place. Opening {url}")
+        if not args.no_browser:
+            open_app_window(url)
+        return
     if not port_free(args.host, args.port):
         url = f"http://127.0.0.1:{args.port}/"
-        print(f"Port {args.port} is in use — Spyhop may already be running. Opening {url}")
+        print(f"Port {args.port} is in use by another program (or a Spyhop older than 0.46). Opening {url} in case it's Spyhop; "
+              f"otherwise start Spyhop with another port, e.g. --port {args.port + 1}.")
         if not args.no_browser:
             open_app_window(url)
         return

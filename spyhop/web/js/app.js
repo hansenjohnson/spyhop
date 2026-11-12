@@ -1,5 +1,5 @@
 // Main controller: layout, status bar, tabs, shortcuts, settings, summary, live updates.
-import { $, $$, el, esc, api, fmtCoord, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, trackStates, isPlaceholderObs, LINE_STYLES, isOn, ON_EFFORT, setEffortList, effortInfo, effortColor, EFFORT_REQUIRED, watchHelp } from './util.js';
+import { $, $$, el, esc, api, fmtCoord, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, trackStates, trackBreaks, isPlaceholderObs, LINE_STYLES, isOn, ON_EFFORT, setEffortList, effortInfo, effortColor, EFFORT_REQUIRED, watchHelp } from './util.js';
 import { Grid } from './grid.js';
 import { Resights, groupCounts } from './resights.js';
 import { ResightTool } from './resight_tool.js';
@@ -294,13 +294,34 @@ class App {
       el('button', { id: `insert-${tab}`, onclick: () => this.insertRow(tab), title: 'Insert a row before or after the selected row, with its time and position averaged from the rows either side or copied from one of them' }, 'Insert row…'),
       el('button', { onclick: () => this.deleteRow(tab), title: 'Delete the selected row' }, 'Delete row'),
       el('button', { id: `undo-${tab}`, onclick: () => this.undo(tab), title: `Undo${sc('undo')}` }, '↶ Undo'),
-      el('button', { id: `redo-${tab}`, onclick: () => this.redo(tab), title: `Redo${sc('redo')}` }, '↷ Redo'));
+      el('button', { id: `redo-${tab}`, onclick: () => this.redo(tab), title: `Redo${sc('redo')}` }, '↷ Redo'),
+      el('button', { id: `columns-${tab}`, class: 'columns-btn', onclick: () => this.columnsDialog(tab), title: 'Change the order of this table’s columns (you can also drag a header)' }, 'Columns…'));
     if (tab === 'sightings') {
       bar.insertBefore(el('button', { id: 'btn-add-resight', disabled: true, onclick: () => this.addResight(),
         title: `Add a resight of the animals of the selected sighting: a new row linked to their first sighting, with the species, numbers and FieldID filled in${sc('add-resight')}` },
         'Add resight'), bar.children[1]);
     }
     return bar;
+  }
+
+  // 0.46: Columns… (back from before 0.33): the table's columns in order, each with ↑ / ↓; Save keeps the
+  // order on this computer (the same layout as dragging headers), Reset goes back to the standard order
+  async columnsDialog(tab) {
+    const g = this.grids[tab];
+    if (!g) return;
+    const order = g.cols.map((c) => ({ key: c.key, label: c.label || c.key, help: c.help || '' }));
+    const list = el('ol', { class: 'columns-list', id: 'columns-list' });
+    const draw = () => list.replaceChildren(...order.map((c, i) => el('li', { 'data-key': c.key, title: c.help },
+      el('span', { class: 'col-name' }, c.label),
+      el('button', { class: 'icon col-up', title: 'Move up (left in the table)', disabled: i === 0, onclick: () => { order.splice(i - 1, 0, ...order.splice(i, 1)); draw(); list.children[i - 1]?.querySelector('.col-up:not([disabled]), .col-down')?.focus(); } }, '↑'),
+      el('button', { class: 'icon col-down', title: 'Move down (right in the table)', disabled: i === order.length - 1, onclick: () => { order.splice(i + 1, 0, ...order.splice(i, 1)); draw(); list.children[i + 1]?.querySelector('.col-down:not([disabled]), .col-up')?.focus(); } }, '↓'))));
+    draw();
+    const name = { sightings: 'Sightings', effort: 'Effort', events: 'Events', marks: 'Waypoints' }[tab] || tab;
+    const how = await modal({ title: `Columns: ${name}`,
+      body: el('div', {}, el('p', { class: 'hint' }, 'Top of the list = leftmost column. Kept on this computer only; widths stay as they are.'), list),
+      buttons: [{ label: 'Reset to the standard order', value: 'reset' }, { label: 'Cancel', value: null }, { label: 'Save', value: 'save', primary: true }] });
+    if (how === 'save') await g.saveLayout({ ...g.layout(), order: order.map((c) => c.key) });
+    else if (how === 'reset') { const { order: _o, ...rest } = g.layout(); await g.saveLayout(Object.keys(rest).length ? rest : null); }
   }
 
   buildBottom() {
@@ -1288,29 +1309,14 @@ class App {
     return el('section', { class: 'settings-sec', id: 'qc-section' }, el('h3', {}, 'Error check'), ...kids);
   }
 
-  // 0.45: the trackline limits (which GPS gaps and jumps are flagged): blank = the default for the
-  // platform type (120 s; 30 kn for shipboard or stationary, 200 kn for aerial or other). Kept on this computer.
-  qcLimits() {
-    if (!this._qcLimits) { try { this._qcLimits = JSON.parse(localStorage.getItem('wsr.qc.track') || '{}') || {}; } catch { this._qcLimits = {}; } }
-    return this._qcLimits;
-  }
-
+  // 0.45–0.46: the trackline limits (which GPS gaps and jumps are flagged), fixed for now (0.46: no longer
+  // changeable here, so every check is the same): 120 s; 30 kn shipboard/stationary, 200 kn aerial/other
   qcLimitsRow(rep) {
-    const lim = this.qcLimits(), def = rep?.track_defaults || {};
+    const def = rep?.track_limits || rep?.track_defaults || {};
     const ptype = this.S.survey?.meta?.platform_type || def.platform_type || '';
-    const dspeed = def.speed_kn ?? ({ Aerial: 200, Other: 200 }[ptype] || 30);
-    const box = (key, id, dflt, min, max) => el('input', { type: 'number', id, min, max, step: 1, value: lim[key] ?? '', placeholder: String(dflt), style: { width: '6em' },
-      title: `Leave blank for the default (${dflt})`,
-      onchange: (e) => {
-        const v = +e.target.value;
-        if (e.target.value !== '' && v >= min && v <= max) lim[key] = v;
-        else { if (e.target.value !== '') toast(`Must be ${min}–${max} (blank for the default)`, 'warn'); delete lim[key]; e.target.value = ''; }
-        try { localStorage.setItem('wsr.qc.track', JSON.stringify(lim)); } catch {}
-      } });
-    return el('div', { class: 'qc-limits', id: 'qc-limits' },
-      el('span', { class: 'hint' }, 'Trackline: flag GPS gaps longer than '), box('gap_s', 'qc-gap-s', def.gap_s ?? 120, 10, 86400),
-      el('span', { class: 'hint' }, ' s and jumps faster than '), box('speed_kn', 'qc-speed-kn', dspeed, 1, 2000),
-      el('span', { class: 'hint' }, ` kn${ptype ? ` (default for ${ptype.toLowerCase()} surveys)` : ''}. The trackline is broken only where the Effort table has an ERROR row; Fix adds one.`));
+    const speed = def.speed_kn ?? ({ Aerial: 200, Other: 200 }[ptype] || 30);
+    return el('p', { class: 'hint', id: 'qc-limits' },
+      `Trackline: GPS gaps longer than ${def.gap_used_s ?? def.gap_s ?? 120} s and jumps faster than ${speed} kn${ptype ? ` (${ptype.toLowerCase()} survey)` : ''} are flagged. The trackline is broken only where the Effort table has an ERROR row; Fix adds one.`);
   }
 
   async fixQcIssue(x) {
@@ -1322,7 +1328,7 @@ class App {
 
   async runQc() {
     let r;
-    try { r = await api('/api/qc', { track_limits: this.qcLimits() }); } catch { return; }
+    try { r = await api('/api/qc', {}); } catch { return; }
     this.qcReport = r.report;
     this.qcStale = false;
     this.renderQc();
@@ -1712,9 +1718,9 @@ class App {
     // distances from the internal track, plus the live stretch since the last track point
     // ERROR stretches (GPS jumps or losses marked in the Effort table) don't count (0.45: nothing else breaks it)
     let total = 0, onDist = 0;
-    const tr = S.track, tst = trackStates(tr, S.tables.effort.rows);
+    const tr = S.track, tst = trackStates(tr, S.tables.effort.rows), tbr = trackBreaks(tr, S.tables.effort.rows);
     for (let i = 1; i < tr.length; i++) {
-      if (tst[i] === 'ERROR' || tst[i - 1] === 'ERROR') continue;
+      if (tbr[i] || tst[i] === 'ERROR' || tst[i - 1] === 'ERROR') continue;      // 0.46: the same breaks as the map
       const d = distM([+tr[i - 1].Lat, +tr[i - 1].Lon], [+tr[i].Lat, +tr[i].Lon]);
       total += d;
       if (isOn(tst[i]) && isOn(tst[i - 1])) onDist += d;
