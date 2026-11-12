@@ -17,7 +17,7 @@ import re
 import threading
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import geo
 from .nmea import NmeaDecoder, with_checksum
@@ -305,6 +305,8 @@ class Simulator:
 
     def sentences(self) -> list[str]:
         now = datetime.now(timezone.utc)
+        if os.environ.get("SPYHOP_TEST_CLOCK_OFFSET"):       # tests: a GPS whose time differs from the computer's (0.48)
+            now += timedelta(seconds=float(os.environ["SPYHOP_TEST_CLOCK_OFFSET"] or 0))
         hms = now.strftime("%H%M%S") + ".00"
         dmy = now.strftime("%d%m%y")
 

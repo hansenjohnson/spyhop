@@ -87,6 +87,7 @@ class VesselState:
     quality: int | None = None
     sats: int | None = None
     gps_time: str | None = None      # ISO UTC from the sentence, if any
+    gps_time_rx: float | None = None  # 0.48: the computer's time (epoch s) when that sentence arrived (clock check)
     source: str | None = None
     updated: float | None = None     # wall clock (time.time) of last position
     heading_updated: float | None = None
@@ -219,7 +220,7 @@ class NmeaDecoder:
         if not live or min(live, key=lambda s: self.priority.get(s, 99)) != source:
             return
         main = self.state
-        for k in ("lat", "lon", "sog", "cog", "heading", "heading_updated", "variation", "quality", "sats", "gps_time", "updated"):
+        for k in ("lat", "lon", "sog", "cog", "heading", "heading_updated", "variation", "quality", "sats", "gps_time", "gps_time_rx", "updated"):
             setattr(main, k, getattr(st, k))
         if main.lat is not None and (main.last_moved is None or st.last_moved and st.last_moved > main.last_moved):
             main.last_moved = st.last_moved
@@ -316,8 +317,9 @@ class NmeaDecoder:
             try:
                 d = date(2000 + int(dmy[4:6]), int(dmy[2:4]), int(dmy[0:2]))
                 h, m, s = hms
-                st.gps_time = datetime(d.year, d.month, d.day, h, m, int(s),
+                st.gps_time = datetime(d.year, d.month, d.day, h, m, int(s), int(round((s - int(s)) * 1e6)) % 1000000,
                                        tzinfo=timezone.utc).isoformat()
+                st.gps_time_rx = time.time()
             except ValueError:
                 pass
         return True

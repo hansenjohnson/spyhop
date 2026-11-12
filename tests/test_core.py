@@ -1758,6 +1758,8 @@ def test_templates_folder(tmp_path):
 
     # use a template from the folder: a backup goes to templates/backups, no copy is made
     _run(app.templates_save(_Req({"by": "H", "notes": "with JM", "name": "with-jm"})))
+    # 0.48: a new template's record of changes starts with its own first entry, not the old template's
+    assert [x["notes"] for x in templates.read_template_file(cfg, "with-jm.spyhop-template.zip")["history"]] == ["with JM"]
     cfg.save_list("observers", [{"name": "ZZ", "full_name": "Z. Z."}])
     chk = _run(app.templates_check(_Req({"template": "with-jm.spyhop-template.zip"})))
     assert chk["kind"] == "folder" and [f["file"] for f in chk["files"] if f["status"] != "same"] == ["observers.csv"]
@@ -3008,3 +3010,61 @@ def test_only_one_spyhop_per_computer(tmp_path, monkeypatch):
         holder.kill(); holder.wait()
     assert instance.acquire(9999, wait_s=2) is True                 # released when the process ends (no stale lock)
     assert instance.running()["port"] == 9999
+
+
+def test_clock_check_and_sync_command(monkeypatch):
+    """0.48: GPS time − computer time from RMC sentences (median of samples); the sync commands ask for
+    administrator rights and work out the time when they run."""
+    import time as _t
+    from types import SimpleNamespace
+    from spyhop import clock
+    from spyhop.nmea import NmeaDecoder, VesselState
+    from spyhop.sources import Simulator, with_checksum
+    w = clock.ClockWatch()
+    assert w.status()["known"] is False
+    monkeypatch.setenv("SPYHOP_TEST_CLOCK_OFFSET", "-37")              # a GPS 37 s behind the computer…
+    d = NmeaDecoder(VesselState())
+    sim = Simulator()
+    for _ in range(4):
+        for line in sim.sentences():
+            d.feed(line, "Sim")
+        w.feed(d.state)
+        d.state.gps_time_rx += 0.001                                     # a new sentence each time
+    st = w.status()
+    assert st["known"] and abs(st["offset_s"] + 37) < 1.5 and st["ok"] is False and st["limit_s"] == 2
+    monkeypatch.setenv("SPYHOP_TEST_CLOCK_OFFSET", "0.4")
+    w.reset()
+    for _ in range(4):
+        for line in sim.sentences():
+            d.feed(line, "Sim")
+        w.feed(d.state); d.state.gps_time_rx += 0.001
+    assert w.status()["ok"] is True
+    mac = clock.sync_command(-37, "darwin")
+    assert mac[0] == "osascript" and "with administrator privileges" in mac[-1] and "+ (-37)" in mac[-1]
+    win = clock.sync_command(12.4, "win32")
+    assert "-Verb RunAs" in win[-1] and "FromSeconds(12)" in win[-1]
+    lin = clock.sync_command(5, "linux")
+    assert lin[-1].startswith('date -s "@$(( $(date +%s) + (5) ))"')
+    # a stale GPS time doesn't count
+    w2 = clock.ClockWatch()
+    for k in range(4):
+        w2.feed(SimpleNamespace(gps_time="2026-11-12T10:00:0%dZ".replace("Z", "+00:00") % k, gps_time_rx=_t.time() - 60 + k, source="x"))
+    assert w2.status()["known"] is False
+
+
+def test_stationary_station_position(tmp_path):
+    """0.48: a Stationary survey's station position (entered in the survey details) stands in for the GPS."""
+    import pytest as _pt
+    r = Recorder(tmp_path)
+    with _pt.raises(ValueError):
+        r.start_survey("St", {"platform_type": "Stationary", "platform_lat": "41 54.05 N"})   # both or neither
+    with _pt.raises(ValueError):
+        r.start_survey("St", {"platform_type": "Stationary", "platform_lat": "ninety", "platform_lon": "070 19.80 W"})
+    r.start_survey("St", {"platform_type": "Stationary", "platform_lat": "41 54.05 N", "platform_lon": "070 19.80 W"})
+    v = r.vessel()
+    assert v["station"] and abs(v["lat"] - 41.900833) < 1e-5 and abs(v["lon"] + 70.33) < 1e-5 and v["has_fix"]
+    start = r.tables["effort"].rows[0]
+    assert abs(float(start["Lat"]) - 41.900833) < 1e-5 and abs(float(start["Lon"]) + 70.33) < 1e-5
+    assert r.read_meta()["platform_lat"] == "41.900833"
+    r.set_meta({"platform_type": "Shipboard"})
+    assert not r.vessel().get("station")

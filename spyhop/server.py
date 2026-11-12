@@ -10,6 +10,7 @@ import logging
 import os
 import platform
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -259,7 +260,8 @@ class App:
             try:
                 self.rec.tick_tracker()
                 self.rec.tick_externals(self.rec.decoder, getattr(self, "running_inputs", []))
-                msg = {"type": "vessel", "vessel": self.rec.vessel(), "t": time.time(),
+                self.rec.clock.feed(self.rec.decoder.state)
+                msg = {"type": "vessel", "vessel": self.rec.vessel(), "t": time.time(), "clock": self.rec.clock.status(),
                        "inst": self.rec.decoder.instruments(),
                        "others": self.others_on_map(),
                        "failover": self.rec.decoder.failover_state()}
@@ -481,6 +483,33 @@ class App:
         body = await request.json()
         self.rec.start_survey(body.get("name", ""), meta=body.get("meta"))
         return json_ok(survey=self.rec.survey_info())
+
+    async def clock_status(self, request):
+        """0.48: the computer's clock against the primary GPS ({known, offset_s, ok, limit_s, source}),
+        and whether it may be synced now (only with no active survey)."""
+        return json_ok(clock=self.rec.clock.status(), can_sync=not self.rec.survey_active(), platform=sys.platform)
+
+    async def clock_sync(self, request):
+        """0.48: set the computer's clock to the GPS (the operating system asks for administrator rights)."""
+        from . import clock as _clock
+        if self.rec.survey_active():
+            raise ValueErrorMsg("A survey is under way: the clock can only be synced between surveys (so its records never jump in time).")
+        st = self.rec.clock.status()
+        if not st["known"]:
+            raise ValueErrorMsg("There's no GPS time to sync to (the primary GPS input needs a fix and RMC sentences).")
+        ok, msg = await asyncio.get_running_loop().run_in_executor(None, _clock.sync, st["offset_s"])
+        after = None
+        if ok:
+            self.rec.clock.reset()
+            for _ in range(16):                       # fresh comparisons with the new time (about 4 s)
+                await asyncio.sleep(0.5)
+                after = self.rec.clock.status()
+                if after["known"]:
+                    break
+            if after and after["known"]:
+                msg += f" It's now within {abs(after['offset_s']):.1f} s of the GPS." if after["ok"] else f" It's still {after['offset_s']:+.1f} s from the GPS."
+        logging.getLogger("spyhop.clock").info("sync %s: %s", "ok" if ok else "failed", msg)
+        return json_ok(synced=ok, message=msg, before=st, after=after)
 
     async def save_summary(self, request):
         """Store a summary HTML page (built in the browser) in the survey's exports folder."""
@@ -1613,6 +1642,8 @@ class App:
         r.add_get("/api/nmea", self.nmea)
         r.add_post("/api/nmea/sources", self.nmea_sources)
         r.add_post("/api/nmea/map", self.nmea_map)
+        r.add_get("/api/clock", self.clock_status)
+        r.add_post("/api/clock/sync", self.clock_sync)
         r.add_get("/api/externals", self.externals)
         r.add_post("/api/nmea/log", self.nmea_log)
         r.add_get("/tiles/s/{i}/{z}/{x}/{y}", self.tile_online)

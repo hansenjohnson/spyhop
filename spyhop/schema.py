@@ -47,12 +47,16 @@ SURVEY_META = [
     ("platform_type", "Platform type", "Shipboard, Aerial, Stationary or Other"),
     ("platform_altitude_ft", "Platform altitude (ft)",
      "Observers’ average eye height above the water (ship or station), or the usual survey altitude (aircraft)"),
+    # 0.48: a Stationary platform's position, used for every record of the survey (no GPS needed)
+    ("platform_lat", "Station latitude", "Stationary platforms: the station's latitude, used for every record (e.g. 41 54.05 N)"),
+    ("platform_lon", "Station longitude", "Stationary platforms: the station's longitude (e.g. 070 19.80 W)"),
     ("organization", "Organization", "Organization running the survey"),
     ("chief_scientist", "Chief scientist", "Chief scientist for this survey"),
     ("chief_scientist_email", "Chief scientist email", "name@example.org"),
     ("survey_notes", "Survey notes", "General notes or a summary of the survey: conditions, what went well, problems, follow-up"),
 ]
-META_MULTILINE = {"survey_notes"}       # a text box of several lines in the Survey tab
+META_MULTILINE = {"survey_notes"}
+STATION_META = ("platform_lat", "platform_lon")    # shown only for a Stationary platform (0.48)       # a text box of several lines in the Survey tab
 
 COMMON_HEAD = [
     col("RowID", "id", hidden=True),

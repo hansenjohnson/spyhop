@@ -243,15 +243,18 @@ class App {
     const f = (id, title, ...kids) => el('div', { class: 'sf', id, title }, ...kids);
     s.replaceChildren(
       f('sf-clock', 'Survey clock (local or UTC — set in Settings)'),
+      f('sf-clockcheck', 'The computer’s clock against the GPS — click to check or sync it'),
       f('sf-pos', 'Vessel position from GPS', el('span', { id: 'pos-text' }), el('span', { id: 'pos-flag' })),
       f('sf-nav', 'Speed / course / heading'),
       f('sf-remind', 'Time until the next Effort/conditions check — click to open the Effort table (the interval is in Settings → General)'),
       f('sf-survey', 'Current survey'),
-      f('sf-track', 'Internal trackline (switch on/off in Settings)'),
+      f('sf-track', 'Internal trackline (recorded while a survey is active)'),
       f('sf-effort', 'Latest effort state'),
       el('div', { class: 'sf grow' }),
       f('sf-version', 'Spyhop version — click for details (Settings → About)', `Spyhop ${this.S.about?.spyhop || ''}`));
     $('#sf-version').addEventListener('click', () => this.showTab('about'));
+    $('#sf-clockcheck').addEventListener('click', () => this.clockDialog());
+    this.updateClockCheck();
     $('#sf-remind').addEventListener('click', () => this.showTab('effort'));
     $('#sf-survey').addEventListener('click', () => this.showTab('survey'));
   }
@@ -750,6 +753,7 @@ class App {
           this.S.clock = m.vessel.clock;
           if (this.clock() !== before) this.onClockChanged();
         }
+        if (m.clock) { this.S.gpsClock = m.clock; this.updateClockCheck(); }
         this.map.updateVessel(m.vessel);
         this.map.updateOthers(m.others);
         this.showFailover(m.failover);
@@ -837,6 +841,76 @@ class App {
     return best;
   }
 
+  // ---------------------------------------------------------------- the clock check (0.48)
+  // The computer's clock against the primary GPS (server: clock.py). The header warns while they differ by
+  // more than 2 s; Start New Survey checks first; the sync (administrator rights) is only between surveys.
+  clockText(c = this.S.gpsClock) {
+    if (!c?.known) return null;
+    const a = Math.abs(c.offset_s);
+    const amt = a >= 120 ? `${(a / 60).toFixed(1)} min` : `${a.toFixed(a < 10 ? 1 : 0)} s`;
+    return c.ok ? `within ${c.limit_s} s of the GPS (${c.offset_s >= 0 ? '+' : '−'}${a.toFixed(1)} s)` : `${amt} ${c.offset_s > 0 ? 'behind' : 'ahead of'} the GPS`;
+  }
+
+  updateClockCheck() {
+    const b = $('#sf-clockcheck');
+    if (!b) return;
+    const c = this.S.gpsClock;
+    const bad = c?.known && !c.ok;
+    b.textContent = bad ? `⚠ Clock ${this.clockText()}` : '';
+    b.classList.toggle('alert', !!bad);
+    b.style.display = bad ? '' : 'none';
+    const box = $('#clock-check-line');
+    if (box) box.textContent = c?.known ? `The computer’s clock is ${this.clockText()}.` : 'No GPS time yet (the primary GPS input needs a fix).';
+  }
+
+  // the dialog: what the check says, and Sync (only between surveys)
+  async clockDialog(fromStart = false) {
+    let r;
+    try { r = await api('/api/clock'); } catch { return 'error'; }
+    const c = r.clock;
+    if (!c.known) {
+      if (fromStart) return 'unknown';
+      await modal({ title: 'Clock check', body: el('p', {}, 'There’s no GPS time to compare with yet: the primary GPS input needs a fix (and RMC sentences). Every record is stamped with the computer’s clock.') });
+      return 'unknown';
+    }
+    const off = c.offset_s, bad = !c.ok;
+    const os = r.platform === 'darwin' ? 'Your Mac will ask for an administrator’s password.' : r.platform === 'win32' ? 'Windows will ask whether to allow the change (administrator rights).' : 'The system will ask for an administrator’s password.';
+    const body = el('div', { id: 'clock-dialog' },
+      el('p', {}, bad ? el('b', {}, `The computer’s clock is ${this.clockText(c)}.`) : `The computer’s clock is ${this.clockText(c)}: nothing to do.`),
+      el('p', { class: 'hint' }, `Every sighting, effort row, event and track point is stamped with the computer’s clock; the GPS (${c.source || 'primary input'}) gives the true time.${bad ? ` Syncing moves the computer’s clock ${off > 0 ? 'forward' : 'back'} ${Math.abs(off).toFixed(0)} s. ${os}` : ''}`),
+      bad && !r.can_sync ? el('p', { class: 'warnbox' }, el('b', {}, 'A survey is under way. '), 'The clock can only be synced between surveys, so a survey’s records never jump in time. End the survey first, or sync before the next one.') : null);
+    const buttons = fromStart
+      ? [{ label: 'Cancel', value: null }, { label: 'Start anyway', value: 'start' }, { label: 'Sync the clock, then start', value: 'sync', primary: true }]
+      : bad && r.can_sync ? [{ label: 'Close', value: null }, { label: 'Sync the computer’s clock to the GPS', value: 'sync', primary: true }] : [{ label: 'Close', value: null }];
+    const how = await modal({ title: fromStart ? 'Check the clock before starting' : 'Clock check', body, buttons });
+    if (how !== 'sync') return how;
+    return await this.syncClock() ? 'synced' : (fromStart ? await this.afterFailedSync() : 'failed');
+  }
+
+  async syncClock() {
+    toast('Syncing the clock: answer the password prompt…', 'info', 6000);
+    let r;
+    try { r = await api('/api/clock/sync', {}); } catch { return false; }
+    if (r.synced) { toast(r.message, 'ok', 8000); return true; }
+    await modal({ title: 'The clock wasn’t changed', body: el('div', { id: 'clock-sync-failed' }, el('p', {}, r.message),
+      el('p', { class: 'hint' }, 'You can also set the time by hand in the computer’s date and time settings, to the GPS time shown in Tools → Instruments.')) });
+    return false;
+  }
+
+  async afterFailedSync() {
+    return await modal({ title: 'Start the survey anyway?', body: el('p', {}, `The computer’s clock is still ${this.clockText() || 'not checked'}. The survey’s records will be stamped with it, and the difference is noted in its details.`),
+      buttons: [{ label: 'Cancel', value: null }, { label: 'Start anyway', value: 'start', primary: true }] });
+  }
+
+  // before Start New Survey: the clock must be within 2 s of the GPS, or the user says go ahead
+  async checkClockBeforeStart() {
+    let r;
+    try { r = await api('/api/clock'); } catch { return true; }
+    if (!r.clock.known || r.clock.ok) return true;
+    const how = await this.clockDialog(true);
+    return how === 'start' || how === 'synced' || how === 'unknown';
+  }
+
   updateStatus() {
     if (!this.S) return;
     const st = this.S.config.settings, v = this.S.vessel || {};
@@ -845,7 +919,7 @@ class App {
     $('#sf-clock').textContent = `${now.time} ${now.abbr}`;
     $('#pos-text').textContent = v.lat !== null && v.lat !== undefined ? fmtPos(v.lat, v.lon, fmt) : 'No position';
     const flag = $('#pos-flag');
-    flag.textContent = v.lost ? (v.lat === null ? ' NO GPS' : ' GPS LOST') : v.frozen ? ' NOT MOVING' : '';
+    flag.textContent = v.station ? ' STATION' : v.lost ? (v.lat === null ? ' NO GPS' : ' GPS LOST') : v.frozen ? ' NOT MOVING' : '';
     $('#sf-pos').classList.toggle('alert', !!(v.lost || v.frozen));
     $('#sf-nav').textContent = `${v.sog !== null && v.sog !== undefined ? v.sog.toFixed(1) : '—'} kn · COG ${fmtBrg(v.cog)} · HDG ${fmtBrg(v.best_heading)}`;
     // effort reminder
@@ -1011,7 +1085,6 @@ class App {
   }
 
   async newSurvey() {
-    if (!await this.checkGpsBeforeStart()) return;
     const cur = this.S.survey;
     if (cur?.active) {
       const how = await modal({ title: 'Current survey is still active',
@@ -1025,13 +1098,16 @@ class App {
     const last = this.S.config.settings.last_meta || {};
     const nameBox = el('input', { type: 'text', style: { width: '100%' } });
     const fields = {};
+    const STATION = ['platform_lat', 'platform_lon'];
+    const showStation = () => { for (const k of STATION) fields[k]?.closest('label')?.classList.toggle('hidden', fields.platform_type.value !== 'Stationary'); };
     const form = el('div', { class: 'meta-form' }, this.S.schema.survey_meta.filter(([k]) => k !== 'survey_notes').map(([k, label, hint]) => {
       const inp = k === 'platform_type'
-        ? el('select', {}, ['', ...this.S.schema.fixed_lists.platform_type].map((o) => el('option', { value: o, selected: (last[k] || '') === o }, o || '—')))
-        : el('input', { type: k.endsWith('email') ? 'email' : 'text', value: last[k] || '', placeholder: hint });
+        ? el('select', { onchange: () => showStation() }, ['', ...this.S.schema.fixed_lists.platform_type].map((o) => el('option', { value: o, selected: (last[k] || '') === o }, o || '—')))
+        : el('input', { type: k.endsWith('email') ? 'email' : 'text', value: STATION.includes(k) && last[k] ? fmtCoord(+last[k], k === 'platform_lat', this.S.config.settings.latlon_format) : last[k] || '', placeholder: hint });
       fields[k] = inp;
-      return el('label', {}, label, inp);
+      return el('label', { 'data-meta': k }, label, inp);
     }));
+    showStation();
     const got = await modal({ title: 'Start new survey', width: 'min(640px, 94vw)',
       body: el('div', {},
         el('label', { class: 'stack' }, 'Survey name, in your team’s own naming convention (it becomes the start of the file names)', nameBox),
@@ -1041,6 +1117,13 @@ class App {
         { label: 'Start', primary: true, value: () => ({ name: nameBox.value, meta: Object.fromEntries(Object.entries(fields).map(([k, i]) => [k, i.value])) }) }],
       onOpen: () => { setTimeout(() => nameBox.focus(), 0); return true; } });
     if (!got) return;
+    // 0.48: the GPS and clock checks come after the details: a Stationary platform with its position
+    // given needs neither (its position is the station's, and nothing is timed against a moving GPS)
+    const station = got.meta.platform_type === 'Stationary' && got.meta.platform_lat?.trim() && got.meta.platform_lon?.trim();
+    if (!station) {
+      if (!await this.checkGpsBeforeStart()) return;
+      if (!await this.checkClockBeforeStart()) return;
+    }
     const name = got.name;
     this.pendingTab = 'effort';
     try {
@@ -1119,12 +1202,15 @@ class App {
     this.metaDraft = this.metaDraft || {};
     const meta = sv.meta || {};
     const save = (k, v) => api('/api/survey/meta', { updates: { [k]: v } })
-      .then(() => { delete this.metaDraft[k]; }).catch(() => {});
+      .then(() => { delete this.metaDraft[k]; if (k === 'platform_type') { sv.meta = { ...meta, platform_type: v }; this.renderSurvey(); } })
+      .catch(() => { if (['platform_lat', 'platform_lon'].includes(k)) this.renderSurvey(); });
     const notesVal = this.metaDraft.survey_notes ?? meta.survey_notes ?? '';
     const notesHint = (this.S.schema.survey_meta.find((m) => m[0] === 'survey_notes') || [])[2] || '';
     return el('div', {}, el('h4', {}, 'Survey details'),
-      el('div', { class: 'meta-form' }, this.S.schema.survey_meta.filter(([k]) => k !== 'survey_notes').map(([k, label, hint]) => {
-        const val = this.metaDraft[k] ?? meta[k] ?? '';
+      el('div', { class: 'meta-form' }, this.S.schema.survey_meta.filter(([k]) => k !== 'survey_notes'
+        && (!['platform_lat', 'platform_lon'].includes(k) || meta.platform_type === 'Stationary')).map(([k, label, hint]) => {
+        const st = ['platform_lat', 'platform_lon'].includes(k);
+        const val = this.metaDraft[k] ?? (st && meta[k] ? fmtCoord(+meta[k], k === 'platform_lat', this.S.config.settings.latlon_format) : meta[k]) ?? '';
         const inp = k === 'platform_type'
           ? el('select', { onchange: (e) => save(k, e.target.value) },
             ['', ...this.S.schema.fixed_lists.platform_type].map((o) => el('option', { value: o, selected: val === o }, o || '—')))
@@ -1822,7 +1908,7 @@ class App {
     const first = firstIso ? timeParts(firstIso, this.clock()) : null;
     const tbl = (head, rows) => el('table', { class: 'summary' }, el('thead', {}, el('tr', {}, head.map((h) => el('th', {}, h)))),
       el('tbody', {}, rows.map((r) => el('tr', {}, r.map((c) => el('td', {}, c))))));
-    const spRows = Object.entries(bySp).sort((a, b) => b[1].n - a[1].n).map(([k, o]) => [k, o.n, o.number, o.calves, o.re || '']);
+    const spRows = Object.entries(bySp).sort((a, b) => b[1].n - a[1].n).map(([k, o]) => [k, o.n, o.number, o.calves]);      // 0.48: no resight counts in the Summary
 
     // range of environmental conditions logged in the Effort tab
     const fixed = S.schema.fixed_lists;
@@ -1881,10 +1967,10 @@ class App {
     const riwh = groups.filter((g) => isRiwh(g.r.Species))
       .sort((a, b) => new Date(a.r.DateTime) - new Date(b.r.DateTime) || (+a.r.SightNo || 0) - (+b.r.SightNo || 0));
     const riwhTable = riwh.length ? el('table', { class: 'summary riwh-table' },
-      el('thead', {}, el('tr', {}, ['Sighting', 'Time', 'Position', 'Number', 'Calves', 'Resights', 'Field ID', 'Notes'].map((h) => el('th', {}, h)))),
+      el('thead', {}, el('tr', {}, ['Sighting', 'Time', 'Position', 'Number', 'Calves', 'Field ID', 'Notes'].map((h) => el('th', {}, h)))),
       el('tbody', {}, riwh.map(({ r, number, calves, resights, fieldIds }) => el('tr', {},
         el('td', {}, r.SightNo || ''), el('td', { class: 'nowrap' }, fmtT(r.DateTime)), el('td', { class: 'mono nowrap' }, pos(r)),
-        el('td', { class: 'num' }, number || ''), el('td', { class: 'num' }, calves || ''), el('td', { class: 'num' }, resights || ''),
+        el('td', { class: 'num' }, number || ''), el('td', { class: 'num' }, calves || ''),
         el('td', {}, fieldIds.join(', ')), el('td', {}, r.Notes || ''))))) : null;
     const riwhTotals = riwh.length ? `${riwh.length} sighting${riwh.length === 1 ? '' : 's'}, ${riwh.reduce((a, g) => a + g.number, 0)} animals`
       + `, ${riwh.reduce((a, g) => a + g.calves, 0)} calves. Positions are the whales’ at the first sighting (SigLat/SigLon), or the vessel’s if none was worked out; numbers are the largest seen on the sighting or any resight.` : '';
@@ -1897,7 +1983,7 @@ class App {
             onclick: () => this.saveSummaryHtml('pdf') }, 'Save as PDF…'))),
       el('p', { class: 'print-only hint' }, `Spyhop summary · generated ${gen.date} ${gen.time} ${gen.abbr}`),
       el('div', { class: 'cards' },
-        card(nResights ? `Sightings (+${nResights} resight${nResights === 1 ? '' : 's'})` : 'Sightings', groups.length), card('Number', groups.reduce((a, g) => a + g.number, 0)),
+        card('Sightings', groups.length), card('Number', groups.reduce((a, g) => a + g.number, 0)),
         card('Species', Object.keys(bySp).filter((k) => k !== '(unidentified)').length),
         card('Time on effort', fmtDuration(onSec), effortNow), card('On-effort distance', `${(onDist / div).toFixed(2)} ${unit}`, effortNow && st.tracking_enabled),
         card('Track distance', `${(total / div).toFixed(2)} ${unit}`, !!st.tracking_enabled), card('Events', ev.length)),
@@ -1915,7 +2001,7 @@ class App {
       Object.keys(byKind).some((k) => k !== 'ON') ? el('h3', {}, 'Time on effort by type') : null,
       Object.keys(byKind).some((k) => k !== 'ON') ? tbl(['Effort', 'Time'], ON_EFFORT.filter((k) => byKind[k]).map((k) => [effortInfo(k).definition ? `${k} (${effortInfo(k).definition.replace(/\.$/, '')})` : k, fmtDuration(byKind[k])])) : null,
       el('h3', {}, 'Sightings by species'),
-      spRows.length ? tbl(['Species', 'Sightings', 'Number', 'Calves', 'Resights'], spRows) : el('p', { class: 'hint' }, 'No sightings yet.'),
+      spRows.length ? tbl(['Species', 'Sightings', 'Number', 'Calves'], spRows) : el('p', { class: 'hint' }, 'No sightings yet.'),
       spRows.length && nResights ? el('p', { class: 'hint' }, 'Resights aren’t counted as sightings; Number and Calves are the largest seen on any look at the same animals.') : null,
       el('h3', {}, 'North Atlantic right whale sightings'),
       riwhTable ? el('div', { class: 'table-scroll' }, riwhTable) : el('p', { class: 'hint' }, 'No North Atlantic right whales sighted.'),
@@ -2164,7 +2250,7 @@ class App {
         : 'Spyhop doesn’t know what changed, so it says all.';
     const body = el('div', { class: 'stack-form' },
       name ? el('p', { class: 'warnbox' }, el('b', {}, `This replaces ${name} `), 'with the current template. If this is the team’s template, check with whoever looks after it first; the change is added to the template’s record of changes.')
-        : el('p', {}, 'This saves the current template as a new saved template (templates/saved), with your change added to its record of changes.'),
+        : el('p', {}, 'This saves the current template as a new saved template (templates/saved). Its record of changes starts fresh, with this entry first (the old template’s record stays with the old template).'),
       name ? null : el('label', { class: 'stack' }, 'Template name', fname, el('span', { class: 'hint' }, 'Saved as <name>.spyhop-template.zip')),
       el('label', { class: 'stack' }, 'Your name', by),
       el('label', { class: 'stack' }, 'What you changed', notes),
@@ -2357,7 +2443,11 @@ class App {
           el('label', { class: 'row' }, 'Track point every (s)', lockNum('tracking_interval', 1, 300)),
           el('label', { class: 'row' }, 'Magnetic variation (° E+/W−, or auto)', variation,
             el('span', { class: 'hint' }, ` now ${this.variation() === null ? '—' : this.variation().toFixed(1) + '°'}`))),
-        el('p', { class: 'hint help' }, 'These change what is recorded or how it is worked out, so they can’t change while a survey is active, like the drop-down lists (Settings → Dropdowns) and the rest of the template’s data part. The trackline is recorded whenever a survey is active, a point every this many seconds, and stops at its End. It is broken on the map, and left out of the Summary’s distances, only where the Effort table has an ERROR row (Tools → Error check finds GPS jumps and gaps and its Fix adds one). “auto” variation uses the World Magnetic Model if installed, otherwise the GPS; it turns magnetic bearings into true ones.')),
+        // 0.48: the clock check (stays clickable during a survey: the dialog says why it can't sync then)
+        el('div', { class: 'clock-check', id: 'clock-check' }, el('b', {}, 'Clock: '),
+          el('span', { id: 'clock-check-line' }, this.S.gpsClock?.known ? `The computer’s clock is ${this.clockText()}.` : 'No GPS time yet (the primary GPS input needs a fix).'),
+          ' ', el('button', { id: 'btn-clock-check', onclick: () => this.clockDialog() }, 'Check / sync the clock…')),
+        el('p', { class: 'hint help' }, 'These change what is recorded or how it is worked out, so they can’t change while a survey is active, like the drop-down lists (Settings → Dropdowns) and the rest of the template’s data part. The trackline is recorded whenever a survey is active, a point every this many seconds, and stops at its End. Every record is stamped with the computer’s clock: Spyhop compares it with the primary GPS all the time, warns in the status bar when they differ by more than 2 s, checks at Start New Survey, and can sync the computer’s clock to the GPS between surveys (the computer asks for administrator rights). It is broken on the map, and left out of the Summary’s distances, only where the Effort table has an ERROR row (Tools → Error check finds GPS jumps and gaps and its Fix adds one). “auto” variation uses the World Magnetic Model if installed, otherwise the GPS; it turns magnetic bearings into true ones.')),
       sec('Reminders and sleep',
         el('div', { class: 'grid2' },
           el('label', { class: 'row' }, 'Conditions reminder (min)', num('effort_reminder_min', 1, 600)),

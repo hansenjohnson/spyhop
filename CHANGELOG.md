@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.48.0 — 2026-11-12
+
+- **Clock check:** Spyhop compares the computer's clock with the GPS time. A difference over 2 s shows in the status bar (click it), and **Start New Survey** asks you to sync first. **Sync** sets the computer's clock to the GPS time (it asks for administrator rights) and works only between surveys. Also in Settings → General → Data collection. Each survey's details record `clock_offset_at_start`.
+- **Stationary surveys:** a **station latitude / longitude** in the survey details (shown for Stationary only). When given, it is the platform position for the whole survey, and Start New Survey needs no GPS fix or clock check.
+- Start New Survey now asks for the details first, then checks the GPS and clock.
+- Clicking a stretch flagged with a GPS error shows a popup titled **Effort: ERROR** (with its segment and notes).
+- The Summary no longer shows resight counts.
+- **Save as a new template:** the new template's record of changes starts fresh (it used to copy the old template's record).
+
 ## 0.47.0 — 2026-11-12
 
 - **ERROR stretches on the map:** no more red points. A stretch marked ERROR is hidden (the trackline is broken there) unless **Settings → General → Map display → Trackline → Show segments flagged with GPS errors** is ticked; then the whole stretch is drawn in the ERROR color. The HTML summary's map follows the same choice.

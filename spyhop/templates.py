@@ -1034,8 +1034,9 @@ def changed_from_template(cfg, name: str) -> list[str]:
 def save_template(cfg, name: str, by: str, changed: str, notes: str, overwrite: bool = False,
                   include=(), min_spyhop: str | None = None, online: dict | None = None) -> Path:
     """Save the current template as a template in the templates folder, adding an entry to its record of
-    changes. A new template continues this computer's record; updating one continues the record of the
-    template replaced. include: any of OPTIONAL (waypoints, routes, overlays)."""
+    changes. 0.48: a new template starts a record of its own (just this save: it doesn't carry on the
+    record of the template this computer used before); updating one continues the record of the template
+    replaced. include: any of OPTIONAL (waypoints, routes, overlays)."""
     min_spyhop = clean_min_version(min_spyhop)
     if overwrite:
         p = _template_file(cfg, name)
@@ -1055,6 +1056,7 @@ def save_template(cfg, name: str, by: str, changed: str, notes: str, overwrite: 
         if p.exists() or any(template_stem(q.name).lower() == template_stem(fn).lower()
                              for q in (p.parent.iterdir() if p.parent.is_dir() else []) if is_template_name(q.name)):
             raise TemplateError(f"There's already a template called {template_stem(fn)}. Choose another name, or use Update on that template.")
+        save_local_history(cfg, [])               # 0.48: a new template's record starts here
     log_change(cfg, by, changed or "all", notes)
     _write_bytes(p, make_zip(cfg, include=include, min_spyhop=min_spyhop, online=online))
     return p

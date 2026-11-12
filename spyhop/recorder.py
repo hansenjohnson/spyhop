@@ -71,6 +71,9 @@ class Recorder:
         self.cfg = Config(root)
         self.state = VesselState()
         self.decoder = NmeaDecoder(self.state)
+        self.station = None                             # 0.48: (lat, lon) of a Stationary survey's station
+        from .clock import ClockWatch
+        self.clock = ClockWatch()                       # 0.48: the computer's clock against the GPS
         self.listeners: list = []
         self.notices: list[str] = list(self.cfg.notices)
         self.tables: dict[str, Table] = {}
@@ -297,6 +300,7 @@ class Recorder:
     SYSTEM_META = [("spyhop_version_created", "Started with Spyhop version"),
                    ("template_created", "Template in use when the survey started"),
                    ("template_created_matches", "Current template matched that saved template when the survey started"),
+                   ("clock_offset_at_start", "GPS time minus the computer's clock when the survey started (s; blank: no GPS time)"),
                    ("spyhop_version_saved", "Details last saved with Spyhop version")]
 
     def _template_meta(self) -> dict:
@@ -319,7 +323,7 @@ class Recorder:
         """Write <survey>_metadata.csv: the survey details, then SYSTEM_META. The values recorded when the
         survey started are kept; `system` gives them for a new survey."""
         import csv as _csv
-        sysv = {"spyhop_version_created": __version__, "template_created": "", "template_created_matches": ""}
+        sysv = {"spyhop_version_created": __version__, "template_created": "", "template_created_matches": "", "clock_offset_at_start": ""}
         p = self._meta_path()
         if system is None and p and p.exists():
             with open(p, newline="", encoding="utf-8-sig") as fh:
@@ -357,16 +361,33 @@ class Recorder:
                 if not 0 < f <= 60000:
                     raise ValueErrorMsg("Platform altitude must be more than 0 and at most 60000 ft.")
                 v = f"{f:g}"
+            if k in schema.STATION_META and v:          # 0.48: the station's position, as decimal degrees
+                try:
+                    v = f"{geo.parse_coord(v, k == 'platform_lat'):.6f}"
+                except ValueError as e:
+                    raise ValueErrorMsg(f"{'Station latitude' if k == 'platform_lat' else 'Station longitude'}: {e}")
             if k == "chief_scientist_email" and v and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v):
                 raise ValueErrorMsg(f"“{v}” doesn't look like an email address.")
             meta[k] = v
+        if meta.get("platform_type") == "Stationary" and bool(meta.get("platform_lat")) != bool(meta.get("platform_lon")):
+            raise ValueErrorMsg("Give both the station's latitude and longitude (or neither, to use the GPS).")
         return meta
+
+    # 0.48: a Stationary survey with a station position records that position everywhere, GPS or not
+    def _set_station(self, meta: dict | None):
+        self.station = None
+        if meta and meta.get("platform_type") == "Stationary" and meta.get("platform_lat") and meta.get("platform_lon"):
+            try:
+                self.station = (float(meta["platform_lat"]), float(meta["platform_lon"]))
+            except ValueError:
+                pass
 
     def set_meta(self, updates: dict) -> dict:
         if self.survey is None:
             raise ValueErrorMsg(self.NO_SURVEY)
         meta = self._clean_meta(updates, self.read_meta())
         self._write_meta(meta)
+        self._set_station(meta)
         self.cfg.save_settings({"last_meta": {k: v for k, v in meta.items() if k != "survey_notes"}})
         self.emit({"type": "reload"})
         return meta
@@ -394,6 +415,10 @@ class Recorder:
                 self.survey[k] = meta[k]
         self.cfg.set_current_survey(self.survey)
         self._open_tables()
+        try:
+            self._set_station(self.read_meta())
+        except Exception:  # noqa: BLE001 — details unreadable: use the GPS
+            self.station = None
 
     @staticmethod
     def _ts(iso: str) -> float:
@@ -422,9 +447,12 @@ class Recorder:
         self.pending_resume = None
         self.cfg.set_current_survey(survey)
         self._open_tables()
+        self._set_station(meta)                       # before the Start row, which takes its position
         self.new_row("effort", {"Effort": "Start"}, _allow_start=True)
         self.tables["effort"].undo_stack.clear()        # the Start row can't be undone
-        self._write_meta(meta, system={"spyhop_version_created": __version__, **self._template_meta()})
+        ck = self.clock.status()
+        self._write_meta(meta, system={"spyhop_version_created": __version__, **self._template_meta(),
+                                       "clock_offset_at_start": "" if not ck["known"] else f"{ck['offset_s']:+.1f}"})
         self._save_template_copy()
         self.cfg.save_settings({"last_meta": {k: v for k, v in meta.items() if k != "survey_notes"}})
         self._set_tracking(True)
@@ -634,6 +662,7 @@ class Recorder:
                     raise ValueErrorMsg(f"Not closed — {e}")
         self._set_tracking(False)
         self.survey = None
+        self.station = None
         self.pending_resume = None
         self.cfg.set_current_survey(None)
         self._open_tables()
@@ -921,6 +950,10 @@ class Recorder:
     # -- live position ---------------------------------------------------------
     def vessel(self) -> dict:
         d = self.state.snapshot()
+        if self.survey is not None and getattr(self, "station", None):
+            # 0.48: a Stationary survey's station position stands in for the GPS (it doesn't move)
+            d.update(lat=self.station[0], lon=self.station[1], has_fix=True, lost=False, frozen=False,
+                     sog=0.0, station=True, source=d.get("source") or "station position")
         d["mag_var"] = self.variation_at(d["lat"], d["lon"]) if d["lat"] is not None else None
         if self.cfg.settings.get("timezone") == "auto":
             d["clock"] = self.clock_info()
@@ -1034,6 +1067,8 @@ class Recorder:
                 return float(row.get(k) or "x")
             except ValueError:
                 continue
+        if self.survey is not None and self.station:          # 0.48: the station's position
+            return self.station[0] if is_lat else self.station[1]
         v = self.state.lat if is_lat else self.state.lon
         return v
 

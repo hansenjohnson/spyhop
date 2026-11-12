@@ -639,3 +639,8 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 .leaflet-tooltip.survey-label::before { border-top-color: #222; }
 .leaflet-tooltip.survey-end { background: #6b1f1f; }
 .leaflet-tooltip.survey-end::before { border-top-color: #6b1f1f; }
+/* 0.48: the clock check */
+.clock-check { margin: 0.5em 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.3em; }
+#sf-clockcheck { cursor: pointer; }
+
+.hidden { display: none !important; }

@@ -54,7 +54,7 @@ OPTIONAL = {
     "events": {"ID", "Notes"},
 }
 # survey details that may be blank (platform altitude matters only for reticle distances: checked there)
-META_OPTIONAL = {"platform_altitude_ft", "survey_notes"}
+META_OPTIONAL = {"platform_altitude_ft", "survey_notes", "platform_lat", "platform_lon"}   # station: Stationary only, optional
 # Start and End rows need only their time and position
 OTHER_LISTS = {"species": "Species", "event_types": "Events", "behaviors": "Behaviors", "observers": "Observers",
                "effort": "Effort", "visibility": "Visibility", "weather": "Weather", "distunit": "Reticles"}

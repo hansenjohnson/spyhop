@@ -963,7 +963,8 @@ export class MapView {
           const w = +disp.track_width || 3;
           const line = L.polyline([[+prev.p.Lat, +prev.p.Lon]], { color: effortColor('ERROR'), weight: w, pane: 'tracks', opacity: 0.9, className: 'track-error' })
             .addTo(this.layers.track);
-          line.on('click', (e) => this.trackPopup(e));
+          const at = p.DateTime;                    // a time inside the stretch: its ERROR row is in force
+          line.on('click', (e) => this.trackPopup(e, null, at));   // 0.48: says Effort: ERROR
           this.trackSeg = { line, key: 'ERROR', last: [+prev.p.Lat, +prev.p.Lon] };
         }
         this.trackSeg.line.addLatLng(ll);
@@ -993,7 +994,8 @@ export class MapView {
     }
   }
 
-  trackPopup(e, point = null) {
+  // errorAt (0.48): the click was on a stretch flagged with a GPS error: Effort ERROR and its segment
+  trackPopup(e, point = null, errorAt = null) {
     const pts = this.app.S.track;
     if (!pts.length) return;
     let best = point, bd = Infinity;
@@ -1002,15 +1004,18 @@ export class MapView {
       if (d < bd) { bd = d; best = p; }
     }
     // 0.46: the effort and segment in force at that point, from the Effort table as it is now
-    const rows = this.app.S.tables.effort?.rows, er = effortRowAt(rows, best.DateTime);
-    const st = trackStates([best], rows)[0];
+    const rows = this.app.S.tables.effort?.rows;
+    const errRow = errorAt ? [...(rows || [])].filter((r) => r.Effort === 'ERROR' && new Date(r.DateTime) <= new Date(errorAt)).at(-1) : null;
+    const er = errRow || effortRowAt(rows, best.DateTime);
+    const st = errRow ? 'ERROR' : trackStates([best], rows)[0];
     const fmt = this.app.S.config.settings.latlon_format, t = timeParts(best.DateTime, this.app.clock());
-    L.popup().setLatLng([+best.Lat, +best.Lon]).setContent(`<b>Track point</b><table class="pop">
+    L.popup().setLatLng(errRow ? e.latlng : [+best.Lat, +best.Lon]).setContent(`<b>${errRow ? 'Effort: ERROR' : 'Track point'}</b>${errRow ? '<div class="hint">Flagged with a GPS error (nearest track point below)</div>' : ''}<table class="pop">
       <tr><th>Time</th><td>${t ? `${t.date} ${t.time} ${t.abbr}` : esc(best.DateTime)}</td></tr>
       <tr><th>Position</th><td>${fmtPos(best.Lat, best.Lon, fmt)}</td></tr>
       <tr><th>SOG</th><td>${esc(best.SOG)} kn</td></tr><tr><th>COG</th><td>${esc(best.COG)}°T</td></tr>
       <tr><th>Effort</th><td>${esc(st)}</td></tr>
-      <tr><th>Segment</th><td>${er?.Segment ? esc(er.Segment) : '—'}</td></tr></table>`).openOn(this.map);
+      <tr><th>Segment</th><td>${er?.Segment ? esc(er.Segment) : '—'}</td></tr>
+      ${errRow?.Notes ? `<tr><th>Notes</th><td>${esc(errRow.Notes)}</td></tr>` : ''}</table>`).openOn(this.map);
   }
 
   // ---------------------------------------------------------------- markers
