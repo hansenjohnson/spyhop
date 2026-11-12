@@ -621,8 +621,21 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 .external-input .ext-wrap.lost .ext-rot { opacity: 0.55; }
 .external-input .ext-x { position: absolute; left: 0; top: 0; pointer-events: none; }
 .ext-lost-note { color: #b00000; font-weight: 600; }
-/* 0.46: Columns… dialog */
-.columns-list { margin: 0.4em 0; padding-left: 2em; max-height: 60vh; overflow-y: auto; }
-.columns-list li { display: flex; align-items: center; gap: 0.4em; padding: 0.1em 0; }
-.columns-list .col-name { flex: 1; min-width: 10em; }
+/* 0.46–0.47: Columns… dialog: chips to select and drag */
+.col-chips { position: relative; display: flex; flex-wrap: wrap; gap: 0.4em; padding: 0.6em; margin: 0.4em 0; border: 1px solid var(--line); border-radius: 6px; max-height: 50vh; overflow-y: auto; user-select: none; touch-action: none; }
+.col-chip { padding: 0.25em 0.75em; border-radius: 999px; border: 1px solid var(--line); background: var(--panel2, #f3f4f6); cursor: grab; font-size: 0.92em; white-space: nowrap; }
+.col-chip:hover { border-color: var(--accent); }
+.col-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.col-chip.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+.col-chips.dragging { cursor: grabbing; }
+.col-chips.dragging .col-chip.selected { opacity: 0.45; }
+.col-drop-mark { position: absolute; display: none; width: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; }
 .toolbar .columns-btn { margin-left: auto; }
+/* 0.47: Settings → General → Data collection while a survey is active */
+#data-collection.data-locked .grid2 { opacity: 0.5; pointer-events: none; }
+#data-collection.data-locked input:disabled { background: var(--panel2, #eee); }
+/* 0.47: the survey's Start / End labels on the map */
+.leaflet-tooltip.survey-label { font-weight: 600; font-size: 12px; padding: 1px 6px; background: #222; color: #fff; border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.35); }
+.leaflet-tooltip.survey-label::before { border-top-color: #222; }
+.leaflet-tooltip.survey-end { background: #6b1f1f; }
+.leaflet-tooltip.survey-end::before { border-top-color: #6b1f1f; }

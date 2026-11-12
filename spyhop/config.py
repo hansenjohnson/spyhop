@@ -305,6 +305,9 @@ DEFAULT_DISPLAY = {
     "resight_labels": "0",          # label resight markers too
     "show_track_on": "1",
     "show_track_off": "1",
+    "show_track_errors": "0",       # 0.47: draw the ERROR stretches (GPS jumps / gaps marked by Error check) in ERROR's color
+    "label_survey_start": "1",      # 0.47: a "Start" label where the survey started
+    "label_survey_end": "1",        # … and an "End" label where it ended
     "fade_enabled": "0",            # fade the track, sightings and events older than fade_min (not waypoints)
     "fade_min": "30",
     "overlay_colors": "{}",         # colors chosen in Tools → Overlays: JSON {file: "#rrggbb"}
@@ -318,7 +321,7 @@ DEFAULT_SETTINGS = {
     "distance_unit": "nm",
     "map_distance_unit": "nm",      # distances on the map, in popups, routes and the Summary (no reticles)
     "mag_variation": "auto",
-    "tracking_interval": 10,
+    "tracking_interval": 1,         # 0.47: a track point every second (was 10)
     "effort_reminder_min": 30,
     "keep_awake": "survey",         # stop the computer sleeping: off | survey (while one is active) | always
     "keep_screen_on": False,        # … and keep the screen on too
@@ -391,7 +394,7 @@ EXTERNAL_COLORS = ["#e07000", "#0097a7", "#c2185b", "#7cb342", "#5e35b1", "#6d4c
 LINE_STYLES = ("solid", "dashed", "dotted", "dashdot")
 EXTERNAL_STYLE = ("color", "line", "width", "trail", "label", "record", "icon")
 # 0.45: its icon on the map (vessel and aircraft turn with its heading)
-EXTERNAL_ICONS = ("circle", "square", "triangle", "diamond", "star", "vessel", "aircraft", "tower")
+EXTERNAL_ICONS = ("circle", "square", "triangle", "diamond", "star", "vessel", "aircraft", "drone", "tower")
 
 
 def _clean_external(x: dict, i: int):

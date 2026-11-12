@@ -52,11 +52,16 @@ const PLATFORM_SVG = {
 // 0.45: the icon of an "other" input (Settings → Inputs → Mapping 'Other' inputs): a shape, or a vessel or
 // aircraft that turns with its heading, or a tower. A red X over it while its GPS is lost.
 export const EXTERNAL_ICONS = [['circle', 'Circle'], ['square', 'Square'], ['triangle', 'Triangle'], ['diamond', 'Diamond'], ['star', 'Star'],
-  ['vessel', 'Vessel (turns with heading)'], ['aircraft', 'Aircraft (turns with heading)'], ['tower', 'Tower']];
+  ['vessel', 'Vessel (turns with heading)'], ['aircraft', 'Aircraft (turns with heading)'], ['drone', 'Drone (turns with heading)'], ['tower', 'Tower']];
+// 0.47: a quadcopter seen from above: four rotors on an X frame, the front arms and a nose in the color
+const droneSvg = (c) => `<svg viewBox="0 0 28 28" width="26" height="26"><g stroke="#fff" stroke-width="4.2" stroke-linecap="round"><path d="M7,7 L21,21 M21,7 L7,21"/></g>
+<g stroke="${c}" stroke-width="2.4" stroke-linecap="round"><path d="M7,7 L21,21 M21,7 L7,21"/></g>
+<g fill="${c}" fill-opacity="0.35" stroke="${c}" stroke-width="1.6"><circle cx="6.5" cy="6.5" r="4.6"/><circle cx="21.5" cy="6.5" r="4.6"/><circle cx="6.5" cy="21.5" r="4.6"/><circle cx="21.5" cy="21.5" r="4.6"/></g>
+<rect x="10.5" y="10.5" width="7" height="7" rx="1.5" fill="${c}" stroke="#fff" stroke-width="1.2"/><path d="M14,1.5 L17,6.5 L11,6.5 Z" fill="${c}" stroke="#fff" stroke-width="1"/></svg>`;
 const EXTERNAL_LOST_MS = 15000;           // no fix for this long: lost (the server stops sending it after 10 s)
 function externalIconHtml(icon, color, hdg, lost) {
-  const turns = icon === 'vessel' || icon === 'aircraft';
-  const svg = icon === 'vessel' ? PLATFORM_SVG.Shipboard(color) : icon === 'aircraft' ? PLATFORM_SVG.Aerial(color)
+  const turns = icon === 'vessel' || icon === 'aircraft' || icon === 'drone';
+  const svg = icon === 'vessel' ? PLATFORM_SVG.Shipboard(color) : icon === 'aircraft' ? PLATFORM_SVG.Aerial(color) : icon === 'drone' ? droneSvg(color)
     : icon === 'tower' ? PLATFORM_SVG.Stationary(color)
     : shapeSvg((icon || 'circle')[0].toUpperCase() + (icon || 'circle').slice(1), color, 7, '#fff');
   const rot = turns && hdg != null && !isNaN(hdg) ? ` style="transform: rotate(${Math.round(hdg)}deg)"` : '';
@@ -913,30 +918,33 @@ export class MapView {
     const rows = S.tables.effort?.rows;
     const states = trackStates(S.track, rows), brks = trackBreaks(S.track, rows);
     S.track.forEach((p, i) => this.appendTrack(p, false, states[i], brks[i]));
-    this.drawErrorRows();
+    this.drawSurveyLabels();
   }
 
-  // 0.46: each ERROR row in the Effort table as a red point where it was entered (with a popup)
-  drawErrorRows() {
-    const rows = (this.app.S.tables.effort?.rows || []).filter((r) => r.Effort === 'ERROR');
-    const fmt = this.app.S.config.settings.latlon_format;
-    for (const r of rows) {
-      if (r.Lat === '' || r.Lon === '' || isNaN(+r.Lat) || isNaN(+r.Lon)) continue;
-      const t = timeParts(r.DateTime, this.app.clock());
-      L.circleMarker([+r.Lat, +r.Lon], { pane: 'tracks', radius: 6, color: '#ffffff', weight: 2, fillColor: effortColor('ERROR'), fillOpacity: 1, className: 'effort-error-point' })
-        .bindPopup(`<b>Effort: ERROR</b><table class="pop">
-          <tr><th>Time</th><td>${t ? `${t.date} ${t.time} ${t.abbr}` : esc(r.DateTime)}</td></tr>
-          <tr><th>Position</th><td>${fmtPos(r.Lat, r.Lon, fmt)}</td></tr>
-          ${r.Segment ? `<tr><th>Segment</th><td>${esc(r.Segment)}</td></tr>` : ''}
-          ${r.Notes ? `<tr><th>Notes</th><td>${esc(r.Notes)}</td></tr>` : ''}</table>
-          <div class="hint">The trackline is broken from here until the next Effort row.</div>`)
-        .addTo(this.layers.track);
-    }
+  // 0.47: "Start" and "End" labels where the survey started and ended (Settings → General → Map display
+  // → Trackline: label_survey_start / label_survey_end, on by default)
+  drawSurveyLabels() {
+    const S = this.app.S, disp = S.config.display;
+    this.layers.surveyLabels ??= L.layerGroup().addTo(this.map);
+    this.layers.surveyLabels.clearLayers();
+    const rows = S.tables.effort?.rows || [];
+    const at = (r, pt) => (r && r.Lat !== '' && !isNaN(+r.Lat) && r.Lon !== '' ? [+r.Lat, +r.Lon] : pt ? [+pt.Lat, +pt.Lon] : null);
+    const label = (ll, text, when, cls) => {
+      if (!ll || isNaN(ll[0])) return;
+      const t = timeParts(when, this.app.clock());
+      L.circleMarker(ll, { pane: 'tracks', radius: 4, color: '#ffffff', weight: 1.5, fillColor: '#222', fillOpacity: 1, interactive: false })
+        .bindTooltip(`${text}${t ? ` ${t.time.slice(0, 5)}` : ''}`, { permanent: true, direction: 'top', offset: [0, -5], className: `survey-label ${cls}` })
+        .addTo(this.layers.surveyLabels);
+    };
+    const start = rows.find((r) => r.Effort === 'Start'), end = rows.at(-1)?.Effort === 'End' ? rows.at(-1) : null;
+    if (disp.label_survey_start !== '0' && (start || S.track[0])) label(at(start, S.track[0]), 'Start', start?.DateTime || S.track[0]?.DateTime, 'survey-start');
+    if (disp.label_survey_end !== '0' && end) label(at(end, S.track.at(-1)), 'End', end.DateTime, 'survey-end');
   }
 
   // Add a point to the drawn trackline. The line is broken (not joined to the previous point) only at
   // ERROR rows in the Effort table (trackBreaks; 0.45: no hidden breaks; Error check → Fix adds them).
-  // A point inside an ERROR stretch is drawn as a small red point of its own, never joined (0.46).
+  // 0.47: the stretch marked ERROR (from the last good point, through any points inside it, to the next
+  // good one) is hidden, or drawn in ERROR's color when Map display → Trackline says so (show_track_errors).
   appendTrack(p, live = true, state = p.Effort, brk = null) {
     const disp = this.app.S.config.display;
     const ll = [+p.Lat, +p.Lon];
@@ -948,13 +956,23 @@ export class MapView {
       brk = prev ? trackBreaks([prev.p, p], rows)[1] : false;
     }
     this.trackPrev = { p, state };
-    if (state === 'ERROR') {
-      this.trackSeg = null;
-      L.circleMarker(ll, { pane: 'tracks', radius: 3, stroke: false, fillColor: effortColor('ERROR'), fillOpacity: 0.9, className: 'track-error-point' })
-        .on('click', (e) => this.trackPopup(e, p)).addTo(this.layers.track);
-      return;
-    }
-    if (brk) this.trackSeg = null;
+    if (prev && (brk || state === 'ERROR')) {
+      // this step is inside an ERROR stretch
+      if (disp.show_track_errors === '1') {
+        if (this.trackSeg?.key !== 'ERROR') {
+          const w = +disp.track_width || 3;
+          const line = L.polyline([[+prev.p.Lat, +prev.p.Lon]], { color: effortColor('ERROR'), weight: w, pane: 'tracks', opacity: 0.9, className: 'track-error' })
+            .addTo(this.layers.track);
+          line.on('click', (e) => this.trackPopup(e));
+          this.trackSeg = { line, key: 'ERROR', last: [+prev.p.Lat, +prev.p.Lon] };
+        }
+        this.trackSeg.line.addLatLng(ll);
+        this.trackSeg.last = ll;
+      } else this.trackSeg = null;
+      if (state === 'ERROR') return;                 // still inside it
+      // the first good point after it: a new line starts here
+      if (this.trackSeg?.key !== 'ERROR') this.trackSeg = null;
+    } else if (state === 'ERROR') { this.trackSeg = null; return; }
     const on = isOn(state), old = this.isOld(p.DateTime), color = effortColor(state), key = `${on}|${color}|${old}`;
     if (!this.trackSeg || this.trackSeg.key !== key) {
       const start = this.trackSeg ? [this.trackSeg.last] : [];

@@ -304,21 +304,106 @@ class App {
     return bar;
   }
 
-  // 0.46: Columns… (back from before 0.33): the table's columns in order, each with ↑ / ↓; Save keeps the
-  // order on this computer (the same layout as dragging headers), Reset goes back to the standard order
+  // 0.46–0.47: Columns…: the table's columns as chips in order (left to right, wrapping). Click a chip to
+  // select it (click again to unselect; Shift+click selects a range), then drag any selected chip: all
+  // the selected ones move together, keeping their order, to where they're dropped. ← / → move the
+  // selection one place. Save keeps the order on this computer (the same layout as dragging headers);
+  // Reset goes back to the standard order.
   async columnsDialog(tab) {
     const g = this.grids[tab];
     if (!g) return;
-    const order = g.cols.map((c) => ({ key: c.key, label: c.label || c.key, help: c.help || '' }));
-    const list = el('ol', { class: 'columns-list', id: 'columns-list' });
-    const draw = () => list.replaceChildren(...order.map((c, i) => el('li', { 'data-key': c.key, title: c.help },
-      el('span', { class: 'col-name' }, c.label),
-      el('button', { class: 'icon col-up', title: 'Move up (left in the table)', disabled: i === 0, onclick: () => { order.splice(i - 1, 0, ...order.splice(i, 1)); draw(); list.children[i - 1]?.querySelector('.col-up:not([disabled]), .col-down')?.focus(); } }, '↑'),
-      el('button', { class: 'icon col-down', title: 'Move down (right in the table)', disabled: i === order.length - 1, onclick: () => { order.splice(i + 1, 0, ...order.splice(i, 1)); draw(); list.children[i + 1]?.querySelector('.col-down:not([disabled]), .col-up')?.focus(); } }, '↓'))));
+    let order = g.cols.map((c) => ({ key: c.key, label: c.label || c.key, help: c.help || '' }));
+    const sel = new Set();
+    let anchor = null;
+    const box = el('div', { class: 'col-chips', id: 'columns-list' });
+    const mark = el('div', { class: 'col-drop-mark' });
+    const count = el('span', { class: 'hint', id: 'columns-count' });
+    const chips = () => [...box.querySelectorAll('.col-chip')];
+    const draw = () => {
+      box.replaceChildren(...order.map((c) => el('span', { class: `col-chip${sel.has(c.key) ? ' selected' : ''}`, 'data-key': c.key, title: c.help, tabindex: 0, role: 'option', 'aria-selected': sel.has(c.key) ? 'true' : 'false' }, c.label)), mark);
+      count.textContent = sel.size ? `${sel.size} selected` : 'Click columns to select them, then drag';
+    };
+    const moveTo = (idx) => {                     // put the selected ones at idx of the rest, in their order
+      const moving = order.filter((c) => sel.has(c.key)), rest = order.filter((c) => !sel.has(c.key));
+      rest.splice(Math.max(0, Math.min(rest.length, idx)), 0, ...moving);
+      order = rest;
+      draw();
+    };
+    const shift = (d) => {                        // ← / →: the selection one place left or right
+      if (!sel.size) return;
+      const rest = order.filter((c) => !sel.has(c.key));
+      const first = order.findIndex((c) => sel.has(c.key));
+      const before = order.slice(0, first).filter((c) => !sel.has(c.key)).length;
+      moveTo(before + d);
+    };
+    // where a drop at (x, y) puts the selection: before or after the nearest chip that isn't selected
+    const dropAt = (x, y) => {
+      const rest = chips().filter((ch) => !sel.has(ch.dataset.key));
+      if (!rest.length) return { idx: 0, ref: null, after: false };
+      let best = null, bd = Infinity;
+      rest.forEach((ch, i) => {
+        const r = ch.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        const dist = Math.hypot((x - cx) / 2, y - cy);          // rows count more than columns
+        if (dist < bd) { bd = dist; best = { i, ch, after: x > cx } }
+      });
+      return { idx: best.i + (best.after ? 1 : 0), ref: best.ch, after: best.after };
+    };
+    let drag = null;
+    box.addEventListener('pointerdown', (e) => {
+      const ch = e.target.closest('.col-chip');
+      if (!ch || e.button !== 0) return;
+      drag = { key: ch.dataset.key, x: e.clientX, y: e.clientY, moving: false };
+      box.setPointerCapture(e.pointerId);
+    });
+    box.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      if (!drag.moving && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 5) return;
+      if (!drag.moving) {
+        drag.moving = true;
+        if (!sel.has(drag.key)) { sel.clear(); sel.add(drag.key); anchor = drag.key; draw(); }
+        box.classList.add('dragging');
+      }
+      const d = dropAt(e.clientX, e.clientY);
+      if (d.ref) {
+        const r = d.ref.getBoundingClientRect(), br = box.getBoundingClientRect();
+        Object.assign(mark.style, { display: 'block', left: `${(d.after ? r.right + 3 : r.left - 4) - br.left + box.scrollLeft}px`, top: `${r.top - br.top + box.scrollTop}px`, height: `${r.height}px` });
+      }
+    });
+    const end = (e) => {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      box.classList.remove('dragging');
+      mark.style.display = 'none';
+      if (d.moving) { moveTo(dropAt(e.clientX, e.clientY).idx); return; }
+      // a click: select / unselect (Shift: a range from the last one clicked)
+      const keys = order.map((c) => c.key);
+      if (e.shiftKey && anchor && keys.includes(anchor)) {
+        const [a, b] = [keys.indexOf(anchor), keys.indexOf(d.key)].sort((x, y) => x - y);
+        keys.slice(a, b + 1).forEach((k) => sel.add(k));
+      } else if (sel.has(d.key)) sel.delete(d.key);
+      else sel.add(d.key);
+      anchor = d.key;
+      draw();
+    };
+    box.addEventListener('pointerup', end);
+    box.addEventListener('pointercancel', () => { drag = null; box.classList.remove('dragging'); mark.style.display = 'none'; });
+    box.addEventListener('keydown', (e) => {
+      const ch = e.target.closest('.col-chip');
+      if (ch && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); sel.has(ch.dataset.key) ? sel.delete(ch.dataset.key) : sel.add(ch.dataset.key); draw(); box.querySelector(`[data-key="${ch.dataset.key}"]`)?.focus(); }
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); shift(e.key === 'ArrowLeft' ? -1 : 1); box.querySelector('.col-chip.selected')?.focus(); }
+    });
     draw();
     const name = { sightings: 'Sightings', effort: 'Effort', events: 'Events', marks: 'Waypoints' }[tab] || tab;
-    const how = await modal({ title: `Columns: ${name}`,
-      body: el('div', {}, el('p', { class: 'hint' }, 'Top of the list = leftmost column. Kept on this computer only; widths stay as they are.'), list),
+    const how = await modal({ title: `Columns: ${name}`, width: 'min(46em, 92vw)',
+      body: el('div', {},
+        el('p', { class: 'hint' }, 'The columns left to right. Click to select one or more (Shift+click for a range), then drag them to their new place, or move them with ← / →. Kept on this computer only; widths stay as they are.'),
+        box,
+        el('div', { class: 'btnrow' },
+          el('button', { id: 'columns-left', title: 'Move the selected columns one place left', onclick: () => shift(-1) }, '← Left'),
+          el('button', { id: 'columns-right', title: 'Move the selected columns one place right', onclick: () => shift(1) }, 'Right →'),
+          el('button', { id: 'columns-none', onclick: () => { sel.clear(); draw(); } }, 'Clear selection'),
+          count)),
       buttons: [{ label: 'Reset to the standard order', value: 'reset' }, { label: 'Cancel', value: null }, { label: 'Save', value: 'save', primary: true }] });
     if (how === 'save') await g.saveLayout({ ...g.layout(), order: order.map((c) => c.key) });
     else if (how === 'reset') { const { order: _o, ...rest } = g.layout(); await g.saveLayout(Object.keys(rest).length ? rest : null); }
@@ -693,6 +778,8 @@ class App {
         if (this._layoutPending) m.settings.column_layout = prev.column_layout;   // a newer layout is being saved
         this.S.config.settings = m.settings;
         if (this.S.survey) this.S.survey.tracking = !!m.settings.tracking_enabled;
+        // 0.47: inputs changed (here, in another window or over the API): bring the map's "other" inputs up to date
+        if (JSON.stringify(prev.nmea_sources) !== JSON.stringify(m.settings.nmea_sources)) this.refreshExternals();
         this.refreshFormats();
         for (const g of Object.values(this.grids)) g.refreshColumns?.();
         this.updateStatus();
@@ -1074,7 +1161,7 @@ class App {
         el('table', { class: 'summary kv' }, el('tbody', {},
           el('tr', {}, el('th', {}, 'Started'), el('td', {}, when(sv.start_time) || '—')),
           sv.ended ? el('tr', {}, el('th', {}, 'Ended'), el('td', {}, when(sv.end_time))) : null,
-          el('tr', {}, el('th', {}, 'Trackline'), el('td', {}, sv.active ? `● recording (a point every ${S.config.settings.tracking_interval || 10} s while the survey is active)` : 'stopped (the survey has ended)')),
+          el('tr', {}, el('th', {}, 'Trackline'), el('td', {}, sv.active ? `● recording (a point every ${S.config.settings.tracking_interval || 1} s while the survey is active)` : 'stopped (the survey has ended)')),
           el('tr', {}, el('th', {}, 'Folder'), el('td', {}, el('span', { class: 'mono' }, sv.prefix), ' in the data folder · ',
             el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('survey'); } }, 'Open folder'))),
           el('tr', { id: 'survey-template-row' }, el('th', {}, 'Template'), el('td', {}, this.surveyTemplateLine(sv))))),
@@ -2256,18 +2343,20 @@ class App {
     // settings that change how the data are recorded or worked out can't change during an active survey
     const lockedNow = !!this.S.survey?.active;
     const lockNum = (k, a, b) => { const x = num(k, a, b); if (lockedNow) { x.disabled = true; x.title = 'Locked while a survey is active'; } return x; };
-    const lockNote = lockedNow ? el('p', { class: 'hint locked-note' }, '🔒 Locked while a survey is active: they can be changed after its End.') : null;
+    // 0.47: the same yellow box as Dropdowns, and the section greyed out
+    const lockNote = lockedNow ? el('p', { class: 'warnbox', id: 'data-locked' }, el('b', {}, 'A survey is under way, so these settings are locked. '),
+      'They change what is recorded, so they stay as they were at Start until the survey’s End.') : null;
     const variation = el('input', { type: 'text', value: st.mag_variation, size: 8, disabled: lockedNow, title: lockedNow ? 'Locked while a survey is active' : '',
       onchange: (e) => { const v = e.target.value.trim(); if (v === '' || v === 'auto' || !isNaN(+v)) this.saveSettings({ mag_variation: v || 'auto' }); else toast('Use “auto” or a number of degrees (east +, west −)', 'warn'); } });
     pane.replaceChildren(
       // 0.45: everything here that changes what's recorded or how it's worked out, together; locked
       // while a survey is active (like the drop-down lists and the template's data part)
-      el('section', { class: 'settings-sec', id: 'data-collection' }, el('h3', {}, 'Data collection', lockedNow ? el('span', { class: 'hint' }, ' — locked during the survey') : null),
+      el('section', { class: `settings-sec${lockedNow ? ' data-locked' : ''}`, id: 'data-collection' }, el('h3', {}, 'Data collection', lockedNow ? el('span', { class: 'hint' }, ' — locked during the survey') : null),
+        lockNote,
         el('div', { class: 'grid2' },
           el('label', { class: 'row' }, 'Track point every (s)', lockNum('tracking_interval', 1, 300)),
           el('label', { class: 'row' }, 'Magnetic variation (° E+/W−, or auto)', variation,
             el('span', { class: 'hint' }, ` now ${this.variation() === null ? '—' : this.variation().toFixed(1) + '°'}`))),
-        lockNote,
         el('p', { class: 'hint help' }, 'These change what is recorded or how it is worked out, so they can’t change while a survey is active, like the drop-down lists (Settings → Dropdowns) and the rest of the template’s data part. The trackline is recorded whenever a survey is active, a point every this many seconds, and stops at its End. It is broken on the map, and left out of the Summary’s distances, only where the Effort table has an ERROR row (Tools → Error check finds GPS jumps and gaps and its Fix adds one). “auto” variation uses the World Magnetic Model if installed, otherwise the GPS; it turns magnetic bearings into true ones.')),
       sec('Reminders and sleep',
         el('div', { class: 'grid2' },
@@ -2303,7 +2392,7 @@ class App {
           dnum('marker_radius', 'Marker size', 3, 24), dnum('label_size', 'Marker label size', 8, 24)),
         el('div', { class: 'grid2 checks' }, dchk('use_species_colors', 'Color markers by species/event')),
         el('h4', {}, 'Trackline'),
-        el('p', { class: 'hint help' }, 'The track is drawn in the color of each Effort value (Settings → Dropdowns → Effort); here, whether it shows and how wide it is, on and off effort.'),
+        el('p', { class: 'hint help' }, 'The track is drawn in the color of each Effort value (Settings → Dropdowns → Effort); here, whether it shows and how wide it is, on and off effort. Stretches flagged with GPS errors (an ERROR row in the Effort table) are hidden unless ticked below; then they’re drawn in the ERROR color.'),
         el('table', { class: 'track-style' },
           el('thead', {}, el('tr', {}, ['', 'Show', 'Width (px)', 'Line'].map((h) => el('th', {}, h)))),
           el('tbody', {}, [['on', 'On effort', 'show_track_on', 'track_width', 'track_on_style', 3],
@@ -2315,6 +2404,15 @@ class App {
                 onchange: (e) => { const v = +e.target.value; if (v >= 0.5 && v <= 10) this.saveDisplay({ [width]: String(v) }); else { toast('Must be 0.5–10', 'warn'); e.target.value = d[width] || dw; } } })),
               el('td', {}, el('select', { onchange: (e) => this.saveDisplay({ [style]: e.target.value }) },
                 LINE_STYLES.map(([v, l]) => el('option', { value: v, selected: (d[style] || 'solid') === v }, l)))))))),
+        // 0.47: GPS-error stretches and the survey's start / end labels
+        el('div', { class: 'grid2 checks', id: 'track-extras' },
+          el('label', { class: 'check', title: 'Stretches marked with an ERROR row in the Effort table (GPS jumps and gaps; Tools → Error check → Fix). Hidden, the trackline is simply broken there.' },
+            el('input', { type: 'checkbox', id: 'show-track-errors', checked: d.show_track_errors === '1', onchange: (e) => this.saveDisplay({ show_track_errors: e.target.checked ? '1' : '0' }) }),
+            ' Show segments flagged with GPS errors (in the ERROR color)'),
+          el('label', { class: 'check' }, el('input', { type: 'checkbox', id: 'label-survey-start', checked: d.label_survey_start !== '0', onchange: (e) => this.saveDisplay({ label_survey_start: e.target.checked ? '1' : '0' }) }),
+            ' Label the survey start'),
+          el('label', { class: 'check' }, el('input', { type: 'checkbox', id: 'label-survey-end', checked: d.label_survey_end !== '0', onchange: (e) => this.saveDisplay({ label_survey_end: e.target.checked ? '1' : '0' }) }),
+            ' Label the survey end')),
         el('h4', {}, 'Lines and vectors'),
         // the lines' show / width / line style; their color is the sighting's
         el('table', { class: 'track-style', id: 'line-styles' },

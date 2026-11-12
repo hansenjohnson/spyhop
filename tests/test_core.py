@@ -884,9 +884,9 @@ def test_track_break_fix(rec):
     r = _qc(rec)
     tr2 = [x for x in r["issues"] if x["check"] == "Trackline plausible"]
     assert len(tr2) == 1 and "No track points" in tr2[0]["message"]
-    # 0.45: the limits are the Error check's own (120 s; 30 kn, 200 kn for aerial)
+    # 0.45: the limits are the Error check's own (120 s; 50 kn since 0.47, 200 kn for aerial)
     from spyhop.qc import run_qc, track_limit_defaults
-    assert r["track_limits"]["gap_s"] == 120 and r["track_limits"]["speed_kn"] == 30
+    assert r["track_limits"]["gap_s"] == 120 and r["track_limits"]["speed_kn"] == 50      # 0.47: shipboard (and unset) 50 kn
     with pytest.raises(TypeError):                 # 0.46: the limits are fixed (no override)
         run_qc(rec, {"gap_s": 600})
     rec.set_meta({"platform_type": "Aerial"})

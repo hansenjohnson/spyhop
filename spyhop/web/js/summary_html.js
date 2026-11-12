@@ -103,6 +103,20 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
     })(),
     sightings: items('sightings'), events: items('events'),          // marks belong to no survey: left out
     // each sighting through its resights, oldest to newest: [color, [[lat, lon]…]]
+    // 0.47: the ERROR stretches as lines in ERROR's color, when Map display → Trackline shows them
+    errorLines: disp.show_track_errors !== '1' ? [] : (() => {
+      const st = trackStates(S.track, S.tables.effort.rows), tb = trackBreaks(S.track, S.tables.effort.rows), out = [];
+      let cur = null;
+      S.track.forEach((p, i) => {
+        if (i && !isNaN(+p.Lat) && (tb[i] || st[i] === 'ERROR')) {
+          if (!cur) { cur = [[+S.track[i - 1].Lat, +S.track[i - 1].Lon]]; out.push(cur); }
+          cur.push([+p.Lat, +p.Lon]);
+          if (st[i] !== 'ERROR') cur = null;
+        } else cur = null;
+      });
+      return out.filter((l) => l.length > 1);
+    })(),
+    errorColor: effortColor('ERROR'),
     resightLines: disp.resight_lines === '0' ? [] : rs.groups().map((g) => [app.map.markerColor('sightings', g[0]),
       g.filter((r) => r.Map !== '0').sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)).map((r) => app.map.rowPos('sightings', r)).filter(Boolean)])
       .filter(([, pts]) => pts.length > 1),
@@ -185,6 +199,7 @@ export async function buildSummaryHtml(app, { pdf = false } = {}) {
         color: p[4], weight: on ? D.style.width : D.style.offWidth, dashArray: on ? D.style.onDash : D.style.offDash }).addTo(track) : null };
     } else { if (seg.line) seg.line.addLatLng([p[0], p[1]]); seg.last = [p[0], p[1]]; }
   });
+  (D.errorLines || []).forEach(function (l) { L.polyline(l, { color: D.errorColor, weight: D.style.width, opacity: 0.9 }).addTo(track); });
   function markers(list) {
     var g = L.layerGroup();
     list.forEach(function (m) {

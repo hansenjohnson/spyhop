@@ -6,6 +6,17 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.47.0 — 2026-11-12
+
+- **ERROR stretches on the map:** no more red points. A stretch marked ERROR is hidden (the trackline is broken there) unless **Settings → General → Map display → Trackline → Show segments flagged with GPS errors** is ticked; then the whole stretch is drawn in the ERROR color. The HTML summary's map follows the same choice.
+- **Start and End labels** on the map where the survey started and ended (same section; both on by default).
+- **Error check:** the speed limit for shipboard surveys (and when no platform type is set) is 50 kn (was 30).
+- **Track points every second** by default (was 10 s). Settings already saved keep their own interval.
+- **Data collection** in Settings → General is greyed out during a survey, with the same yellow note as the Dropdowns.
+- **Drone** icon for “other” inputs (turns with its heading).
+- **Columns…** is now chips: click to select one or more (Shift+click for a range), drag them together to a new place, or move them with ← / →.
+- Fixed: an “other” input added or changed in another window (or over the API) appeared on the map only after a reload.
+
 ## 0.46.0 — 2026-11-12
 
 - **One Spyhop per computer:** a lock in Spyhop's folder (released by the operating system when Spyhop ends, even after a crash). A second start, from any program folder or on any port, opens a window onto the running one.

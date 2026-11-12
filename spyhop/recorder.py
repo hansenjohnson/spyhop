@@ -1568,9 +1568,9 @@ class Recorder:
             self._platform_cache_t = time.time()
         if self._platform_cache == "Stationary":                # it doesn't move: only Start and End points
             return
-        interval = max(1, min(300, int(s.get("tracking_interval", 10) or 10)))
+        interval = max(1, min(300, int(s.get("tracking_interval", 1) or 1)))
         now = time.time()
-        if now - self._last_track_t < interval:
+        if now - self._last_track_t < interval - 0.5:      # 0.47: the ticker runs about once a second (1 s points)
             return
         self._record_point()
 
