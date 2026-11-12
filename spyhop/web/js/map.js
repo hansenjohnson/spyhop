@@ -1,7 +1,7 @@
 // Interactive chart: base layers, vessel, track, data markers, popups, measure tool.
 /* global L, topojson */
 import { Resights } from './resights.js';
-import { el, esc, fmtCoord, fmtPos, distM, bearing, destination, fmtDist, fmtBrg, timeParts, toast, api, isTrackBreak, trackStates, dashFor, isOn, effortColor } from './util.js';
+import { el, esc, fmtCoord, fmtPos, distM, bearing, destination, fmtDist, fmtBrg, timeParts, toast, api, trackStates, dashFor, isOn, effortColor } from './util.js';
 import { DepthProbe } from './depth.js';
 
 const SHAPES = ['Diamond', 'Square', 'Triangle', 'Circle', 'Star'];
@@ -48,6 +48,21 @@ const PLATFORM_SVG = {
   <path d="M-3.5,-1 L3.5,-1 M-4.4,5 L4.4,5" stroke="#fff" stroke-width="1.2"/></svg>`,
   Other: (c) => `<svg width="20" height="20" viewBox="-10 -10 20 20"><circle r="6.5" fill="${c}" stroke="#fff" stroke-width="2"/></svg>`,
 };
+
+// 0.45: the icon of an "other" input (Settings → Inputs → Mapping 'Other' inputs): a shape, or a vessel or
+// aircraft that turns with its heading, or a tower. A red X over it while its GPS is lost.
+export const EXTERNAL_ICONS = [['circle', 'Circle'], ['square', 'Square'], ['triangle', 'Triangle'], ['diamond', 'Diamond'], ['star', 'Star'],
+  ['vessel', 'Vessel (turns with heading)'], ['aircraft', 'Aircraft (turns with heading)'], ['tower', 'Tower']];
+const EXTERNAL_LOST_MS = 15000;           // no fix for this long: lost (the server stops sending it after 10 s)
+function externalIconHtml(icon, color, hdg, lost) {
+  const turns = icon === 'vessel' || icon === 'aircraft';
+  const svg = icon === 'vessel' ? PLATFORM_SVG.Shipboard(color) : icon === 'aircraft' ? PLATFORM_SVG.Aerial(color)
+    : icon === 'tower' ? PLATFORM_SVG.Stationary(color)
+    : shapeSvg((icon || 'circle')[0].toUpperCase() + (icon || 'circle').slice(1), color, 7, '#fff');
+  const rot = turns && hdg != null && !isNaN(hdg) ? ` style="transform: rotate(${Math.round(hdg)}deg)"` : '';
+  const x = lost ? '<svg class="ext-x" viewBox="0 0 28 28" width="28" height="28"><path d="M5,5 L23,23 M23,5 L5,23" stroke="#fff" stroke-width="6" stroke-linecap="round"/><path d="M5,5 L23,23 M23,5 L5,23" stroke="#d00000" stroke-width="3.2" stroke-linecap="round"/></svg>' : '';
+  return `<div class="ext-wrap${lost ? ' lost' : ''}"><div class="ext-rot"${rot}>${svg}</div>${x}</div>`;
+}
 
 export class MapView {
   constructor(app, container) {
@@ -578,6 +593,7 @@ export class MapView {
     for (const [name, m] of this._others) {
       if (!seen.has(name)) { this.layers.others.removeLayer(m); this._others.delete(name); }
     }
+    this.checkExternalsLost();
   }
 
   // ---------------------------------------------------------------- "other" inputs (0.43)
@@ -605,7 +621,7 @@ export class MapView {
         group._group = 'offline';
         x = { group, pts: x?.pts || [], style: inp,
           line: L.polyline([], { pane: 'externals', interactive: false }).addTo(group),
-          dot: L.circleMarker([0, 0], { pane: 'externals', radius: 6, color: '#ffffff', weight: 2, fillOpacity: 0.95, className: 'external-input' }) };
+          dot: L.marker([0, 0], { pane: 'externals', keyboard: false }) };
         x.dot.bindPopup(() => this.externalPopup(name), { className: 'external-popup' });     // 0.44
         this.externals.set(name, x);
         const label = this.externalLabel(name);
@@ -626,9 +642,10 @@ export class MapView {
     const s = x.style || {};
     const w = +s.width || 2;
     x.line.setStyle({ color: s.color || '#e07000', weight: w, dashArray: dashFor(s.line || 'solid', w), opacity: 0.9 });
-    x.dot.setStyle({ fillColor: s.color || '#e07000' });
+    x.iconKey = null;
+    this.iconExternal(name);
     if (s.label !== false) {
-      if (!x.dot.getTooltip()) x.dot.bindTooltip(name, { permanent: true, direction: 'right', offset: [8, 0], pane: 'externalLabels', className: 'secondary-label external-label' });
+      if (!x.dot.getTooltip()) x.dot.bindTooltip(name, { permanent: true, direction: 'right', offset: [12, 0], pane: 'externalLabels', className: 'secondary-label external-label' });
     } else if (x.dot.getTooltip()) x.dot.unbindTooltip();
     this.drawExternal(name);
   }
@@ -647,10 +664,38 @@ export class MapView {
     } else if (x.group.hasLayer(x.dot)) x.group.removeLayer(x.dot);
   }
 
+  // its icon: shape, color, heading and lost (rebuilt only when one of them changes)
+  iconExternal(name) {
+    const x = this.externals.get(name);
+    if (!x) return;
+    const s = x.style || {}, color = s.color || '#e07000', icon = s.icon || 'circle';
+    const lost = this.externalLost(x);
+    const hdg = x.fix ? (x.fix.heading ?? x.fix.cog) : null;
+    const key = `${icon}|${color}|${lost}|${hdg == null ? '' : Math.round(hdg)}`;
+    if (key === x.iconKey) return;
+    x.iconKey = key;
+    x.dot.setIcon(L.divIcon({ className: `external-input${lost ? ' external-lost' : ''}`, html: externalIconHtml(icon, color, hdg, lost), iconSize: [28, 28], iconAnchor: [14, 14] }));
+  }
+
+  // 0.45: lost = no fix for EXTERNAL_LOST_MS (or none since its trail was read back from the file)
+  externalLost(x) { return !x.lastFixMs || Date.now() - x.lastFixMs > EXTERNAL_LOST_MS; }
+
+  // every vessel message: an "other" input that wasn't in it may have just been lost
+  checkExternalsLost() {
+    for (const [name, x] of this.externals) {
+      const lost = this.externalLost(x);
+      if (lost === x.wasLost) continue;
+      x.wasLost = lost;
+      this.iconExternal(name);
+      if (x.dot.isPopupOpen()) x.dot.setPopupContent(this.externalPopup(name));
+    }
+  }
+
   // a new fix from an external (the 1 s vessel message)
   updateExternal(o) {
     const x = this.externals.get(o.name);
     if (!x) return;
+    x.lastFixMs = Date.now() - (o.age || 0) * 1000;
     const last = x.pts[x.pts.length - 1];
     if (!last || last[1] !== o.lat || last[2] !== o.lon) {
       x.pts.push([Date.now() - (o.age || 0) * 1000, o.lat, o.lon]);
@@ -658,6 +703,7 @@ export class MapView {
     }
     x.fix = o;
     this.drawExternal(o.name);
+    this.iconExternal(o.name);
     if (x.dot.isPopupOpen()) x.dot.setPopupContent(this.externalPopup(o.name));
   }
 
@@ -676,13 +722,21 @@ export class MapView {
       rel = `<tr><th>Bearing from platform</th><td>${fmtBrg(b)}T ${this.magText(b)}</td></tr>
       <tr><th>Distance from platform</th><td>${fmtDist(d, this.app.unit())}</td></tr>`;
     }
-    const age = f.age != null ? `${f.age} s ago` : last ? `${Math.round((Date.now() - last[0]) / 1000)} s ago (recorded)` : '—';
+    // 0.45: when it was last heard from (its last fix; from the recorded trail after a restart)
+    const lastMs = x.lastFixMs || last?.[0], lost = this.externalLost(x);
+    let updated = '—';
+    if (lastMs) {
+      const tp = timeParts(new Date(lastMs).toISOString(), this.app.clock()), ago = Math.max(0, Math.round((Date.now() - lastMs) / 1000));
+      const agoText = ago < 120 ? `${ago} s ago` : ago < 7200 ? `${Math.round(ago / 60)} min ago` : `${(ago / 3600).toFixed(1)} h ago`;
+      updated = `${tp.date !== timeParts(new Date().toISOString(), this.app.clock()).date ? tp.date + ' ' : ''}${tp.time} ${tp.abbr} (${agoText})`;
+    }
+    const lostRow = lost ? '<tr><th></th><td class="ext-lost-note">✕ GPS lost: no position for over 15 s</td></tr>' : '';
     return `<b>${esc(name)}</b> <span class="hint">(other source)</span><table class="pop">
       <tr><th>Position</th><td>${lat != null ? fmtPos(lat, lon, fmt) : '—'}</td></tr>
       <tr><th>Speed</th><td>${num(f.sog, 1)} kn</td></tr>
       <tr><th>Heading</th><td>${fmtBrg(f.heading ?? f.cog)}T</td></tr>
       ${rel}
-      <tr><th>Fix</th><td>${age}</td></tr></table>`;
+      <tr><th>Last updated</th><td class="ext-updated">${updated}</td></tr>${lostRow}</table>`;
   }
 
   // the trails so far, from the server (at start, and when a survey is started, opened or closed)
@@ -693,6 +747,7 @@ export class MapView {
     for (const [name, x] of this.externals) {
       x.pts = (r.tracks || {})[name] || [];
       this.drawExternal(name);
+      this.iconExternal(name);
     }
   }
 
@@ -859,8 +914,8 @@ export class MapView {
     S.track.forEach((p, i) => this.appendTrack(p, false, states[i]));
   }
 
-  // Add a point to the drawn trackline. The line is broken (not joined to the previous point)
-  // at a trackline break (Settings → General → Tracking) and around points in an ERROR effort stretch.
+  // Add a point to the drawn trackline. The line is broken (not joined to the previous point) only
+  // around points in an ERROR effort stretch (0.45: no hidden breaks; Error check → Fix adds ERROR rows).
   appendTrack(p, live = true, state = p.Effort) {
     const disp = this.app.S.config.display;
     const ll = [+p.Lat, +p.Lon];
@@ -868,7 +923,7 @@ export class MapView {
     const prev = this.trackPrev;
     this.trackPrev = { p, state };
     if (state === 'ERROR') { this.trackSeg = null; return; }
-    const brk = prev && (prev.state === 'ERROR' || isTrackBreak(prev.p, p, this.app.S.config.settings));
+    const brk = prev && prev.state === 'ERROR';
     if (brk) this.trackSeg = null;
     const on = isOn(state), old = this.isOld(p.DateTime), color = effortColor(state), key = `${on}|${color}|${old}`;
     if (!this.trackSeg || this.trackSeg.key !== key) {

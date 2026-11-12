@@ -56,10 +56,14 @@ def is_newer(remote: str, local: str = __version__) -> bool:
     return bool(a and b and a > b)
 
 
+QUICK_TIMEOUT = 4      # 0.45: the check when Spyhop starts gives up this fast (offline at sea is normal)
+_timeout = TIMEOUT
+
+
 def _get(url: str, accept: str = "application/vnd.github+json") -> bytes:
     req = urllib.request.Request(url, headers={"Accept": accept, "User-Agent": f"Spyhop/{__version__}"})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        with urllib.request.urlopen(req, timeout=_timeout) as r:
             return r.read()
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -76,8 +80,19 @@ def git_checkout() -> bool:
     return (PROGRAM_DIR / ".git").exists()
 
 
-def check() -> dict:
-    """What's available: {current, latest, newer, source ('release'|'main'), notes, url, zip, published}."""
+def check(quick: bool = False) -> dict:
+    """What's available: {current, latest, newer, source ('release'|'main'), notes, url, zip, published}.
+    quick: each request gives up after QUICK_TIMEOUT s (the check at start-up). It never installs anything:
+    installing is install(), only ever after the person says yes."""
+    global _timeout
+    _timeout = QUICK_TIMEOUT if quick else TIMEOUT
+    try:
+        return _check()
+    finally:
+        _timeout = TIMEOUT
+
+
+def _check() -> dict:
     info = {"current": __version__, "repo": REPO_URL, "git": git_checkout()}
     try:
         rel = json.loads(_get(f"{API}/releases/latest"))

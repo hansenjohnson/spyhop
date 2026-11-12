@@ -614,3 +614,10 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 .nmea-map-table td:first-child b { white-space: nowrap; }
 .nmea-table .nmea-src-body { flex-wrap: nowrap; white-space: nowrap; }
 .nmea-table .session-tag { display: block; }
+.qc-limits { margin: 0.3em 0 0.5em; display: flex; flex-wrap: wrap; align-items: center; gap: 0.25em; }
+/* 0.45: "other" inputs' icons; a red X while the GPS is lost (no position set on the icon class itself) */
+.external-input .ext-wrap { position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
+.external-input .ext-rot { display: flex; align-items: center; justify-content: center; transform-origin: 50% 50%; }
+.external-input .ext-wrap.lost .ext-rot { opacity: 0.55; }
+.external-input .ext-x { position: absolute; left: 0; top: 0; pointer-events: none; }
+.ext-lost-note { color: #b00000; font-weight: 600; }

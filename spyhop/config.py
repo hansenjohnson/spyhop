@@ -192,8 +192,8 @@ LIST_COLUMNS = {
 # lists that define what recorded values mean: none can change during an active survey
 LOCKED_LISTS = ("species", "event_types", "observers", "behaviors", "effort", "visibility", "weather", "reticles")
 # settings that change recorded or calculated data: locked during an active survey too
-LOCKED_SETTINGS = {"mag_variation": "Magnetic variation", "tracking_interval": "Track point every (s)",
-                   "track_break_kn": "Break the track above (kn)", "track_break_gap_s": "Break the track after a gap of (s)"}
+# (0.45: the trackline-break settings are gone: the trackline breaks only at ERROR rows in the Effort table)
+LOCKED_SETTINGS = {"mag_variation": "Magnetic variation", "tracking_interval": "Track point every (s)"}
 UNIQUE_COLUMNS = {"name", "species_code", "event_code", "behavior_code"}
 # every drop-down list has "Other" (0.40): a placeholder for an entry that's missing from the list, which
 # can't be added during a survey; the Error check lists the rows that use it, to fill in afterwards
@@ -319,8 +319,6 @@ DEFAULT_SETTINGS = {
     "map_distance_unit": "nm",      # distances on the map, in popups, routes and the Summary (no reticles)
     "mag_variation": "auto",
     "tracking_interval": 10,
-    "track_break_kn": 30,           # break the trackline where it moves faster than this (0 = never)
-    "track_break_gap_s": 120,       # … or where there are no points for this long (0 = never)
     "effort_reminder_min": 30,
     "keep_awake": "survey",         # stop the computer sleeping: off | survey (while one is active) | always
     "keep_screen_on": False,        # … and keep the screen on too
@@ -338,11 +336,10 @@ DEFAULT_SETTINGS = {
                                     # all inputs in order (spyhop-local.json); the network ones (UDP, TCP, gpsd)
                                     # are also nmea_inputs in spyhop-config.json, which wins when they differ
     # --- this computer only: spyhop-local.json
-    "data_dir": "",                 # survey data folder; "" = the "data" folder inside Spyhop's folder
     "last_meta": {},                # survey details used last time, offered for the next survey
     "tracking_enabled": False,
     "clock_zone_last": "",          # the zone last found from the position (used until there's a fix)
-    "check_updates_on_start": False,  # look on GitHub for a newer Spyhop when it starts (needs internet)
+    "check_updates_on_start": True,   # look on GitHub for a newer Spyhop when it starts (0.45: on; quick, silent offline; always asks before installing)
     "pane_layout": {},              # this computer's panes: {fx, fy, min: {map, util, data}, max} (app.js)
     "follow_vessel": True,
     "smooth_vessel": True,          # glide the vessel icon between fixes on the map (drawing only; map.js)
@@ -367,8 +364,6 @@ SHARED_SETTINGS = {
     "map_distance_unit": "Map distance unit",
     "mag_variation": "Magnetic variation",
     "tracking_interval": "Track point every (s)",
-    "track_break_kn": "Break the track above (kn)",
-    "track_break_gap_s": "Break the track after a gap of (s)",
     "effort_reminder_min": "Effort reminder (min)",
     "keep_awake": "Keep the computer awake",
     "keep_screen_on": "Keep the screen on",
@@ -394,7 +389,9 @@ INPUT_FLAGS = ("enabled", "role", "show_on_map", "primary")
 # templates with the input (preferences, never data).
 EXTERNAL_COLORS = ["#e07000", "#0097a7", "#c2185b", "#7cb342", "#5e35b1", "#6d4c41"]
 LINE_STYLES = ("solid", "dashed", "dotted", "dashdot")
-EXTERNAL_STYLE = ("color", "line", "width", "trail", "label", "record")
+EXTERNAL_STYLE = ("color", "line", "width", "trail", "label", "record", "icon")
+# 0.45: its icon on the map (vessel and aircraft turn with its heading)
+EXTERNAL_ICONS = ("circle", "square", "triangle", "diamond", "star", "vessel", "aircraft", "tower")
 
 
 def _clean_external(x: dict, i: int):
@@ -415,6 +412,7 @@ def _clean_external(x: dict, i: int):
     x["trail"] = t
     x["label"] = x.get("label", True) is not False
     x["record"] = x.get("record", True) is not False
+    x["icon"] = x.get("icon") if x.get("icon") in EXTERNAL_ICONS else "circle"
 
 
 def input_definition(src: dict) -> dict:
@@ -587,13 +585,8 @@ class Config:
         return self.root / "data"
 
     def _resolve_data_dir(self):
-        chosen = (self.settings.get("data_dir") or "").strip()
-        p = Path(chosen).expanduser() if chosen else self.default_data_dir
-        if chosen and not p.is_dir():
-            # e.g. a USB drive or network share that isn't connected: don't create it silently
-            self.notices.append(f"The data folder {p} wasn't found (is the drive connected?). "
-                                f"Using {self.default_data_dir} for now — change it in Settings → General.")
-            p = self.default_data_dir
+        # 0.45: always the "data" folder inside Spyhop's folder (it can't be changed any more)
+        p = self.default_data_dir
         p.mkdir(parents=True, exist_ok=True)
         self.data_dir = p
 
@@ -623,30 +616,6 @@ class Config:
         pre = self._open_prefix()
         return (self.survey_dir(pre) if pre else self.data_dir) / "nmea_logs"
 
-    def set_data_dir(self, path: str) -> Path:
-        raw = (path or "").strip()
-        if not raw:
-            p = self.default_data_dir
-        else:
-            p = Path(raw).expanduser()
-            if not p.is_absolute():
-                raise ValueError("Please give the full path of the folder (e.g. /Users/you/Surveys).")
-        try:
-            p.mkdir(parents=True, exist_ok=True)
-            probe = p / ".spyhop-write-test"
-            probe.write_text("ok")
-            probe.unlink()
-        except OSError as e:
-            raise ValueError(f"Can't use {p} as the data folder: {e}")
-        self.data_dir = p
-        self.save_settings({"data_dir": "" if p == self.default_data_dir else str(p)})
-        from .layout import tidy_data_folder, move_surveys_into_folders, rename_instrument_files
-        tidy_data_folder(self)
-        move_surveys_into_folders(self)
-        rename_instrument_files(p)
-        return p
-
-    # -- the current template: templates/current -----------------------------------
     def ensure_defaults(self):
         for name, (hdr, rows) in DEFAULT_LISTS.items():
             if not self.list_path(name).exists():

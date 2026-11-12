@@ -324,18 +324,21 @@ class App:
             logging.getLogger("spyhop.crash").error("unhandled error in the server: %s", ctx.get("message"),
                                                     exc_info=(type(exc), exc, exc.__traceback__) if exc else None)
         loop.set_exception_handler(on_loop_error)
-        if self.rec.cfg.settings.get("check_updates_on_start"):
+        if self.rec.cfg.settings.get("check_updates_on_start", True) and not os.environ.get("SPYHOP_NO_UPDATE_CHECK"):
             asyncio.create_task(self._startup_update_check())
         self.sync_awake()
 
     async def _startup_update_check(self):
-        await asyncio.sleep(8)
+        """0.45: on by default; a quick look (gives up after a few seconds, silently, when offline). A newer
+        version is offered in the window (install or not): nothing is ever installed without a yes."""
+        await asyncio.sleep(3)
         try:
-            info = await asyncio.get_running_loop().run_in_executor(None, updater.check)
+            info = await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(None, lambda: updater.check(quick=True)), 15)
         except Exception as e:                       # offline at sea is normal: say nothing
             logging.getLogger("spyhop.update").info("update check at start-up: %s", e)
             return
         if info.get("newer"):
+            self.startup_update = info               # for a window that connects later
             self._broadcast_soon({"type": "update", "info": info})
 
     # -- slowness diagnostics: only prints when something is slow ----------------
@@ -423,6 +426,7 @@ class App:
         data["awake"] = self.awake.status()
         cfg = self.rec.cfg
         data["about"] = diag.system_info(cfg.root, cfg.data_dir) | {"log_folder": str(diag.log_dir(cfg.root))}
+        data["startup_update"] = getattr(self, "startup_update", None)
         last = cfg.settings.get("last_version")
         data["about"]["updated_from"] = last if last and last != __version__ else ""
         if last != __version__:
@@ -468,7 +472,9 @@ class App:
         loop = asyncio.get_running_loop()
         if self.rec.survey is None:
             raise ValueErrorMsg("Open a survey to check it.")
-        return json_ok(report=await loop.run_in_executor(None, run_qc, self.rec))
+        body = await request.json() if request.can_read_body else {}
+        lim = body.get("track_limits") if isinstance(body, dict) else None
+        return json_ok(report=await loop.run_in_executor(None, run_qc, self.rec, lim if isinstance(lim, dict) else None))
 
     async def toggle_effort(self, request):
         return json_ok(self.rec.toggle_effort())
@@ -541,11 +547,6 @@ class App:
             self._broadcast_soon({"type": "reload"})
         return json_ok(**res)
 
-    async def data_dir(self, request):
-        body = await request.json()
-        self.rec.set_data_dir(body.get("path", ""))
-        return json_ok(data_dir=str(self.rec.cfg.data_dir))
-
     async def pick_folder(self, request):
         """Show the computer's own folder chooser and return the chosen path (or null)."""
         loop = asyncio.get_running_loop()
@@ -583,6 +584,7 @@ class App:
     async def settings(self, request):
         body = await request.json()
         updates = body.get("updates", {})
+        updates.pop("tracking_enabled", None)        # 0.45: follows the survey (on while it's active), never set
         restart = "nmea_sources" in updates
         try:
             from .config import LOCKED_SETTINGS
@@ -658,7 +660,7 @@ class App:
         body = await request.json()
         what = body.get("what", "")
         cfg = self.rec.cfg
-        targets = {"data": cfg.root, "app": cfg.root, "exports": cfg.export_dir, "charts": cfg.charts_dir,
+        targets = {"data": cfg.root, "app": cfg.root, "program": updater.PROGRAM_DIR, "exports": cfg.export_dir, "charts": cfg.charts_dir,
                    "overlays": cfg.overlays_dir, "datafolder": cfg.data_dir,
                    "survey": cfg.survey_dir(self.rec.survey["prefix"]) if self.rec.survey else cfg.data_dir,
                    "nmealogs": cfg.nmea_log_dir, "logs": diag.log_dir(cfg.root),
@@ -717,6 +719,37 @@ class App:
         self._broadcast_soon({"type": "settings", "settings": self.rec.cfg.settings})
         return json_ok(sources=self.all_sources())
 
+    async def nmea_map(self, request):
+        """0.45: Settings → Inputs → Mapping 'Other' inputs: how one input in use (an other or a secondary)
+        is drawn, and whether an other's track is recorded. Saved at once, without restarting the inputs
+        (so outside the inputs' Apply / Revert)."""
+        from .config import EXTERNAL_STYLE, clean_inputs
+        b = await request.json()
+        name = str(b.get("name") or "").strip().lower()
+        ch = {k: v for k, v in (b.get("style") or {}).items() if k in EXTERNAL_STYLE or k == "show_on_map"}
+        if not name or not ch:
+            raise ValueErrorMsg("Say which input, and what to change.")
+        saved = [dict(x) for x in self.rec.cfg.settings.get("nmea_sources") or []]
+        hit = None
+        for lst in (saved, self.extra_sources):
+            for x in lst:
+                if str(x.get("name") or "").strip().lower() == name:
+                    hit = x
+        if hit is None:
+            raise ValueErrorMsg("There's no input of that name: press Apply in GPS / NMEA inputs first.")
+        if any(k != "show_on_map" for k in ch) and hit.get("role") != "other":
+            raise ValueErrorMsg("Only an “other” input has a color, line, trail and icon.")
+        hit.update({k: (bool(v) if k in ("show_on_map", "label", "record") else v) for k, v in ch.items()})
+        cleaned = clean_inputs([hit])[0]                  # check the values
+        hit.update({k: cleaned[k] for k in ch if k in cleaned})
+        self.rec.cfg.save_settings({"nmea_sources": saved})
+        self.running_inputs = self.all_sources()
+        prim = next((x for x in self.running_inputs if x.get("role") == "primary" and x.get("enabled", True) is not False), None)
+        self.sources.on_map = {x["name"] for x in self.running_inputs
+                               if x.get("enabled", True) is not False and x is not prim and x.get("show_on_map")}
+        self._broadcast_soon({"type": "settings", "settings": self.rec.cfg.settings})
+        return json_ok(sources=self.running_inputs)
+
     async def nmea_log(self, request):
         b = await request.json()
         st = self.rec.set_raw_logging(b.get("enabled"), b.get("timestamps"))
@@ -747,7 +780,7 @@ class App:
         """The secondaries and externals to draw, with each external's style (0.43)."""
         if not self.sources.on_map:
             return []
-        style = {x["name"]: {k: x.get(k) for k in ("color", "line", "width", "trail", "label")}
+        style = {x["name"]: {k: x.get(k) for k in ("color", "line", "width", "trail", "label", "icon")}
                  for x in getattr(self, "running_inputs", []) if x.get("role") == "other"}
         return [{**o, **style.get(o["name"], {})} for o in self.rec.decoder.secondaries(self.sources.on_map)]
 
@@ -1561,7 +1594,6 @@ class App:
         r.add_post("/api/survey/clear", self.survey_clear)
         r.add_post("/api/survey/package/save", self.survey_package_save)
         r.add_post("/api/survey/package/open", self.survey_package_open)
-        r.add_post("/api/data-dir", self.data_dir)
         r.add_post("/api/pick-folder", self.pick_folder)
         r.add_post("/api/pick-file", self.pick_file)
         r.add_post("/api/export", self.export)
@@ -1582,6 +1614,7 @@ class App:
         r.add_post("/api/open", self.open)
         r.add_get("/api/nmea", self.nmea)
         r.add_post("/api/nmea/sources", self.nmea_sources)
+        r.add_post("/api/nmea/map", self.nmea_map)
         r.add_get("/api/externals", self.externals)
         r.add_post("/api/nmea/log", self.nmea_log)
         r.add_get("/tiles/s/{i}/{z}/{x}/{y}", self.tile_online)

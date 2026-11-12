@@ -244,21 +244,6 @@ export function renderMarkdown(md) {
   return out;
 }
 
-// ------------------------------------------------------------------ trackline breaks
-// Settings → General → Tracking: the line is broken where the platform would have moved faster than
-// track_break_kn between two points, or where there were no points for track_break_gap_s.
-export function isTrackBreak(a, b, st = {}) {
-  const kn = +st.track_break_kn || 0, gap = +st.track_break_gap_s || 0;
-  if (!kn && !gap) return false;
-  const dt = (new Date(b.DateTime) - new Date(a.DateTime)) / 1000;
-  if (!Number.isFinite(dt)) return false;
-  if (gap && dt > gap) return true;
-  if (!kn) return false;
-  const d = distM([+a.Lat, +a.Lon], [+b.Lat, +b.Lon]);
-  if (d < 92) return false;                     // under 0.05 nm: GPS jitter
-  return dt <= 0 || d / 1852 / (dt / 3600) > kn;
-}
-
 // The Effort values come from the effort list (Settings → Dropdowns → Effort, 0.39): each has a
 // status (on or off effort), a definition and a color (its track color). setEffortList is called when
 // the app loads; schema.set_effort_list does the same on the server.

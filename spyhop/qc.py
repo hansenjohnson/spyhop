@@ -24,9 +24,7 @@ LIMITS = {
     "max_sighting_nm": 10.0,        # animals further than this from the vessel
     "max_group": 500,               # a larger Num is flagged
     "pos_vs_track_nm": 0.5,         # a row's vessel position this far from the trackline
-    "max_speed_kn": 30.0,           # faster than this between track points is a GPS jump
     "max_resight_kn": 30.0,         # animals swimming faster than this between a sighting and its next resight
-    "track_gap_min": 10.0,          # no track points for this long while recording
     "conditions_gap_factor": 1.5,   # on effort with no Effort row for this × the reminder interval
     "max_watch_h": 2.0,             # an observer on watch this long without a break
     "max_seastate_on": 5,           # on effort in a higher sea state
@@ -34,6 +32,19 @@ LIMITS = {
     "land_buffer_km": 0.5,          # only flag points this far inside the coastline
     "future_min": 5,                # times this far past the computer's clock
 }
+
+# 0.45: trackline checks. The map, the HTML summary and the Summary distances break the trackline only
+# at ERROR rows in the Effort table; these limits decide which jumps and gaps the Error check flags (and
+# Fix marks with an ERROR row). The Error check tab can change them for a run (`track_limits`).
+TRACK_GAP_S = 120                 # no track points for longer than this (or 3 track intervals, if longer)
+TRACK_SPEED_KN = {"Shipboard": 30.0, "Stationary": 30.0, "Aerial": 200.0, "Other": 200.0}
+TRACK_SPEED_DEFAULT = 30.0        # platform type not set
+
+
+def track_limit_defaults(rec) -> dict:
+    ptype = rec.platform()[0] if rec is not None else ""
+    return {"gap_s": TRACK_GAP_S, "speed_kn": TRACK_SPEED_KN.get(ptype, TRACK_SPEED_DEFAULT), "platform_type": ptype}
+
 
 # columns that may be left blank (everything else visible in the table is required)
 OPTIONAL = {
@@ -211,13 +222,14 @@ def visibility_nm(v) -> float | None:
 
 
 # ----------------------------------------------------------------- the checks
-def run_qc(rec) -> dict:
+def run_qc(rec, track_limits: dict | None = None) -> dict:
     if rec.survey is None:
         raise ValueError("Open a survey to check it.")
     L = LIMITS
     rep = Report()
     add = rep.add
     cfg = rec.cfg
+    used_limits = {}
     now = datetime.now(timezone.utc)
     S = rec.tables["sightings"].rows
     E = rec.tables["effort"].rows
@@ -326,10 +338,21 @@ def run_qc(rec) -> dict:
 
     # ---- glare: where it starts and ends, and their reference (0.37)
     for i, r in enumerate(E):
+        glare = str(r.get("Glare") or "").strip()
         gs, ge, gref = (str(r.get(k) or "").strip() for k in ("GlareStart", "GlareEnd", "GlareRef"))
+        name = lab("effort", r, i)
+        # 0.45: Glare None → Gstart/Gend NA; any other glare → real bearings
+        if glare.lower() == "none":
+            if (gs, ge) != ("NA", "NA"):
+                add("warning", "Glare bearings", "Glare is None, so Gstart and Gend should be NA.", "effort", r, "GlareStart", name)
+            continue
+        if glare and (gs in ("", "NA") or ge in ("", "NA")):
+            add("error", "Glare bearings", f"Glare is {glare}: give Gstart and Gend (where the glare starts and ends).",
+                "effort", r, "GlareStart" if gs in ("", "NA") else "GlareEnd", name)
+            continue
+        gs, ge = ("" if v == "NA" else v for v in (gs, ge))
         if not (gs or ge or gref):
             continue
-        name = lab("effort", r, i)
         if bool(gs) != bool(ge):
             add("warning", "Glare bearings", "Give both Gstart and Gend (or neither).", "effort", r, "GlareEnd" if gs else "GlareStart", name)
         if (gs or ge) and not gref:
@@ -432,9 +455,17 @@ def run_qc(rec) -> dict:
         return a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f
 
     interval = float(cfg.settings.get("tracking_interval", 10) or 10)
-    max_kn = _setting_num(cfg, "track_break_kn", L["max_speed_kn"]) or L["max_speed_kn"]
-    gap_s = _setting_num(cfg, "track_break_gap_s", 0)
-    gap_limit = max(gap_s if gap_s > 0 else L["track_gap_min"] * 60, interval * 5)
+    lim = track_limit_defaults(rec)
+    for k in ("gap_s", "speed_kn"):
+        try:
+            v = float((track_limits or {}).get(k) or 0)
+        except (TypeError, ValueError):
+            v = 0
+        if v > 0:
+            lim[k] = v
+    max_kn = lim["speed_kn"]
+    gap_limit = max(lim["gap_s"], interval * 3)
+    used_limits.update(lim, gap_used_s=gap_limit)
     tz = rec.tz()
 
     def broken(t0, t1):
@@ -490,9 +521,9 @@ def run_qc(rec) -> dict:
             if schema.is_effort_choice(st) or st == "Start":
                 add("warning" if schema.is_on(st) else "info", "Trackline plausible",
                     f"No track points for {_fmt_dur(dt)} from {t0.astimezone(tz).strftime('%H:%M:%S')} "
-                    f"({'on' if schema.is_on(st) else 'off'} effort) — was tracking paused or the GPS lost?"
-                    + (" Fix adds an ERROR row to the Effort table for the gap." if schema.is_on(st) else ""),
-                    "track", label="Trackline", fix=fix if schema.is_on(st) else None)
+                    f"({'on' if schema.is_on(st) else 'off'} effort) — was the GPS lost? The trackline is drawn straight across it "
+                    "until it's marked: Fix adds an ERROR row to the Effort table for the gap.",
+                    "track", label="Trackline", fix=fix)
 
     def check_vessel_pos(tab, r, name, la, lo):
         p = _pos(r, la, lo)
@@ -670,7 +701,7 @@ def run_qc(rec) -> dict:
     counts = {k: sum(1 for x in issues if x["level"] == k) for k in order}
     return {"survey": rec.survey["prefix"], "generated": now.isoformat(), "counts": counts, "issues": issues,
             "checked": {"sightings": len(S), "effort": len(E), "events": len(V), "track": len(T)},
-            "checks": CHECKS, "limits": LIMITS}
+            "checks": CHECKS, "limits": LIMITS, "track_limits": used_limits, "track_defaults": track_limit_defaults(rec)}
 
 
 # What is checked, for the report's "What is checked" list.
@@ -689,7 +720,7 @@ CHECKS = [
      f"relative bearings have a heading, animals within {LIMITS['max_sighting_nm']:g} nm of the vessel."),
     ("Positions match the trackline", f"Vessel positions within {LIMITS['pos_vs_track_nm']:g} nm of the trackline at that time."),
     ("Positions at sea", f"Positions more than {LIMITS['land_buffer_km']:g} km inside the 1:10m coastline are flagged."),
-    ("Trackline plausible", "No jumps faster than the trackline-break speed in Settings (30 kn by default); no gaps longer than the GPS-loss time in Settings while recording. A stretch already marked by an ERROR Effort row is skipped; Fix adds one."),
+    ("Trackline plausible", "No jumps faster than the speed limit (30 kn for shipboard or stationary surveys, 200 kn for aerial or other; changeable above) and no gaps in the track longer than the gap limit (120 s, or 3 track intervals if longer). The trackline is broken only where the Effort table has an ERROR row: a stretch already marked is skipped; Fix adds one."),
     ("Conditions recorded regularly", f"On effort, a new Effort row at least every {LIMITS['conditions_gap_factor']:g} × the reminder interval."),
     ("Observers in one position at a time", "Nobody is in two of Port / Recorder / Stbd at once (NA / None, an empty position, and Other, the placeholder, can be in several)."),
     ("Sighting observer on watch", "On effort, the sighting's Obs is one of the observers on watch."),
@@ -698,7 +729,7 @@ CHECKS = [
     ("Observer rest", f"Observers on watch over {LIMITS['max_watch_h']:g} h without a break (information only)."),
     ("Distance within visibility", "A sighting's distance (Dist and Unit, or the vessel-to-animal distance) isn't beyond the visibility on the Effort row in force at the time."),
     ("Resights linked", "Each ResNo names an existing sighting, timed before the resight and of the same species."),
-    ("Glare bearings", "Gstart and Gend come together, with a Gref, and are 0–360° (1–12 for clock bearings)."),
+    ("Glare bearings", "With Glare None, Gstart and Gend are NA; with any other glare they're given (an error if not), with a Gref, and are 0–360° (1–12 for clock bearings)."),
     ("Resight swim speeds", f"The animals don’t swim faster than {LIMITS['max_resight_kn']:g} kn from one sighting of them to the next (warning; positions from SigLat/SigLon, else the platform’s)."),
     ("No duplicate records", "A sighting with the same time, species, number and position as another (entered twice), or the same event and ID within 30 s."),
 ]

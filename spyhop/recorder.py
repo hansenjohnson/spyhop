@@ -80,7 +80,7 @@ class Recorder:
         self._last_track_t = 0.0
         self._platform_cache, self._platform_cache_t = "", 0.0     # platform type, for the tracker
         self.rawlog: RawLog | None = None
-        # Tracking only runs for an open, active survey that someone has started or continued.
+        # 0.45: the trackline is recorded whenever the open survey is active, and only then (no setting)
         if self.cfg.settings.get("tracking_enabled"):
             self.cfg.save_settings({"tracking_enabled": False})
         self._open_tables()
@@ -88,8 +88,10 @@ class Recorder:
         if cur and self._survey_exists(cur["prefix"]):
             self._activate(cur["prefix"], meta=cur)
             if self.survey_active():
-                # Spyhop was closed (or crashed) with this survey still running: ask before continuing
+                # Spyhop was closed (or crashed) with this survey still running: it carries on recording,
+                # and the window says so (Continue, or Close the survey)
                 self.pending_resume = self.survey["prefix"]
+                self._set_tracking(True)
         elif cur:
             self.cfg.set_current_survey(None)
 
@@ -263,6 +265,10 @@ class Recorder:
 
     def tracking_on(self) -> bool:
         return bool(self.cfg.settings.get("tracking_enabled"))
+
+    def _sync_tracking(self):
+        """0.45: tracking follows the survey: on while the open survey is active, off otherwise."""
+        self._set_tracking(self.survey_active())
 
     def _set_tracking(self, on: bool):
         if self.tracking_on() != on:
@@ -640,22 +646,16 @@ class Recorder:
             self.close_survey()
             self._activate(prefix)
         self.pending_resume = None
-        self._set_tracking(bool(resume and self.survey_active()))
+        self._sync_tracking()                 # 0.45: an active survey records its track once it's open
         self.emit({"type": "reload"})
 
     def answer_resume(self, action: str):
         """Reply to the start-up question about a survey left active."""
         self.pending_resume = None
-        if action == "continue" and self.survey_active():
-            self._set_tracking(True)
+        if action == "continue":
+            self._sync_tracking()
         elif action == "close":
             self.close_survey()
-        self.emit({"type": "reload"})
-
-    def set_data_dir(self, path: str):
-        self.close_survey()
-        self.cfg.set_data_dir(path)
-        self._open_tables()          # waypoints.csv lives in the data folder
         self.emit({"type": "reload"})
 
     @staticmethod
@@ -1109,6 +1109,8 @@ class Recorder:
     # -- computed fields -----------------------------------------------------------
     def compute(self, tab: str, row: dict, changed: set[str], old: dict | None = None) -> list[str]:
         warnings = []
+        if tab == "effort":
+            self._glare_rule(row, changed)
         if tab == "sightings":
             keys = {"Bearing", "BrgRef", "Distance", "DistUnit", "Lat", "Lon", "VesHdg", "Altitude"}
             b, d = row.get("Bearing", ""), row.get("Distance", "")
@@ -1305,10 +1307,8 @@ class Recorder:
                 raise ValueErrorMsg("Only the first Effort row can be Start.")
             self._check_effort_value(t, at, row.get("Effort", ""), adding=True)
         added = self._write(lambda: t.add(row, at))
-        if tab == "effort" and row.get("Effort") == "End":
-            self._set_tracking(False)
-        if tab == "effort" and schema.is_on(row.get("Effort")):
-            self._auto_tracking()
+        if tab == "effort":
+            self._sync_tracking()
         self.emit_tab(tab)
         return {"row": added or row, "warnings": warnings}
 
@@ -1448,6 +1448,23 @@ class Recorder:
         kind = next((r.get("Effort") for r in reversed(t.rows) if schema.is_on(r.get("Effort"))), first)
         return self.new_row("effort", {"Effort": kind})
 
+    # 0.45: Glare None → Gstart and Gend are NA; any other glare → they're real bearings (NA isn't allowed,
+    # and an NA left from None is cleared so they can be filled in). Error check flags them while blank.
+    @staticmethod
+    def _glare_rule(row: dict, changed: set[str]):
+        g = (row.get("Glare") or "").strip()
+        if g.lower() == "none":
+            if changed & {"GlareStart", "GlareEnd"} and "Glare" not in changed \
+                    and any((row.get(k) or "NA") != "NA" for k in ("GlareStart", "GlareEnd")):
+                raise ValueErrorMsg("Glare is None, so Gstart and Gend are NA: set Glare first.")
+            row["GlareStart"] = row["GlareEnd"] = "NA"
+        elif g:
+            if changed & {"GlareStart", "GlareEnd"} and any(row.get(k) == "NA" for k in changed & {"GlareStart", "GlareEnd"}):
+                raise ValueErrorMsg(f"Glare is {g}: Gstart and Gend are bearings (NA only when Glare is None).")
+            for k in ("GlareStart", "GlareEnd"):
+                if row.get(k) == "NA":
+                    row[k] = ""
+
     def edit(self, tab: str, row_id: str, updates: dict) -> dict:
         self._require_survey(tab)
         t = self.table(tab)
@@ -1474,12 +1491,10 @@ class Recorder:
         if tab == "effort" and "Effort" in changed:
             self._check_effort_value(t, t.index_of(row_id), row.get("Effort", ""), adding=False)
         new = self._write(lambda: t.replace(row_id, row))
-        if tab == "effort" and "Effort" in changed and row.get("Effort") == "End":
-            self._set_tracking(False)
+        if tab == "effort":
+            self._sync_tracking()
         if tab == "effort" and was_ended != self.survey_ended():
             self.emit({"type": "reload"})
-        if tab == "effort" and "Effort" in changed and schema.is_on(row.get("Effort")):
-            self._auto_tracking()
         self.emit_tab(tab)
         return {"row": new or row, "warnings": warnings}
 
@@ -1490,6 +1505,8 @@ class Recorder:
             raise ValueErrorMsg("The Start row can't be deleted — it marks when the survey began.")
         was_ended = tab == "effort" and self.survey_ended()
         self._write(lambda: t.delete(row_id))
+        if tab == "effort":
+            self._sync_tracking()
         self.emit_tab(tab)
         if was_ended and not self.survey_ended():
             self.emit({"type": "reload"})
@@ -1507,8 +1524,8 @@ class Recorder:
             self._write(t.save)
             self.emit_tab(tab)
             raise ValueErrorMsg("That would remove the Start row, which every survey needs.")
-        if tab == "effort" and self.survey_ended() and not before:
-            self._set_tracking(False)
+        if tab == "effort":
+            self._sync_tracking()
         self.emit_tab(tab)
         if tab == "effort" and before != self.survey_ended():
             self.emit({"type": "reload"})
@@ -1520,17 +1537,6 @@ class Recorder:
     def redo(self, tab: str) -> bool:
         return self._undo_redo(tab, "redo")
 
-    def _auto_tracking(self):
-        if self.survey and not self.survey.get("auto_tracking_done"):
-            self.survey["auto_tracking_done"] = True
-            self.cfg.set_current_survey(self.survey)
-            if not self.cfg.settings.get("tracking_enabled"):
-                self.cfg.save_settings({"tracking_enabled": True})
-                self.emit({"type": "settings", "settings": self.cfg.settings})
-                self.emit({"type": "notice", "level": "info",
-                           "text": "Effort is ON — internal tracking switched on."})
-
-    # -- effort / track ---------------------------------------------------------------
     def effort_intervals(self) -> list[tuple[datetime, datetime | None, str]]:
         rows = []
         for r in self.tables["effort"].rows:

@@ -17,7 +17,7 @@ A template has two parts, which follow different rules:
 
 | Part | What's in it | During a survey |
 |---|---|---|
-| **Data** | The drop-down lists (species, event types, behaviors, observers, effort, visibility, weather, reticles), the data settings (magnetic variation, track point interval, trackline-break speed and gap) and the **saved reports**: what recorded values mean, how they are worked out and how they are reported. | **Fixed.** Copied into the survey's folder at Start (`<survey>_template.zip`), and the only part a survey's copy is compared with. Only the lists' **colors** can change, and reports can't be run or changed until the survey ends. |
+| **Data** | The drop-down lists (species, event types, behaviors, observers, effort, visibility, weather, reticles), the data settings (magnetic variation, track point interval) and the **saved reports**: what recorded values mean, how they are worked out and how they are reported. | **Fixed.** Copied into the survey's folder at Start (`<survey>_template.zip`), and the only part a survey's copy is compared with. Only the lists' **colors** can change, and reports can't be run or changed until the survey ends. |
 | **Preferences** | Shortcuts, map display, the other shared settings (lat/lon format, clock, bearing reference, distance unit, effort reminder, keep awake, raw NMEA log, Altitude column), the named GPS / NMEA inputs (serial, UDP, TCP, gpsd; which a computer uses, and its primary, stay its own choice), map feeds and online overlays. | **Can change at any time.** Using a template during a survey takes its preferences (and list colors) and leaves the data part as it is until the survey ends. |
 | *Extras* | Waypoints, routes and overlays, if included. | Only ever added. |
 
@@ -31,7 +31,7 @@ Templates are updated by hand: Spyhop never looks for a newer template, or chang
 
 ## Where templates are kept
 
-Templates live in the **`templates` folder in Spyhop's own folder** (Settings → General → Folders shows where that is):
+Templates live in the **`templates` folder in Spyhop's own folder** (Settings → About shows where that is):
 
 | Folder | What it holds |
 |---|---|
@@ -39,7 +39,7 @@ Templates live in the **`templates` folder in Spyhop's own folder** (Settings �
 | `templates/saved/` | Your templates, `<name>.spyhop-template.zip`, and copies of the ones you got from the web. |
 | `templates/backups/` | The current template as it was before each other template was used. |
 
-This computer's own settings, which never go in a template (the data folder, which GPS / NMEA inputs are in use and which is the primary, file replays and the simulator, the window layout, the last survey details, which survey is open), are in `spyhop-local.json` next to the `templates` folder.
+This computer's own settings, which never go in a template (which GPS / NMEA inputs are in use and which is the primary, file replays and the simulator, the window layout, the last survey details, which survey is open), are in `spyhop-local.json` next to the `templates` folder.
 
 You can edit the files in `templates/current` by hand (keep a copy first), then press **Reload config files** (Settings → Dropdowns) or restart Spyhop.
 
@@ -86,7 +86,7 @@ The lists and shortcuts stay as CSV files so they can be edited in a spreadsheet
 
 **Only the parts in the template are changed.** For example, a template with only `species.csv` and `observers.csv` changes only those two lists on each computer.
 
-**Lists, shortcuts, map display and settings are replaced.** The shared settings are: lat/lon format, clock (time zone), bearing reference, distance unit, magnetic variation, track point interval, track break speed and gap, effort reminder, keep the computer awake and the screen on, the raw NMEA log (on/off and time stamps), and the Altitude column choice. The lists in a template are species, event types, observers, behaviors, effort, visibility, weather and the reticles (how reticle readings are taken: method, binocular magnification and degrees per division, or calibrated marks), plus the shortcuts. The template's GPS / NMEA inputs (serial, UDP, TCP, gpsd, each named for its device) replace this computer's; **which are in use, the primary and secondaries, and which show on the map stay this computer's choice**, matched by name, and an input new to the computer comes in not in use (unless none would be). An input set as **external** (a drone, a buoy, another vessel) stays external on every computer. File replays and the simulator stay as they are. Everything else in Settings (the data folder, the view and split, follow vessel, the browsing cache…) belongs to the computer and is never in a template.
+**Lists, shortcuts, map display and settings are replaced.** The shared settings are: lat/lon format, clock (time zone), bearing reference, distance unit, magnetic variation, track point interval, effort reminder, keep the computer awake and the screen on, the raw NMEA log (on/off and time stamps), and the Altitude column choice. The lists in a template are species, event types, observers, behaviors, effort, visibility, weather and the reticles (how reticle readings are taken: method, binocular magnification and degrees per division, or calibrated marks), plus the shortcuts. The template's GPS / NMEA inputs (serial, UDP, TCP, gpsd, each named for its device) replace this computer's; **which are in use, the primary and secondaries, and which show on the map stay this computer's choice**, matched by name, and an input new to the computer comes in not in use (unless none would be). An input set as **external** (a drone, a buoy, another vessel) stays external on every computer. File replays and the simulator stay as they are. Everything else in Settings (the data folder, the view and split, follow vessel, the browsing cache…) belongs to the computer and is never in a template.
 
 **Saved reports go as a set.** If the template has saved reports, each computer ends up with exactly those reports: any others of its own are removed. A template with no saved reports leaves each computer's reports alone.
 

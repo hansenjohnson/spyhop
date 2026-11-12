@@ -506,10 +506,11 @@ def test_close_and_open_with_resume(rec):
     assert rec.cfg.current_survey() is None
     listed = {s["prefix"]: s for s in rec.list_surveys()}
     assert listed[p]["active"] and not listed[p]["current"]
-    rec.open_survey(p, resume=False)
-    assert rec.tables["sightings"].rows[0]["Species"] == "Fin whale" and not rec.tracking_on()
-    rec.close_survey()
-    rec.open_survey(p, resume=True)
+    rec.open_survey(p, resume=False)          # 0.45: an active survey always records its track once open
+    assert rec.tables["sightings"].rows[0]["Species"] == "Fin whale" and rec.tracking_on()
+    rec.end_survey()
+    assert not rec.tracking_on()
+    rec.delete("effort", rec.tables["effort"].rows[-1]["RowID"])     # End deleted: active again
     assert rec.tracking_on()
 
 
@@ -521,7 +522,7 @@ def test_crash_recovery_asks_to_continue(tmp_path):
     # Spyhop is killed here; next start:
     r2 = Recorder(tmp_path)
     assert r2.survey["prefix"] == "Leg A" and r2.pending_resume == "Leg A"
-    assert not r2.tracking_on()                                    # waits for an answer
+    assert r2.tracking_on()                                        # 0.45: carries on recording; the window says so
     assert r2.bootstrap()["resume_prompt"] == "Leg A"
     r2.answer_resume("continue")
     assert r2.tracking_on() and r2.pending_resume is None
@@ -532,34 +533,13 @@ def test_crash_recovery_asks_to_continue(tmp_path):
     assert r3.survey is None
 
 
-def test_choose_data_folder(tmp_path):
+def test_data_folder_is_always_inside_spyhops_folder(tmp_path):
+    """0.45: the survey data folder can't be changed: always <Spyhop folder>/data (an old data_dir is ignored)."""
+    (tmp_path / "app").mkdir()
     r = Recorder(tmp_path / "app")
-    r.start_survey("Leg A")
-    r.new_row("marks", {"Name": "Home"}, lat=41, lon=-70)
-    new = tmp_path / "Shared drive" / "Spyhop data"
-    r.set_data_dir(str(new))
-    assert r.survey is None and r.cfg.data_dir == new               # switching closes the survey
-    assert r.tables["marks"].rows == [] and r.list_surveys() == []
-    r.start_survey("Leg B")
-    assert (new / "Leg B" / "Leg B_effort.csv").exists()
-    r2 = Recorder(tmp_path / "app")                                # remembered between sessions
-    assert r2.cfg.data_dir == new and r2.survey["prefix"] == "Leg B"
-    with pytest.raises(ValueError):
-        r2.cfg.set_data_dir("relative/path")
-    r2.close_survey()
-    r2.set_data_dir("")                                             # back to the default folder
-    assert r2.cfg.data_dir == tmp_path / "app" / "data"
-    assert [s["prefix"] for s in r2.list_surveys()] == ["Leg A"]
-
-
-def test_missing_data_folder_falls_back_with_notice(tmp_path):
-    r = Recorder(tmp_path / "app")
-    r.set_data_dir(str(tmp_path / "usb"))
-    (tmp_path / "usb").rmdir()                                      # drive unplugged
-    r2 = Recorder(tmp_path / "app")
-    assert r2.cfg.data_dir == tmp_path / "app" / "data"
-    assert any("wasn't found" in n for n in r2.notices)
-    assert r2.cfg.settings["data_dir"] == str(tmp_path / "usb")    # still remembered for next time
+    assert r.cfg.data_dir == tmp_path / "app" / "data" and not hasattr(r, "set_data_dir")
+    r.cfg.save_settings({"data_dir": str(tmp_path / "usb")})
+    assert Recorder(tmp_path / "app").cfg.data_dir == tmp_path / "app" / "data"
 
 
 def test_survey_details_saved_remembered_and_exported(rec):
@@ -876,7 +856,6 @@ def test_qc_duplicates_fieldids_and_visibility(rec):
 
 def test_track_break_fix(rec):
     from datetime import datetime, timedelta
-    rec.cfg.settings["track_break_gap_s"] = 120
     e = rec.new_row("effort", {**GOOD_EFFORT})["row"]
     t0 = datetime.fromisoformat(e["DateTime"])
 
@@ -905,6 +884,13 @@ def test_track_break_fix(rec):
     r = _qc(rec)
     tr2 = [x for x in r["issues"] if x["check"] == "Trackline plausible"]
     assert len(tr2) == 1 and "No track points" in tr2[0]["message"]
+    # 0.45: the limits are the Error check's own (120 s; 30 kn, 200 kn for aerial), changeable for a run
+    from spyhop.qc import run_qc, track_limit_defaults
+    assert r["track_limits"]["gap_s"] == 120 and r["track_limits"]["speed_kn"] == 30
+    assert not [x for x in run_qc(rec, {"gap_s": 600})["issues"] if x["check"] == "Trackline plausible"]
+    rec.set_meta({"platform_type": "Aerial"})
+    assert track_limit_defaults(rec)["speed_kn"] == 200
+    assert "track_break_kn" not in rec.cfg.settings and "track_break_kn" not in __import__("spyhop.config", fromlist=["x"]).LOCKED_SETTINGS
     assert rec._track_state(datetime.fromisoformat(err["DateTime"]) + timedelta(seconds=5)) == "ERROR"
 
 
@@ -2599,7 +2585,7 @@ def test_survey_package_save_and_open(tmp_path):
     # another computer
     other = Recorder(tmp_path / "b")
     got = other.open_package(data)
-    assert got["opened"] == "Leg 2" and other.survey["prefix"] == "Leg 2" and not other.tracking_on()
+    assert got["opened"] == "Leg 2" and other.survey["prefix"] == "Leg 2" and other.tracking_on() == other.survey_active()
     assert [r["RowID"] for r in other.tables["sightings"].rows] == [s["RowID"]]
     assert got["template"]["saved"] and got["template"]["differs"] == []
     # the name is taken: nothing overwritten, a new name suggested; with it the files are renamed
@@ -2680,8 +2666,18 @@ def test_reticles_visibility_weather_lists_and_glare(tmp_path):
     rec.new_row("effort", {"Effort": "ON", "GlareStart": "13", "GlareEnd": "3", "GlareRef": "C"})
     issues = [i for i in qc.run_qc(rec)["issues"] if i["check"] == "Glare bearings"]
     msgs = " | ".join(i["message"] for i in issues)
-    assert "both Gstart and Gend" in msgs and "Gstart 13 is outside 1–12" in msgs
+    assert "Glare is Moderate: give Gstart and Gend" in msgs and "Gstart 13 is outside 1–12" in msgs
     assert not any(i["row_id"] == e["RowID"] for i in issues)
+    # 0.45: Glare None → Gstart / Gend NA; other glare → bearings (NA refused); Gref defaults to M
+    n = rec.new_row("effort", {"Effort": "ON", "Glare": "None", "GlareStart": "", "GlareEnd": ""})["row"]
+    assert (n["GlareStart"], n["GlareEnd"]) == ("NA", "NA")
+    with pytest.raises(ValueErrorMsg, match="set Glare first"):
+        rec.edit("effort", n["RowID"], {"GlareStart": "90"})
+    n = rec.edit("effort", n["RowID"], {"Glare": "Slight"})["row"]
+    assert (n["GlareStart"], n["GlareEnd"]) == ("", "")
+    with pytest.raises(ValueErrorMsg, match="NA only when Glare is None"):
+        rec.edit("effort", n["RowID"], {"GlareStart": "NA"})
+    assert schema.column("effort", "GlareRef")["default"] == "M"
     head, merged = rec.merged_rows()
     assert {"GlareStart", "GlareEnd", "GlareRef"} <= set(head)
 

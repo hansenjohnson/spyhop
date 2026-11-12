@@ -1,11 +1,11 @@
 // Main controller: layout, status bar, tabs, shortcuts, settings, summary, live updates.
-import { $, $$, el, esc, api, fmtCoord, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, isTrackBreak, trackStates, isPlaceholderObs, LINE_STYLES, isOn, ON_EFFORT, setEffortList, effortInfo, effortColor, EFFORT_REQUIRED, watchHelp } from './util.js';
+import { $, $$, el, esc, api, fmtCoord, toast, modal, confirmBox, promptBox, fmtPos, fmtDuration, timeParts, distM, fmtBrg, isModalOpen, renderMarkdown, trackStates, isPlaceholderObs, LINE_STYLES, isOn, ON_EFFORT, setEffortList, effortInfo, effortColor, EFFORT_REQUIRED, watchHelp } from './util.js';
 import { Grid } from './grid.js';
 import { Resights, groupCounts } from './resights.js';
 import { ResightTool } from './resight_tool.js';
 
 // what each Effort value means (the Effort column's help, the Summary)
-import { MapView, SHAPES } from './map.js';
+import { MapView, SHAPES, EXTERNAL_ICONS } from './map.js';
 import { buildSummaryHtml } from './summary_html.js';
 import { openInstrumentPlot } from './plot.js';
 import { Planner } from './planning.js';
@@ -65,6 +65,7 @@ class App {
     // a survey open at startup (active or ended): show all of it, once the panes have their sizes
     if (this.S.survey) setTimeout(() => { this.map.map.invalidateSize(); this.map.fitSurvey(); }, 300);
     if (this.S.resume_prompt) this.askResume();
+    if (this.S.startup_update) this.offerUpdate(this.S.startup_update);
   }
 
   // Send errors in this window to Spyhop's diagnostic log, plus a performance note every 5 minutes.
@@ -702,8 +703,8 @@ class App {
         break;
       case 'update':
         this.updateInfo = m.info;
-        toast(`Spyhop ${m.info.latest} is available: see Settings → About → Updates.`, 'info', 10000);
         if (this.shown('about')) this.renderAbout();
+        this.offerUpdate(m.info);
         break;
       case 'charts':
         this.S.mbtiles = m.mbtiles;
@@ -777,7 +778,6 @@ class App {
 
   async saveSettings(updates, quiet = false) {
     Object.assign(this.S.config.settings, updates);
-    if ('track_break_kn' in updates || 'track_break_gap_s' in updates) this.map.drawTrack();
     this.refreshFormats();
     this.updateStatus();
     try { await api('/api/settings', { updates }); } catch { if (!quiet) this.reload(); }
@@ -963,12 +963,12 @@ class App {
     const closing = cur && !cur.current ? '' : '';
     const note = cur ? el('p', { class: 'hint' }, `“${cur.prefix}” will be closed first (its data is saved${cur.active ? ' and it stays active' : ''}).`) : null;
     if (sv.active) {
+      // 0.45: an active survey records its trackline whenever it's open
       const how = await modal({ title: 'Continue this survey?',
-        body: el('div', {}, el('p', {}, `“${sv.prefix}” has no End record — it is still active. Continue it (tracking resumes), or just open it to look at or correct it?`), note),
-        buttons: [{ label: 'Cancel', value: null }, { label: 'Just open it', value: 'open' },
-          { label: 'Continue survey', value: 'continue', primary: true }] });
+        body: el('div', {}, el('p', {}, `“${sv.prefix}” has no End record — it is still active. Opening it continues it: the trackline is recorded from here while it is open, until its End row.`), note),
+        buttons: [{ label: 'Cancel', value: null }, { label: 'Open and continue', value: 'continue', primary: true }] });
       if (!how) return;
-      resume = how === 'continue';
+      resume = true;
     } else if (cur) {
       if (!await confirmBox('Open survey?', `Open “${sv.prefix}” (ended)? “${cur.prefix}” will be closed first (its data is saved${cur.active ? ' and it stays active' : ''}).`, 'Open')) return;
     }
@@ -980,13 +980,17 @@ class App {
   }
 
   async askResume() {
+    this.resumeAsking = true;
+    try { await this.askResumeNow(); } finally { this.resumeAsking = false; }
+  }
+
+  async askResumeNow() {
     const p = this.S.resume_prompt;
     const how = await modal({ title: 'Continue the active survey?',
-      body: el('div', {}, el('p', {}, `“${p}” was still active when Spyhop last closed (it has no End row).`),
-        el('p', {}, 'Continue it now? Tracking resumes from here.')),
-      buttons: [{ label: 'Close survey', value: 'close' }, { label: 'Not now', value: 'later' },
-        { label: 'Continue survey', value: 'continue', primary: true }] });
-    try { await api('/api/survey/resume', { action: how || 'later' }); } catch {}
+      body: el('div', {}, el('p', {}, `“${p}” was still active when Spyhop last closed (it has no End row), so it was opened again and its trackline is being recorded from here.`),
+        el('p', {}, 'Continue it, or close it (it stays active, and nothing is recorded until it’s opened again)?')),
+      buttons: [{ label: 'Close survey', value: 'close' }, { label: 'Continue survey', value: 'continue', primary: true }] });
+    try { await api('/api/survey/resume', { action: how || 'continue' }); } catch {}
     if (how === 'continue') toast(`Continuing “${p}” — tracking is on`);
   }
 
@@ -1000,22 +1004,6 @@ class App {
     if (typed === null) return;
     if (typed.trim() !== name) { toast('Name did not match — nothing was deleted.', 'warn'); return; }
     try { await api('/api/survey/clear', { confirm: typed.trim() }); toast('Survey data deleted'); } catch {}
-  }
-
-  async chooseDataFolder(path) {
-    if (this.S.survey && !await confirmBox('Change data folder?',
-      `Switching folders closes “${this.S.survey.prefix}” (its data is saved${this.S.survey.active ? ' and it stays active' : ''}). Surveys in the new folder are listed afterwards.`, 'Switch folder')) return;
-    try {
-      const r = await api('/api/data-dir', { path });
-      this.dataDirDraft = null;
-      toast(`Data folder: ${r.data_dir}`);
-    } catch {}
-  }
-
-  async pickDataFolder() {
-    let r;
-    try { r = await api('/api/pick-folder', {}); } catch { return; }
-    if (r.path) this.chooseDataFolder(r.path);
   }
 
   // Survey details (platform, organization, chief scientist), saved as you change them.
@@ -1065,9 +1053,7 @@ class App {
         el('table', { class: 'summary kv' }, el('tbody', {},
           el('tr', {}, el('th', {}, 'Started'), el('td', {}, when(sv.start_time) || '—')),
           sv.ended ? el('tr', {}, el('th', {}, 'Ended'), el('td', {}, when(sv.end_time))) : null,
-          el('tr', {}, el('th', {}, 'Trackline'), el('td', {}, sv.active ? (S.config.settings.tracking_enabled ? '● recording' : '○ not recording ') : 'stopped',
-            sv.active && !S.config.settings.tracking_enabled
-              ? el('button', { onclick: () => this.saveSettings({ tracking_enabled: true }).then(() => toast('Tracking resumed')) }, 'Resume tracking') : null)),
+          el('tr', {}, el('th', {}, 'Trackline'), el('td', {}, sv.active ? `● recording (a point every ${S.config.settings.tracking_interval || 10} s while the survey is active)` : 'stopped (the survey has ended)')),
           el('tr', {}, el('th', {}, 'Folder'), el('td', {}, el('span', { class: 'mono' }, sv.prefix), ' in the data folder · ',
             el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('survey'); } }, 'Open folder'))),
           el('tr', { id: 'survey-template-row' }, el('th', {}, 'Template'), el('td', {}, this.surveyTemplateLine(sv))))),
@@ -1083,7 +1069,8 @@ class App {
         sv.ended ? el('p', { class: 'hint' }, 'This survey has ended, so no new rows can be added. You can still correct its data. To continue it, delete its End row in the Effort tab.') : null);
     }
     const rows = S.surveys || [];
-    const list = sec('Surveys in this folder',
+    // 0.45: one Saved Surveys section (the data folder can't be changed: Open Data Folder below the list)
+    const list = sec('Saved Surveys',
       rows.length ? el('table', { class: 'summary survey-list' },
         el('thead', {}, el('tr', {}, ['Survey', 'Status', 'Started', 'Ended', 'Sightings', ''].map((h) => el('th', {}, h)))),
         el('tbody', {}, rows.map((r) => el('tr', { class: r.current ? 'current' : null },
@@ -1091,41 +1078,14 @@ class App {
           el('td', {}, el('span', { class: `pill ${r.active ? 'on' : 'off'}` }, r.active ? 'Active' : 'Ended')),
           el('td', {}, when(r.start_time)), el('td', {}, when(r.end_time)), el('td', {}, String(r.sightings)),
           el('td', {}, r.current ? el('b', {}, 'open now') : el('button', { onclick: () => this.openSurvey(r) }, 'Open'))))))
-        : el('p', { class: 'hint' }, 'No surveys in this folder yet.'),
+        : el('p', { class: 'hint' }, 'No saved surveys yet.'),
       el('div', { class: 'btnrow' },
+        el('button', { id: 'btn-open-data-folder', title: S.config.data_dir, onclick: () => this.open('datafolder') }, 'Open Data Folder'),
         el('button', { id: 'btn-open-package', title: 'Open a survey saved with Save Survey Package (a .spyhop-survey.zip file): it is added to this data folder with its template', onclick: () => this.openPackage() }, 'Open Survey Package…'),
         el('button', { id: 'btn-surveys-refresh', title: 'Read the survey data folder again (e.g. after copying survey folders into it)',
           onclick: () => this.refreshFolders() }, 'Refresh')),
-      el('p', { class: 'hint help' }, 'Each survey is a folder in the data folder, holding its tables, survey details, instrument readings, a copy of the template it was started with, its raw NMEA logs and its exports.'));
-    const folder = sec('Folders',
-      el('p', { id: 'survey-folder-link' }, 'Surveys are saved in ', el('span', { class: 'mono' }, S.config.data_dir), '. ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('datafolder'); } }, 'Open folder'), ' · ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('settings'); setTimeout(() => $('#settings-folders')?.scrollIntoView({ block: 'start' }), 50); } },
-          'Change it in Settings → General → Folders')));
-    pane.replaceChildren(...[current, folder, list].filter(Boolean));
-  }
-
-  // Settings → General → Folders: the survey data folder (can be changed) and Spyhop's own folder
-  foldersSection() {
-    const S = this.S;
-    const dd = S.config.data_dir, isDefault = dd === S.config.default_data_dir;
-    const pathBox = el('input', { type: 'text', value: this.dataDirDraft ?? dd, style: { flex: '1', minWidth: '18em' },
-      oninput: (e) => { this.dataDirDraft = e.target.value; },
-      onkeydown: (e) => { if (e.key === 'Enter') this.chooseDataFolder(e.target.value); } });
-    return el('section', { class: 'settings-sec', id: 'settings-folders' }, el('h3', {}, 'Folders'),
-      el('h4', {}, 'Survey data folder'),
-      el('p', {}, 'Surveys (a folder each, with their exports and raw NMEA logs) and waypoints are saved in ', el('span', { class: 'mono' }, dd),
-        isDefault ? el('span', { class: 'hint' }, ' (the default, inside Spyhop’s own folder)') : null, '. ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('datafolder'); } }, 'Open folder')),
-      el('div', { class: 'btnrow' }, el('button', { onclick: () => this.pickDataFolder() }, 'Choose folder…'),
-        isDefault ? null : el('button', { onclick: () => this.chooseDataFolder('') }, 'Use the default')),
-      el('div', { class: 'btnrow' }, el('label', { class: 'inline', style: { flex: '1' } }, 'Or type a path:', pathBox),
-        el('button', { onclick: () => this.chooseDataFolder(pathBox.value) }, 'Use this folder')),
-      el('p', { class: 'hint help' }, 'Pick a backed-up folder if you like. Spyhop remembers it between sessions. Your lists (species, observers…), settings and templates stay in Spyhop’s own folder.'),
-      el('h4', {}, 'Spyhop folder'),
-      el('p', {}, 'Spyhop’s own files are in ', el('span', { class: 'mono' }, S.config.root), '. ',
-        el('a', { href: '#', id: 'open-app-folder', onclick: (e) => { e.preventDefault(); this.open('app'); } }, 'Open folder')),
-      el('p', { class: 'hint help' }, 'It holds templates/ (current: the current template, i.e. the lists, shortcuts and spyhop-config.json with the shared settings, map display and saved reports; saved: your saved templates; backups), spyhop-local.json (this computer’s own settings), offline charts, map overlays, routes, map feeds, the tile cache and logs. Spyhop always uses this folder.'));
+      el('p', { class: 'hint help' }, `Surveys are saved in Spyhop’s data folder (${S.config.data_dir}), a folder each, holding its tables, survey details, instrument readings, a copy of the template it was started with, its raw NMEA logs and its exports. To open a survey from another computer, use Open Survey Package…`));
+    pane.replaceChildren(...[current, list].filter(Boolean));
   }
 
   // the template a survey was recorded with (a copy is kept in its folder since 0.36)
@@ -1292,6 +1252,7 @@ class App {
     const f = this.qcFilter || (this.qcFilter = { error: true, warning: true, info: true });
     const LEVEL = { error: 'Error', warning: 'Warning', info: 'Note' };
     const kids = [el('p', { class: 'hint help' }, 'Checks this survey for missing survey details, blank required fields and values that look wrong. It doesn’t change anything — click Show to go to a row and fix it there.'),
+      this.qcLimitsRow(rep),
       el('div', { class: 'btnrow' }, el('button', { class: 'primary', onclick: () => this.runQc() }, rep ? 'Run the check again' : 'Run error check'),
         rep ? el('button', { onclick: () => this.saveQcReport() }, 'Save report…') : null)];
     if (rep) {
@@ -1327,6 +1288,31 @@ class App {
     return el('section', { class: 'settings-sec', id: 'qc-section' }, el('h3', {}, 'Error check'), ...kids);
   }
 
+  // 0.45: the trackline limits (which GPS gaps and jumps are flagged): blank = the default for the
+  // platform type (120 s; 30 kn for shipboard or stationary, 200 kn for aerial or other). Kept on this computer.
+  qcLimits() {
+    if (!this._qcLimits) { try { this._qcLimits = JSON.parse(localStorage.getItem('wsr.qc.track') || '{}') || {}; } catch { this._qcLimits = {}; } }
+    return this._qcLimits;
+  }
+
+  qcLimitsRow(rep) {
+    const lim = this.qcLimits(), def = rep?.track_defaults || {};
+    const ptype = this.S.survey?.meta?.platform_type || def.platform_type || '';
+    const dspeed = def.speed_kn ?? ({ Aerial: 200, Other: 200 }[ptype] || 30);
+    const box = (key, id, dflt, min, max) => el('input', { type: 'number', id, min, max, step: 1, value: lim[key] ?? '', placeholder: String(dflt), style: { width: '6em' },
+      title: `Leave blank for the default (${dflt})`,
+      onchange: (e) => {
+        const v = +e.target.value;
+        if (e.target.value !== '' && v >= min && v <= max) lim[key] = v;
+        else { if (e.target.value !== '') toast(`Must be ${min}–${max} (blank for the default)`, 'warn'); delete lim[key]; e.target.value = ''; }
+        try { localStorage.setItem('wsr.qc.track', JSON.stringify(lim)); } catch {}
+      } });
+    return el('div', { class: 'qc-limits', id: 'qc-limits' },
+      el('span', { class: 'hint' }, 'Trackline: flag GPS gaps longer than '), box('gap_s', 'qc-gap-s', def.gap_s ?? 120, 10, 86400),
+      el('span', { class: 'hint' }, ' s and jumps faster than '), box('speed_kn', 'qc-speed-kn', dspeed, 1, 2000),
+      el('span', { class: 'hint' }, ` kn${ptype ? ` (default for ${ptype.toLowerCase()} surveys)` : ''}. The trackline is broken only where the Effort table has an ERROR row; Fix adds one.`));
+  }
+
   async fixQcIssue(x) {
     let r;
     try { r = await api('/api/qc/fix', { fix: x.fix }); } catch { return; }
@@ -1336,7 +1322,7 @@ class App {
 
   async runQc() {
     let r;
-    try { r = await api('/api/qc', {}); } catch { return; }
+    try { r = await api('/api/qc', { track_limits: this.qcLimits() }); } catch { return; }
     this.qcReport = r.report;
     this.qcStale = false;
     this.renderQc();
@@ -1433,10 +1419,11 @@ class App {
       el('p', {}, el('b', { class: 'big' }, `Spyhop ${a.spyhop || ''}`), el('span', { class: 'hint' }, `  released ${a.spyhop_date || ''}`)),
       el('table', { class: 'summary kv' }, el('tbody', {},
         kv('Python', `${a.python || ''}`), kv('System', a.system || ''),
-        kv('Program folder', el('span', { class: 'mono' }, a.program_folder || '')),
-        kv('Spyhop’s folder', el('span', { class: 'mono' }, a.spyhop_folder || '')),
-        kv('Diagnostic logs', el('span', {}, el('span', { class: 'mono' }, a.log_folder || ''), ' ',
-          el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('logs'); } }, 'Open folder'))))),
+        // 0.45: each folder is a link that opens it
+        ...[['Program folder', a.program_folder, 'program'], ['Spyhop’s folder', a.spyhop_folder, 'app'],
+          ['Survey data folder', this.S.config.data_dir, 'datafolder'], ['Diagnostic logs', a.log_folder, 'logs']].map(([k, path, what]) =>
+          kv(k, el('a', { href: '#', class: 'mono folder-link', 'data-open': what, title: 'Open this folder',
+            onclick: (e) => { e.preventDefault(); this.open(what); } }, path || ''))))),
       el('p', { class: 'hint help' }, 'Spyhop keeps diagnostic logs of what it did, how fast it was and any errors, never survey data. If something goes wrong, Save diagnostics… makes a zip of the logs, settings, a listing of Spyhop’s folders and system details (no survey data, team or observer names) to send with a bug report.'),
       el('div', { class: 'btnrow' }, el('button', { onclick: () => this.saveDiagnostics() }, 'Save diagnostics…')),
       det,
@@ -1547,8 +1534,8 @@ class App {
       el('p', {}, `This is Spyhop ${a.spyhop || ''}. Updates come from `, el('a', { href: 'https://github.com/hansenjohnson/spyhop', target: '_blank', rel: 'noopener' }, 'github.com/hansenjohnson/spyhop'), ' and need an internet connection.'),
       el('div', { class: 'btnrow' },
         el('button', { id: 'btn-check-update', onclick: () => this.checkForUpdate() }, 'Check for updates'),
-        el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: !!st.check_updates_on_start,
-          onchange: (e) => this.saveSettings({ check_updates_on_start: e.target.checked }) }), el('span', {}, 'Check when Spyhop starts'))),
+        el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: st.check_updates_on_start !== false,
+          onchange: (e) => this.saveSettings({ check_updates_on_start: e.target.checked }) }), el('span', {}, 'Check when Spyhop starts (it always asks before installing)'))),
       box);
   }
 
@@ -1559,10 +1546,31 @@ class App {
     this.renderAbout();
   }
 
-  async installUpdate() {
+  // 0.45: the check when Spyhop starts found a newer version: always ask (once per window); installing only
+  // ever happens after Install is pressed
+  async offerUpdate(u) {
+    if (!u?.newer || this.updateOffered === u.latest) return;
+    this.updateOffered = u.latest;
+    this.updateInfo = u;
+    while (this.resumeAsking) await new Promise((r) => setTimeout(r, 300));       // after the continue-survey question
+    const active = this.S.survey && !this.S.survey.ended;
+    const how = await modal({ title: `Spyhop ${u.latest} is available`,
+      body: el('div', { id: 'update-offer' }, el('p', {}, `You have Spyhop ${u.current}. Install ${u.latest} now? Spyhop keeps a backup of this version, never changes your surveys, lists or settings, and needs a restart afterwards.`),
+        active ? el('p', { class: 'warn-text' }, 'A survey is active: it’s safest to update between surveys (it’s reopened after the restart).') : null,
+        u.notes ? el('details', {}, el('summary', {}, 'What’s new'), el('div', { class: 'changelog' }, ...renderMarkdown(u.notes))) : null,
+        el('p', { class: 'hint' }, 'You can also update later from Settings → About → Updates.')),
+      buttons: [{ label: 'Not now', value: null }, { label: u.git ? 'Update (git pull)' : `Install ${u.latest}`, value: 'install', primary: !active }] });
+    if (how === 'install') this.installUpdate(true);
+  }
+
+  async installUpdate(asked = false) {
     const u = this.updateInfo;
     if (!u) return;
-    if (!await confirmBox(`Install Spyhop ${u.latest}?`, 'Spyhop downloads the new version, keeps a backup of this one, and installs it. Your surveys, lists and settings are not changed. You restart Spyhop afterwards.', 'Install')) return;
+    if (asked) {
+      this.showTab('about');
+      this.renderAbout();
+    }
+    if (!asked && !await confirmBox(`Install Spyhop ${u.latest}?`, 'Spyhop downloads the new version, keeps a backup of this one, and installs it. Your surveys, lists and settings are not changed. You restart Spyhop afterwards.', 'Install')) return;
     const box = $('#update-box');
     if (box) box.replaceChildren(el('p', {}, 'Downloading and installing… (this can take a minute)'));
     try { this.updateResult = (await api('/api/update/install', { update: u })).result; } catch { this.renderAbout(); return; }
@@ -1702,13 +1710,12 @@ class App {
     });
     const effortNow = isOn(eff.at(-1)?.Effort);
     // distances from the internal track, plus the live stretch since the last track point
-    // trackline breaks (GPS jumps or losses, Settings → General → Tracking) and ERROR stretches don't count
+    // ERROR stretches (GPS jumps or losses marked in the Effort table) don't count (0.45: nothing else breaks it)
     let total = 0, onDist = 0;
     const tr = S.track, tst = trackStates(tr, S.tables.effort.rows);
     for (let i = 1; i < tr.length; i++) {
-      if (tst[i] === 'ERROR' || tst[i - 1] === 'ERROR' || isTrackBreak(tr[i - 1], tr[i], st)) continue;
+      if (tst[i] === 'ERROR' || tst[i - 1] === 'ERROR') continue;
       const d = distM([+tr[i - 1].Lat, +tr[i - 1].Lon], [+tr[i].Lat, +tr[i].Lon]);
-      if (d > 20000) continue; // skip gaps (e.g. tracking paused)
       total += d;
       if (isOn(tst[i]) && isOn(tst[i - 1])) onDist += d;
     }
@@ -2243,21 +2250,22 @@ class App {
     // settings that change how the data are recorded or worked out can't change during an active survey
     const lockedNow = !!this.S.survey?.active;
     const lockNum = (k, a, b) => { const x = num(k, a, b); if (lockedNow) { x.disabled = true; x.title = 'Locked while a survey is active'; } return x; };
-    const lockNote = lockedNow ? el('p', { class: 'hint locked-note' }, '🔒 Settings that change how the data are recorded or worked out (track point interval, trackline breaks, magnetic variation) are locked while a survey is active, like the drop-down lists.') : null;
+    const lockNote = lockedNow ? el('p', { class: 'hint locked-note' }, '🔒 Locked while a survey is active: they can be changed after its End.') : null;
     const variation = el('input', { type: 'text', value: st.mag_variation, size: 8, disabled: lockedNow, title: lockedNow ? 'Locked while a survey is active' : '',
       onchange: (e) => { const v = e.target.value.trim(); if (v === '' || v === 'auto' || !isNaN(+v)) this.saveSettings({ mag_variation: v || 'auto' }); else toast('Use “auto” or a number of degrees (east +, west −)', 'warn'); } });
     pane.replaceChildren(
-      sec('Tracking and reminders',
+      // 0.45: everything here that changes what's recorded or how it's worked out, together; locked
+      // while a survey is active (like the drop-down lists and the template's data part)
+      el('section', { class: 'settings-sec', id: 'data-collection' }, el('h3', {}, 'Data collection', lockedNow ? el('span', { class: 'hint' }, ' — locked during the survey') : null),
         el('div', { class: 'grid2' },
-          chk('tracking_enabled', 'Record internal trackline (switches on at Start, off at End)'),
           el('label', { class: 'row' }, 'Track point every (s)', lockNum('tracking_interval', 1, 300)),
-          el('label', { class: 'row' }, 'Conditions reminder (min)', num('effort_reminder_min', 1, 600)),
-          el('label', { class: 'row' }, 'Break the trackline above (kn)', lockNum('track_break_kn', 0, 2000)),
-          el('label', { class: 'row' }, '… or after no GPS for (s)', lockNum('track_break_gap_s', 0, 86400))),
+          el('label', { class: 'row' }, 'Magnetic variation (° E+/W−, or auto)', variation,
+            el('span', { class: 'hint' }, ` now ${this.variation() === null ? '—' : this.variation().toFixed(1) + '°'}`))),
         lockNote,
-        el('p', { class: 'hint help' }, 'The trackline on the map, and the distances in the summary, are broken where the platform would have moved faster than this between two points (a GPS jump; 30 kn suits a vessel, use about 200 for aerial surveys), or where no position came in for that long. 0 turns either off. Tools → Error check lists each jump or gap, and its Fix button marks it in the Effort table with an ERROR row.')),
-      sec('Sleep',
+        el('p', { class: 'hint help' }, 'These change what is recorded or how it is worked out, so they can’t change while a survey is active, like the drop-down lists (Settings → Dropdowns) and the rest of the template’s data part. The trackline is recorded whenever a survey is active, a point every this many seconds, and stops at its End. It is broken on the map, and left out of the Summary’s distances, only where the Effort table has an ERROR row (Tools → Error check finds GPS jumps and gaps and its Fix adds one). “auto” variation uses the World Magnetic Model if installed, otherwise the GPS; it turns magnetic bearings into true ones.')),
+      sec('Reminders and sleep',
         el('div', { class: 'grid2' },
+          el('label', { class: 'row' }, 'Conditions reminder (min)', num('effort_reminder_min', 1, 600)),
           el('label', { class: 'row' }, 'Keep the computer awake', sel('keep_awake', [['survey', 'During a survey'], ['always', 'Always'], ['off', 'Never']]))),
         el('div', { class: 'grid2 checks' }, chk('keep_screen_on', 'Keep the screen on too')),
         el('p', { class: 'hint', id: 'awake-status' }, this.awakeText()),
@@ -2268,16 +2276,10 @@ class App {
           el('label', { class: 'row' }, 'Default distance unit (Sightings)', sel('distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards'],
             ...(this.S.config.lists.reticles || []).map((r) => [`reticles-${r.name}`, `reticles-${r.name} (a reading: Dropdowns → Reticles)`])])),
           el('label', { class: 'row' }, 'Map distance unit', sel('map_distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards']])),
-          el('label', { class: 'row' }, 'Magnetic variation (° E+/W−, or auto)', variation,
-            el('span', { class: 'hint' }, ` now ${this.variation() === null ? '—' : this.variation().toFixed(1) + '°'}`)),
           el('label', { class: 'row' }, 'Lat/lon format', sel('latlon_format', [['DDM', 'Deg + decimal min'], ['DD', 'Decimal degrees'], ['DMS', 'Deg min sec']])),
           el('label', { class: 'row' }, 'Clock', sel('timezone', this.clockOptions()), this.clockHint())),
-        el('p', { class: 'hint help' }, 'The map distance unit is used for the measuring tool, popups, routes and the Summary’s distances; the Sightings default is the Unit of new sightings. A clock bearing (Ref C) is picked from 1 to 12 o’clock, each hour 30° from the bow (3 = starboard beam). Each sighting row stores its own bearing reference and distance unit, so changing these defaults never changes old rows. “auto” variation uses the World Magnetic Model if installed, otherwise the GPS. The clock setting changes how all times are shown; the files always store the UTC offset with each time.')),
+        el('p', { class: 'hint help' }, 'The map distance unit is used for the measuring tool, popups, routes and the Summary’s distances; the Sightings default is the Unit of new sightings. A clock bearing (Ref C) is picked from 1 to 12 o’clock, each hour 30° from the bow (3 = starboard beam). Each sighting row stores its own bearing reference and distance unit, so changing these defaults never changes old rows. The clock setting changes how all times are shown; the files always store the UTC offset with each time.')),
       this.altitudeSection(sec, sel),
-      sec('GPS / NMEA inputs', el('p', {}, 'GPS and instrument inputs are in ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('inputs'); } }, 'Settings → Inputs'),
-        '; live readings and raw NMEA logging in ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('nmea'); } }, 'Tools → Instruments'), '.')),
       sec('Text size',
         el('div', { class: 'grid2' },
           dnum('grid_font_size', 'Table font size', 9, 28), dnum('ui_font_size', 'Interface font size', 9, 24),
@@ -2333,9 +2335,6 @@ class App {
         el('div', { class: 'grid2 checks' }, dchk('fade_enabled', 'Fade the trackline, sightings and events older than this (waypoints never fade)'))),
       this.tablesSection(sec, sel),
       this.resightSection(sec, dnum, dchk),
-      sec('Basemap and offline charts', el('p', {}, 'The map’s layers, downloads for offline use and the charts folder are in ',
-        el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('basemap'); } }, 'Settings → Basemap'), '.')),
-      this.foldersSection(),
       );
     for (const row of pane.querySelectorAll('label.row')) {
       const first = row.firstChild;
@@ -2703,6 +2702,10 @@ class App {
     };
     const apply = async () => {
       try {
+        // the mapping choices are saved on their own (Mapping 'Other' inputs): keep the latest ones
+        const MAPKEYS = ['show_on_map', 'color', 'line', 'width', 'trail', 'label', 'record', 'icon'];
+        const now = new Map((this.S.nmea?.all_sources || []).map((x) => [x.name, x]));
+        for (const x of sources) { const n = now.get(x.name); if (n) for (const k of MAPKEYS) if (k in n) x[k] = n[k]; }
         const r = await api('/api/nmea/sources', { sources, failover: draft.failover });
         this.S.nmea = { ...(this.S.nmea || {}), all_sources: r.sources };
         this.map.syncExternals(r.sources);
@@ -2710,6 +2713,7 @@ class App {
         this.nmeaDraft = null;
         toast('GPS inputs applied');
         this.renderInputs();
+        this.renderMapping();
       } catch {}
     };
     // 0.41/0.42: each input has a name; those in use (ticked) are run. Its role: the primary (one: the
@@ -2724,11 +2728,10 @@ class App {
       sources.forEach((s) => { if (s.role !== 'other') s.role = s === prim ? 'primary' : 'secondary'; });
     };
     fixPrimary();
-    // 0.44: two tables: the inputs (what each is and how it's reached), then how the ones that aren't the
-    // primary are drawn on the map (and, for "other" sources, recorded)
-    const mapBox = el('div', { id: 'nmea-map-box' });
+    // 0.44: the inputs table (what each is and how it's reached); how they're drawn is its own section
+    // (0.45: mappingSection, saved at once, outside Apply / Revert)
     const kindCell = (s, i) => el('select', { class: 'src-kind', 'aria-label': 'Kind of input', onchange: (e) => {
-      const keep = Object.fromEntries(['color', 'line', 'width', 'trail', 'label', 'record'].filter((k) => k in s).map((k) => [k, s[k]]));
+      const keep = Object.fromEntries(['color', 'line', 'width', 'trail', 'label', 'record', 'icon'].filter((k) => k in s).map((k) => [k, s[k]]));
       sources[i] = { name: s.name, type: e.target.value, enabled: inUse(s), role: s.role, show_on_map: !!s.show_on_map, ...keep, ...defaults[e.target.value], ...(s.session ? { session: true } : {}) };
       markDirty(); draw(); } },
       Object.keys(fields).map((t) => el('option', { value: t, selected: t === s.type }, t === 'sim' ? 'SIMULATOR' : t.toUpperCase())));
@@ -2766,7 +2769,6 @@ class App {
           el('td', {}, kindCell(s, i)),
           el('td', {}, fieldCells(s)),
           el('td', {}, el('button', { class: 'icon', title: 'Remove', onclick: () => { sources.splice(i, 1); markDirty(); draw(); } }, '✕'))))))));
-      mapBox.replaceChildren(this.inputsMapTable(sources, markDirty));
     };
     draw();
     if (draft.dirty) markDirty();
@@ -2775,6 +2777,7 @@ class App {
       ports.replaceChildren(...r.ports.map((p) => el('option', { value: p.device }, p.description)));
       this.S.nmea = r;
       this.updateNmeaStatus();
+      this.renderMapping();
       // first look at the real list (it includes --sim inputs) if nothing has been edited yet
       if (!draft.dirty && JSON.stringify(r.all_sources) !== JSON.stringify(sources)) {
         draft.sources.splice(0, draft.sources.length, ...JSON.parse(JSON.stringify(r.all_sources)));
@@ -2782,11 +2785,10 @@ class App {
       }
     }).catch(() => {});
     return el('section', { class: 'settings-sec' }, el('h3', {}, 'GPS / NMEA inputs'),
-      el('p', { class: 'hint help' }, 'Name each input for its device (e.g. “Tablet GPS”, “External GPS”, “Ship’s network”): the names travel in templates, so a template can list the inputs of every computer a team uses, and each computer ticks the ones it has. Each input in use has a role. Primary (one): the platform’s position, course, speed and heading for the survey (the track, new rows, the map). Secondary: another of the platform’s own inputs (a backup GPS, the depth sounder): its readings appear in Tools → Instruments where the primary has none, and it can stand in for the primary if you allow that below. Other: something that isn’t the platform at all — a drone, a drifting buoy, a second vessel: never used for the platform, drawn on the map with its own trail and recorded to <survey>_<name>_gps.csv (set below, under On the map). Every input’s readings (position included) are saved in the survey’s <survey>_nmea.csv with its role, every sentence goes in the raw NMEA log, and secondaries can be shown on the map as purple points. An external GPS device on the platform itself (a USB puck) is a primary or secondary, not “other”. Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
+      el('p', { class: 'hint help' }, 'Name each input for its device (e.g. “Tablet GPS”, “External GPS”, “Ship’s network”): the names travel in templates, so a template can list the inputs of every computer a team uses, and each computer ticks the ones it has. Each input in use has a role. Primary (one): the platform’s position, course, speed and heading for the survey (the track, new rows, the map). Secondary: another of the platform’s own inputs (a backup GPS, the depth sounder): its readings appear in Tools → Instruments where the primary has none, and it can stand in for the primary if you allow that below. Other: something that isn’t the platform at all — a drone, a drifting buoy, a second vessel: never used for the platform, drawn on the map with its own trail and recorded to <survey>_<name>_gps.csv (set in Mapping ‘Other’ inputs, below). Every input’s readings (position included) are saved in the survey’s <survey>_nmea.csv with its role, every sentence goes in the raw NMEA log, and secondaries can be shown on the map as purple points. An external GPS device on the platform itself (a USB puck) is a primary or secondary, not “other”. Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
       list, ports,
       el('div', { class: 'btnrow' }, el('button', { id: 'btn-add-input', onclick: () => { sources.push({ name: '', type: 'serial', enabled: true, role: sources.some((x) => x.enabled !== false && x.role !== 'other') ? 'secondary' : 'primary', ...defaults.serial }); markDirty(); draw();
           $$('#pane-inputs .src-name').at(-1)?.focus(); } }, '+ Add input')),
-      mapBox,
       el('label', { class: 'check', id: 'src-failover-row', title: 'If the primary stops sending positions for 5 seconds, use the first secondary that has one, until the primary is back' },
         el('input', { type: 'checkbox', id: 'src-failover', checked: !!draft.failover, onchange: (e) => { draft.failover = e.target.checked; markDirty(); } }),
         el('span', {}, el('b', {}, 'Fall back to a secondary: '), 'if the primary goes quiet for 5 s, take the position from a secondary (never an “other” source) until it’s back. A red banner shows while it does.')),
@@ -2826,56 +2828,80 @@ class App {
     this.updateRawLog();
   }
 
-  // 0.44: Settings → Inputs → On the map: for each input in use that isn't the primary, whether it's drawn,
-  // and for "other" sources its look (color, line, width, trail, name) and whether its track is recorded
-  inputsMapTable(sources, markDirty) {
-    const rows = sources.filter((s) => s.enabled !== false && s.role !== 'primary');
-    const head = el('h4', {}, 'On the map');
-    const help = el('p', { class: 'hint help' }, 'How the inputs in use that aren’t the primary are drawn on the map. A secondary is a purple point with its name. An “other” source has a layer of its own in the map’s Layers menu (“<name> (other)”), below the survey’s own track and markers: its trail in the color, line and width you choose, a point at its latest position (click it for its position, speed, heading, and bearing and distance from the platform) and, if ticked, its name. With Record track ticked, its fixes are saved to <survey>_<name>_gps.csv in the survey folder while a survey is active. These choices travel in templates with the input.');
-    if (!rows.length) return el('div', { id: 'nmea-map' }, head, help, el('p', { class: 'hint' }, 'No secondary or other inputs in use.'));
+  // 0.45: Settings → Inputs → Mapping 'Other' inputs (0.44's On the map, now its own section, outside the
+  // inputs' Apply / Revert): for each input in use that isn't the primary (as applied), whether it's drawn;
+  // for an other its icon, color, line, width, trail and name, and whether its track is recorded. Each
+  // change is saved at once (POST /api/nmea/map) without restarting the inputs.
+  mappingSection() {
+    const box = el('section', { class: 'settings-sec', id: 'nmea-map' });
+    this.fillMapping(box);
+    return box;
+  }
+
+  renderMapping() {
+    const box = $('#nmea-map');
+    if (box) this.fillMapping(box);
+  }
+
+  fillMapping(box) {
+    const sources = this.S.nmea?.all_sources || [];
+    const rows = [...sources.filter((s) => s.enabled !== false && s.role === 'other'),
+      ...sources.filter((s) => s.enabled !== false && s.role === 'secondary')];
+    const set = async (s, k, v) => {
+      try {
+        const r = await api('/api/nmea/map', { name: s.name, style: { [k]: v } });
+        this.S.nmea = { ...(this.S.nmea || {}), all_sources: r.sources };
+        this.map.syncExternals(r.sources);
+        const now = r.sources.find((x) => x.name === s.name);
+        if (now) Object.assign(s, now);
+        this.updateRecordWarning();
+      } catch { this.renderMapping(); }
+    };
+    const head = el('h3', {}, 'Mapping ‘Other’ inputs');
+    const help = el('p', { class: 'hint help' }, 'How the inputs in use that aren’t the primary are drawn on the map. Changes here are saved at once (no Apply needed); an input added or renamed above shows here after Apply. An “other” input (a drone, a buoy, a second vessel) has a layer of its own in the map’s Layers menu (“<name> (other)”), below the survey’s own track and markers: its trail in the color, line and width you choose, its icon at its latest position (a red ✕ over it when its GPS is lost; click it for its position, speed, heading, bearing and distance from the platform and when it was last updated) and, if ticked, its name. With Record track ticked, its fixes are saved to <survey>_<name>_gps.csv in the survey folder while a survey is active. A secondary is a purple point with its name. These choices travel in templates with the input.');
+    if (!rows.length) { box.replaceChildren(head, help, el('p', { class: 'hint' }, 'No other or secondary inputs in use.'), el('div', { id: 'other-record-warn' })); return; }
     const trailsFor = (s) => {
       const t = [['all', 'Whole survey'], ['10', 'Last 10 min'], ['30', 'Last 30 min'], ['60', 'Last hour'], ['180', 'Last 3 hours'], ['none', 'None (position only)']];
       if (!t.some(([v]) => v === String(s.trail))) t.splice(5, 0, [String(s.trail), `Last ${s.trail} min`]);
       return t;
     };
     const cells = (s) => {
-      const set = (k, v) => { s[k] = v; markDirty(); };
-      s.color ??= '#e07000'; s.line ??= 'solid'; s.width ??= 2; s.trail ??= 'all'; s.label ??= true; s.record ??= true;
-      const hexBox = el('input', { type: 'text', class: 'src-color-text', value: s.color, size: 7, 'aria-label': 'Color',
-        onchange: (e) => { if (/^#[0-9a-f]{6}$/i.test(e.target.value.trim())) { set('color', e.target.value.trim()); pick.value = s.color; } } });
-      const pick = el('input', { type: 'color', class: 'src-color', value: /^#[0-9a-f]{6}$/i.test(s.color) ? s.color : '#e07000', title: 'Pick a color',
-        oninput: (e) => { set('color', e.target.value); hexBox.value = e.target.value; } });
+      const hexBox = el('input', { type: 'text', class: 'src-color-text', value: s.color || '#e07000', size: 7, 'aria-label': 'Color',
+        onchange: (e) => { const v = e.target.value.trim(); if (/^#[0-9a-f]{6}$/i.test(v)) { pick.value = v; set(s, 'color', v); } else { toast('A color is # and 6 hex digits, e.g. #e07000', 'warn'); e.target.value = s.color; } } });
+      const pick = el('input', { type: 'color', class: 'src-color', value: /^#[0-9a-f]{6}$/i.test(s.color || '') ? s.color : '#e07000', title: 'Pick a color',
+        oninput: (e) => { hexBox.value = e.target.value; }, onchange: (e) => set(s, 'color', e.target.value) });
       return [
+        el('td', {}, el('select', { class: 'src-icon', 'aria-label': 'Icon', onchange: (e) => set(s, 'icon', e.target.value) },
+          EXTERNAL_ICONS.map(([v, l]) => el('option', { value: v, selected: (s.icon || 'circle') === v }, l)))),
         el('td', {}, el('span', { class: 'color-cell' }, pick, hexBox)),
-        el('td', {}, el('select', { class: 'src-line', 'aria-label': 'Line', onchange: (e) => set('line', e.target.value) },
-          LINE_STYLES.map(([v, l]) => el('option', { value: v, selected: s.line === v }, l)))),
-        el('td', {}, el('input', { type: 'number', class: 'src-width', 'aria-label': 'Width', min: 0.5, max: 10, step: 0.5, value: s.width, style: { width: '4.5em' },
-          onchange: (e) => set('width', +e.target.value || 2) })),
-        el('td', {}, el('select', { class: 'src-trail', 'aria-label': 'Trail', onchange: (e) => set('trail', /^\d+$/.test(e.target.value) ? +e.target.value : e.target.value) },
-          trailsFor(s).map(([v, l]) => el('option', { value: v, selected: String(s.trail) === v }, l)))),
+        el('td', {}, el('select', { class: 'src-line', 'aria-label': 'Line', onchange: (e) => set(s, 'line', e.target.value) },
+          LINE_STYLES.map(([v, l]) => el('option', { value: v, selected: (s.line || 'solid') === v }, l)))),
+        el('td', {}, el('input', { type: 'number', class: 'src-width', 'aria-label': 'Width', min: 0.5, max: 10, step: 0.5, value: s.width ?? 2, style: { width: '4.5em' },
+          onchange: (e) => set(s, 'width', +e.target.value || 2) })),
+        el('td', {}, el('select', { class: 'src-trail', 'aria-label': 'Trail', onchange: (e) => set(s, 'trail', /^\d+$/.test(e.target.value) ? +e.target.value : e.target.value) },
+          trailsFor(s).map(([v, l]) => el('option', { value: v, selected: String(s.trail ?? 'all') === v }, l)))),
         el('td', { class: 'c' }, el('input', { type: 'checkbox', class: 'src-label', 'aria-label': 'Show the name', title: 'Write the name beside its position on the map',
-          checked: s.label !== false, onchange: (e) => set('label', e.target.checked) })),
+          checked: s.label !== false, onchange: (e) => set(s, 'label', e.target.checked) })),
         el('td', { class: 'c' }, el('input', { type: 'checkbox', class: 'src-record', 'aria-label': 'Record track', title: 'While a survey is active, save every fix to <survey>_<name>_gps.csv in the survey folder',
-          checked: s.record !== false, onchange: (e) => { set('record', e.target.checked); this.updateRecordWarning(sources); } }))];
+          checked: s.record !== false, onchange: (e) => set(s, 'record', e.target.checked) }))];
     };
     const table = el('table', { class: 'nmea-map-table' },
-      el('thead', {}, el('tr', {}, ['Name', 'Role', 'Show on the map', 'Color', 'Line', 'Width', 'Trail', 'Show name', 'Record track'].map((h) => el('th', {}, h)))),
+      el('thead', {}, el('tr', {}, ['Name', 'Role', 'Show on the map', 'Icon', 'Color', 'Line', 'Width', 'Trail', 'Show name', 'Record track'].map((h) => el('th', {}, h)))),
       el('tbody', {}, rows.map((s) => el('tr', { class: `nmea-map-row role-${s.role}`, 'data-name': s.name || '' },
         el('td', {}, el('b', {}, s.name || '(no name)')),
         el('td', {}, s.role === 'other' ? 'Other' : 'Secondary'),
         el('td', { class: 'c' }, el('input', { type: 'checkbox', class: 'src-map', 'aria-label': 'Show on the map', title: 'Show where this input says it is on the map',
-          checked: !!s.show_on_map, onchange: (e) => { s.show_on_map = e.target.checked; markDirty(); } })),
-        ...(s.role === 'other' ? cells(s) : [el('td', { colspan: 6, class: 'hint' }, 'A purple point with its name')])))));
-    const box = el('div', { id: 'nmea-map' }, head, help, el('div', { class: 'table-scroll' }, table), el('div', { id: 'other-record-warn' }));
-    queueMicrotask(() => this.updateRecordWarning(sources));
-    return box;
+          checked: !!s.show_on_map, onchange: (e) => set(s, 'show_on_map', e.target.checked) })),
+        ...(s.role === 'other' ? cells(s) : [el('td', { colspan: 7, class: 'hint' }, 'A purple point with its name')])))));
+    box.replaceChildren(head, help, el('div', { class: 'table-scroll' }, table), el('div', { id: 'other-record-warn' }));
+    this.updateRecordWarning(sources);
   }
 
   // 0.44: an "other" source set to record, with no active survey: say it's recorded only during a survey
   updateRecordWarning(sources) {
     const box = $('#other-record-warn');
     if (!box) return;
-    sources ??= this.nmeaDraft?.sources || this.S.nmea?.all_sources || [];
+    sources ??= this.S.nmea?.all_sources || [];
     const names = sources.filter((s) => s.enabled !== false && s.role === 'other' && s.record !== false).map((s) => s.name || '(no name)');
     const sv = this.S.survey;
     if (!names.length || sv?.active) { box.replaceChildren(); box.className = ''; return; }
@@ -2890,7 +2916,7 @@ class App {
   renderInputs() {
     const pane = $('#pane-inputs');
     if (!pane) return;
-    pane.replaceChildren(this.nmeaSection(), el('p', { class: 'hint' }, 'Live readings from these inputs and the raw NMEA log are in ',
+    pane.replaceChildren(this.nmeaSection(), this.mappingSection(), el('p', { class: 'hint' }, 'Live readings from these inputs and the raw NMEA log are in ',
       el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('nmea'); } }, 'Tools → Instruments'), '. The online overlays (AIS, weather radar, map feeds) are in ',
       el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('overlays'); } }, 'Tools → Overlays'), '.'));
     this.updateNmeaStatus();

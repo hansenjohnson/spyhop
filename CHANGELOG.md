@@ -6,6 +6,16 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.45.0 — 2026-11-11
+
+- **Trackline breaks only at ERROR rows:** the trackline on the map, in the HTML summary and in the Summary's distances is broken only where the Effort table has an ERROR row; the trackline-break settings are gone. The Error check flags GPS jumps faster than 30 kn (shipboard, stationary) or 200 kn (aerial, other) and gaps over 120 s (or 3 track intervals), on or off effort, each with **Fix**; the limits can be changed in the Error check.
+- **Tracking follows the survey:** the trackline is always recorded while a survey is active and never otherwise (no setting, no Resume tracking). Opening an active survey continues it; after a crash it carries on recording and asks whether to continue or close.
+- **Mapping ‘Other’ inputs:** its own section in Settings → Inputs, below GPS / NMEA inputs, saved at once (outside Apply / Revert). New **Icon** choice (shapes, vessel or aircraft turning with heading, tower). A **red ✕** over an other source's icon when its GPS is lost; its popup shows **Last updated**.
+- **Glare:** with Glare None, Gstart and Gend are NA; otherwise they must be bearings. Gref defaults to M.
+- **Settings → General:** a **Data collection** section (track point interval, magnetic variation; locked during a survey); the Folders section and the pointers to Basemap and Inputs are gone.
+- **Data folder:** always `data/` in Spyhop's folder (it can't be changed). The Survey tab's **Saved Surveys** has **Open Data Folder**; Settings → About lists every folder as a link.
+- **Updates:** checked when Spyhop starts (on by default; quick, silent when offline); a newer version is always offered with Install / Not now, never installed by itself.
+
 ## 0.44.0 — 2026-11-11
 
 - **"Other" instead of "external":** the role for a drone, buoy or second vessel is now **Other**, so it isn't confused with an external GPS device; its map layer is **<name> (other)**. Inputs saved as external become other.
