@@ -207,18 +207,62 @@ export async function api(path, body, method) {
 
 // A very small Markdown renderer for the changelog: ## headings, - bullets (one level of
 // nesting), paragraphs, **bold** and `code`. Text is escaped first, so it's safe.
-export function renderMarkdown(md) {
+// GitHub-style heading anchors ("Clock check" → "clock-check"), so links like [x](#clock-check) work in the Guide too
+export function slugify(t) {
+  return t.toLowerCase().replace(/<[^>]+>/g, '').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().replace(/\s/g, '-');
+}
+
+// A small Markdown renderer for the Guide, the changelog and update notes: headings (# → h3, ## → h4,
+// ### → h5, #### → h6, each with a GitHub-style id), paragraphs, nested - / 1. lists, tables, ``` code
+// blocks, **bold**, *italic*, `code` and [links](…). docBase: where relative links (other docs) point.
+const DOC_BASE = 'https://github.com/hansenjohnson/spyhop/blob/main/docs/';
+export function renderMarkdown(md, docBase = DOC_BASE) {
+  const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const href = (u) => {
+    if (u.startsWith('#') || /^[a-z]+:/i.test(u)) return u;
+    try { return new URL(u, docBase).href; } catch { return u; }
+  };
   const inline = (t) => {
     const span = document.createElement('span');
-    span.innerHTML = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>');
+    const codes = [];
+    let h = esc(t).replace(/`([^`]+)`/g, (m, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000`; });
+    h = h.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, txt, u) => {
+      const url = href(u.replace(/&amp;/g, '&'));
+      return url.startsWith('#') ? `<a href="${url}" data-anchor="${url.slice(1)}">${txt}</a>`
+        : `<a href="${url.replace(/"/g, '%22')}" target="_blank" rel="noopener">${txt}</a>`;
+    }).replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')
+      .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+      .replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?!\w)/g, '$1<i>$2</i>')
+      .replace(/\u0000(\d+)\u0000/g, (m, i) => `<code>${codes[+i]}</code>`);
+    span.innerHTML = h;
     return span;
   };
-  const out = [];
-  let list = null, sub = null, para = [];   // list: a <ul>, or an <ol> for "1. " lines
+  const out = [], slugs = new Map();
+  let list = null, sub = null, para = [], code = null, table = null;   // list: a <ul>, or an <ol> for "1. " lines
   const flushPara = () => { if (para.length) { const p = document.createElement('p'); p.append(inline(para.join(' '))); out.push(p); para = []; } };
+  const cells = (line) => line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
   for (const raw of md.split('\n')) {
     const line = raw.replace(/\s+$/, '');
+    if (code) {                                   // inside a ``` block
+      if (/^\s*```/.test(line)) { out.push(code); code = null; } else code.firstChild.append(raw + '\n');
+      continue;
+    }
+    if (/^\s*```/.test(line)) { flushPara(); list = sub = table = null; code = document.createElement('pre'); code.append(document.createElement('code')); continue; }
+    if (/^\s*\|.*\|\s*$/.test(line)) {           // a table row
+      flushPara(); list = sub = null;
+      if (/^\s*\|[\s:|-]+\|\s*$/.test(line)) continue;     // the |---|---| line
+      if (!table) {
+        table = document.createElement('table'); table.className = 'md-table';
+        const tr = table.createTHead().insertRow();
+        for (const c of cells(line)) { const th = document.createElement('th'); th.append(inline(c)); tr.append(th); }
+        table.createTBody(); out.push(table);
+      } else {
+        const tr = table.tBodies[0].insertRow();
+        for (const c of cells(line)) tr.insertCell().append(inline(c));
+      }
+      continue;
+    }
+    table = null;
     const m = line.match(/^(\s*)(- |\d+\. )(.*)$/);
     if (m) {
       flushPara();
@@ -235,12 +279,20 @@ export function renderMarkdown(md) {
     }
     if (/^\s+\S/.test(line) && list) { (sub || list).lastChild?.append(' ', inline(line.trim())); continue; }
     list = null; sub = null;
-    const h = line.match(/^(#{1,3}) (.*)$/);
-    if (h) { flushPara(); const e = document.createElement(h[1].length === 1 ? 'h3' : 'h4'); e.append(inline(h[2])); out.push(e); continue; }
+    const h = line.match(/^(#{1,4}) (.*)$/);
+    if (h) {
+      flushPara();
+      const e = document.createElement(`h${h[1].length + 2}`); e.append(inline(h[2]));
+      let id = slugify(h[2].replace(/[*`]/g, '')), n = slugs.get(id) || 0;
+      slugs.set(id, n + 1); if (n) id = `${id}-${n}`;
+      e.dataset.slug = id;
+      out.push(e); continue;
+    }
     if (!line.trim()) { flushPara(); continue; }
     para.push(line.trim());
   }
   flushPara();
+  if (code) out.push(code);
   return out;
 }
 

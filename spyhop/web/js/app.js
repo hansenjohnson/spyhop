@@ -1540,50 +1540,70 @@ class App {
     pane.replaceChildren(this.aboutSection());
   }
 
-  // Settings → Guide: the tutorial (docs/TUTORIAL.md); it doesn't change, so it's drawn once
+  // Settings → Guide: the user guide (docs/USER_GUIDE.md, 0.49: the tutorial is its Quick start);
+  // it doesn't change, so it's drawn once
   renderGuide() {
     const pane = $('#pane-guide');
-    if (!pane || pane.querySelector('#tutorial-section .tutorial h3, #tutorial-section .tutorial h4')) return;
+    if (!pane || pane.querySelector('#guide-section .tutorial h4')) return;
     const tut = el('div', { class: 'tutorial' }, el('p', { class: 'hint' }, 'Loading the guide…'));
-    pane.replaceChildren(el('section', { class: 'settings-sec', id: 'tutorial-section' }, tut));
-    fetch('/api/tutorial').then((r) => r.text()).then((md) => {
+    pane.replaceChildren(el('section', { class: 'settings-sec', id: 'guide-section' }, tut));
+    fetch('/api/guide').then((r) => r.text()).then((md) => {
       // drop the sentence that points back to this tab
       const nodes = renderMarkdown(md.replace(/ It's also in Spyhop itself, under \*\*Settings → (?:Guide|About)\*\*\./, ''));
-      tut.replaceChildren(...(nodes.length ? nodes : [el('p', { class: 'hint' }, 'The guide (docs/TUTORIAL.md) is missing.')]));
+      tut.replaceChildren(...(nodes.length ? nodes : [el('p', { class: 'hint' }, 'The guide (docs/USER_GUIDE.md) is missing.')]));
       this.guideContents(tut);
     }).catch(() => {});
   }
 
-  // the Guide's contents (0.39): a list of its sections beside it (above it in a narrow pane);
-  // the section being read is highlighted
+  // the Guide's contents (0.39; two levels since 0.49): its sections (##) beside it (above it in a narrow
+  // pane), with the subsections (###) of the section being read shown under it, highlighted as you read
   guideContents(tut) {
-    const heads = [...tut.querySelectorAll('h4')];
-    if (heads.length < 2) return;
-    const links = heads.map((h, i) => {
-      h.id = `guide-${i + 1}`;
-      return el('a', { href: `#${h.id}`, 'data-sec': h.id, onclick: (e) => {
-        e.preventDefault();
-        h.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        mark(h.id);
-      } }, h.textContent);
-    });
-    const top = el('a', { href: '#', class: 'guide-top', onclick: (e) => { e.preventDefault(); wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, '↑ Top');
-    const nav = el('nav', { class: 'guide-toc', 'aria-label': 'Guide contents' }, el('b', {}, 'Contents'), el('ol', {}, links.map((a) => el('li', {}, a))), top);
-    const mark = (id) => links.forEach((a) => a.classList.toggle('active', a.dataset.sec === id));
+    const heads = [...tut.querySelectorAll('h4, h5')];
+    for (const h of heads) h.id = `guide-${h.dataset.slug}`;
+    // links inside the guide ([Templates](#templates)) scroll to their heading
+    tut.querySelectorAll('a[data-anchor]').forEach((a) => a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const h = wrap.querySelector(`.tutorial [data-slug="${CSS.escape(a.dataset.anchor)}"]`);
+      if (h) { h.scrollIntoView({ block: 'start' }); mark(h.id); }
+    }));
+    const tops = heads.filter((h) => h.tagName === 'H4');
+    if (tops.length < 2) return;
+    const go = (h) => (e) => { e.preventDefault(); h.scrollIntoView({ block: 'start' }); mark(h.id); };
+    const items = [], links = [];
+    let cur = null;
+    for (const h of heads) {
+      const a = el('a', { href: `#${h.id}`, 'data-sec': h.id, onclick: go(h) }, h.textContent);
+      links.push(a);
+      if (h.tagName === 'H4') { cur = { li: el('li', {}, a), sub: null, ids: [h.id] }; items.push(cur); }
+      else if (cur) {
+        if (!cur.sub) { cur.sub = el('ol', { class: 'guide-sub' }); cur.li.append(cur.sub); }
+        cur.sub.append(el('li', {}, a)); cur.ids.push(h.id);
+      }
+    }
+    const top = el('a', { href: '#', class: 'guide-top', onclick: (e) => { e.preventDefault(); wrap.scrollIntoView({ block: 'start' }); } }, '↑ Top');
+    const nav = el('nav', { class: 'guide-toc', 'aria-label': 'Guide contents' }, el('b', {}, 'Contents'), el('ol', {}, items.map((i) => i.li)), top);
+    const mark = (id) => {
+      links.forEach((a) => a.classList.toggle('active', a.dataset.sec === id));
+      items.forEach((i) => i.li.classList.toggle('open', i.ids.includes(id)));
+    };
     const wrap = el('div', { class: 'guide-wrap' }, nav, tut.cloneNode(false));
     const body = wrap.lastChild;
     body.append(...tut.childNodes);
     tut.replaceWith(wrap);
     mark(heads[0].id);
-    try {
-      const seen = new Map();
-      const io = new IntersectionObserver((ents) => {
-        ents.forEach((e) => seen.set(e.target.id, e.isIntersecting ? e.boundingClientRect.top : null));
-        const vis = heads.filter((h) => seen.get(h.id) != null);
-        if (vis.length) mark(vis[0].id);
-      }, { rootMargin: '0px 0px -60% 0px' });
-      heads.forEach((h) => io.observe(h));
-    } catch { /* no IntersectionObserver: no highlight */ }
+    // the section being read: the last heading at or above the top of the pane (plus a little)
+    const scroller = $('#pane-guide');
+    let raf = 0;
+    scroller?.addEventListener('scroll', () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const top = scroller.getBoundingClientRect().top + 14;
+        let at = heads[0];
+        for (const h of heads) { if (h.getBoundingClientRect().top <= top) at = h; else break; }
+        mark(at.id);
+      });
+    }, { passive: true });
   }
 
   aboutSection() {

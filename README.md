@@ -50,7 +50,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
   - **Reports:** pick species or event types, conditions and columns from any table, see the result live, and save it as CSV, HTML or PDF; save reports by name, share them in templates, and run them all at once
 - **Templates:** save a team's setup as one small `.spyhop-template.zip` file: its **data part** (the lists, reticles, saved reports and the settings that change what's recorded) and its **preferences** (shortcuts, map display, inputs, map feeds), and optionally waypoints, routes and overlays. Switch between templates, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer gets the latest with one button and keeps a backup. During a survey the data part is locked, so every record of a survey is made with the same lists and settings.
 - **Export:** separate CSVs, a merged time-ordered CSV (sightings, effort, events and track) with the conditions on every row, GPX, GeoJSON, the summary and saved reports, in one zip.
-- **Help built in:** a tutorial with contents in **Settings → Guide**, a **?** next to each section heading, a description of every column, and in-app updates.
+- **Help built in:** the user guide, with a quick start and contents, in **Settings → Guide**, a **?** next to each section heading, a description of every column, and in-app updates.
 
 ## System requirements
 
@@ -168,12 +168,11 @@ See [Starting, quitting and updating](#starting-quitting-and-updating) and, if a
 6. **Record sightings and events:** press **Add row** in the Sightings or Events tab, use a shortcut (Ctrl/⌘+Shift+S for a sighting, Ctrl/⌘+Shift+V for an event), or right-click the map.
 7. **Finish:** **Tools → Error check → Run error check** and fix what it finds, then **Survey → End Survey…** and **Export Data…** (or **Save Survey Package…** to move the survey to another computer).
 
-The **tutorial** in **Settings → Guide** (also [docs/TUTORIAL.md](docs/TUTORIAL.md)) walks through all of this, including the simulator, templates, error checking and reports.
+The **Quick start** of the user guide, in **Settings → Guide** (also [docs/USER_GUIDE.md](docs/USER_GUIDE.md#quick-start)), walks through all of this, including the simulator, templates, error checking and reports.
 
 ## Documentation
 
-- [docs/TUTORIAL.md](docs/TUTORIAL.md): a short tour of the main tasks.
-- [docs/USER_GUIDE.md](docs/USER_GUIDE.md): the full reference, covering every tab, the files Spyhop writes, export formats, offline maps, and the differences from the OpenCPN plugin.
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md): the user guide (also in Spyhop under **Settings → Guide**): a quick start that walks through a survey, then every tab, templates, the files Spyhop writes, export formats, offline maps, and the differences from the OpenCPN plugin.
 - [docs/TEMPLATES.md](docs/TEMPLATES.md): sharing a team's template (lists, settings, saved reports and more) across computers.
 - [docs/DEVELOPERS.md](docs/DEVELOPERS.md): running from source, the code layout and the tests.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.

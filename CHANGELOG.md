@@ -6,6 +6,13 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.49.0 — 2026-11-12
+
+- **One user guide:** the tutorial and the user guide are now one document, `docs/USER_GUIDE.md`, which starts with a **Quick start** (the old tutorial). It's shown in **Settings → Guide**. `docs/TUTORIAL.md` is gone.
+- The guide was reviewed against the current Spyhop. It now has a **Templates** section covering what's in a template (the data part and preferences), the drop-down lists, shortcuts, sharing and what's locked during a survey. It says "template" throughout, not "config files".
+- **Settings → Guide:** the contents list has two levels. It lists each section, and opens the subsections of the one you're reading. The guide shows tables, code blocks, italics and links: links within the guide jump to their section, and links to other documents open on GitHub.
+- README: installation grouped by operating system (Python, then Spyhop), with more help on installing Python.
+
 ## 0.48.0 — 2026-11-12
 
 - **Clock check:** Spyhop compares the computer's clock with the GPS time. A difference over 2 s shows in the status bar (click it), and **Start New Survey** asks you to sync first. **Sync** sets the computer's clock to the GPS time (it asks for administrator rights) and works only between surveys. Also in Settings → General → Data collection. Each survey's details record `clock_offset_at_start`.

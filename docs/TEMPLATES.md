@@ -2,10 +2,10 @@
 
 A **template** is your team's Spyhop settings in one small file, so every computer can be set up to record the same way. It holds:
 
-- the species, event types, observers and behaviors lists, and the keyboard shortcuts
+- the drop-down lists (species, event types, behaviors, observers, effort, visibility, weather) and the reticles, and the keyboard shortcuts
 - the map display (marker shapes and colors, track styles, text sizes)
 - the saved reports (Tools → Reports)
-- the shared settings: clock, units, tracking, keep awake, raw NMEA log, and the named GPS / NMEA inputs (serial, UDP, TCP, gpsd)
+- the shared settings (clock, units, track point interval, magnetic variation, keep awake, raw NMEA log…) and the named GPS / NMEA inputs (serial, UDP, TCP, gpsd)
 - the map feeds and which online overlays are switched on
 - and, if you choose, waypoints, routes and overlays
 
@@ -25,7 +25,7 @@ Settings → Templates shows what would change under these headings. A list chan
 
 **Every list has Other.** Because lists can't change during a survey, each one has an entry **Other** (and the reticles a placeholder **reticles-Other**, which keeps the reading but works out no distance). Record anything missing from a list as Other, with a note; after the survey, add the right entry to the list and replace Other in those rows. The Error check lists every row that uses Other. Other can't be renamed or removed, and a template list without it gets it added at the end.
 
-Offline charts are not in templates (they are far too big); copy them between computers separately (see the USER_GUIDE, *Offline charts*). Survey data, file replays, the simulator and the data folder are never in a template either.
+Offline charts are not in templates (they are far too big); copy them between computers separately (see the [user guide](USER_GUIDE.md#base-maps-and-offline-charts)). Survey data, file replays, the simulator and the data folder are never in a template either.
 
 Templates are updated by hand: Spyhop never looks for a newer template, or changes anything, until someone presses **Check** or **Use this template…**.
 
@@ -41,7 +41,7 @@ Templates live in the **`templates` folder in Spyhop's own folder** (Settings �
 
 This computer's own settings, which never go in a template (which GPS / NMEA inputs are in use and which is the primary, file replays and the simulator, the window layout, the last survey details, which survey is open), are in `spyhop-local.json` next to the `templates` folder.
 
-You can edit the files in `templates/current` by hand (keep a copy first), then press **Reload config files** (Settings → Dropdowns) or restart Spyhop.
+You can edit the files in `templates/current` by hand (keep a copy first), then press **Reload from the file** (under the Settings → Dropdowns or Shortcuts editor) or restart Spyhop.
 
 ## Managing templates
 

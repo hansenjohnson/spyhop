@@ -396,8 +396,9 @@ class App:
     async def changelog(self, request):
         return self._markdown(Path(__file__).parent.parent / "CHANGELOG.md")
 
-    async def tutorial(self, request):
-        return self._markdown(Path(__file__).parent.parent / "docs" / "TUTORIAL.md")
+    async def guide(self, request):
+        # 0.49: the tutorial and the user guide are one document; its Quick start is the old tutorial
+        return self._markdown(Path(__file__).parent.parent / "docs" / "USER_GUIDE.md")
 
     @staticmethod
     def _markdown(p: Path):
@@ -1594,7 +1595,7 @@ class App:
         r.add_post("/api/diagnostics", self.diagnostics)
         r.add_get("/api/diagnostics/{name}", self.diagnostics_file)
         r.add_get("/api/changelog", self.changelog)
-        r.add_get("/api/tutorial", self.tutorial)
+        r.add_get("/api/guide", self.guide)
         r.add_get("/api/instruments/history", self.inst_history)
         r.add_post("/api/client-log", self.client_log)
         r.add_post("/api/qc", self.qc)

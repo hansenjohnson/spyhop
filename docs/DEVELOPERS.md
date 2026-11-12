@@ -61,7 +61,7 @@ spyhop/
     js/summary_html.js   the self-contained Summary page (HTML export)
     js/util.js           formatting, geodesy and small helpers
     vendor/              Leaflet, the Natural Earth coastline
-docs/            TUTORIAL.md (shown in Settings → Guide), USER_GUIDE.md, this file
+docs/            USER_GUIDE.md (shown in Settings → Guide), TEMPLATES.md, this file
 tests/test_core.py   pytest
 CHANGELOG.md     changes in each version (shown in Settings → About)
 ```

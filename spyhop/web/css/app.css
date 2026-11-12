@@ -373,7 +373,17 @@ span.ok { color: var(--ok); }
 
 .tutorial { max-width: 60em; line-height: 1.5; }
 .tutorial h3 { margin-top: 0; }
-.tutorial h4 { margin: 1.4em 0 0.3em; }
+.tutorial h3 { font-size: 1.35em; }
+.tutorial h4 { margin: 1.6em 0 0.3em; font-size: 1.2em; border-bottom: 1px solid var(--line); padding-bottom: 0.15em; }
+.tutorial h5 { margin: 1.2em 0 0.25em; font-size: 1.02em; }
+.tutorial h6 { margin: 1em 0 0.2em; font-size: 0.95em; }
+.tutorial h4, .tutorial h5 { scroll-margin-top: 0.5em; }
+.tutorial pre { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 0.6em 0.8em; overflow-x: auto; font-size: 0.85em; line-height: 1.35; }
+.tutorial pre code { background: none; padding: 0; }
+.tutorial table.md-table { border-collapse: collapse; margin: 0.5em 0 0.8em; }
+.tutorial table.md-table th, .tutorial table.md-table td { border: 1px solid var(--line); padding: 0.3em 0.6em; text-align: left; vertical-align: top; }
+.tutorial table.md-table th { background: var(--panel2); }
+.tutorial a { color: var(--accent); }
 .tutorial ol, .tutorial ul { margin: 0.3em 0 0.6em; padding-left: 1.6em; }
 .tutorial li { margin: 0.15em 0; }
 
@@ -550,6 +560,8 @@ h2 .help-btn, h3 .help-btn, h4 .help-btn { font-size: 0.72rem; }
 .guide-toc { flex: 0 0 15em; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); padding: 0.6em 0.9em; }
 .guide-toc ol { margin: 0.4em 0 0.5em; padding-left: 1.5em; }
 .guide-toc li { margin: 0.2em 0; }
+.guide-toc ol.guide-sub { display: none; margin: 0.15em 0 0.3em; padding-left: 1.1em; list-style: none; font-size: 0.92em; }
+.guide-toc li.open > ol.guide-sub { display: block; }
 .guide-toc a { color: var(--accent); text-decoration: none; }
 .guide-toc a:hover { text-decoration: underline; }
 .guide-toc a.active { font-weight: 700; }
