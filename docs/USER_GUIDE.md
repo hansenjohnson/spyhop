@@ -145,7 +145,6 @@ The **map** (top left), **Survey, Tools and Settings** (top right), and the **da
 - speed, course and heading
 - the **conditions-check countdown** (click it to open the Effort table; the interval is in Settings → General), which flashes when overdue
 - the survey name, whether the trackline is being recorded (always while a survey is active), and the effort in force
-- **Check** with the number of errors, warnings and notes the last Error check found (click it to open the Error check); a dot means the data has changed since
 - **Clock N s ahead of / behind the GPS**, only when the computer's clock is more than 2 s off (click it; see [Clock check](#clock-check))
 - a red **GPS FALLBACK** banner across the top while a secondary input stands in for the primary (see [GPS and instruments](#gps-and-instruments))
 - the Spyhop version (click it for Settings → About)
@@ -173,6 +172,7 @@ The **map** (top left), **Survey, Tools and Settings** (top right), and the **da
 - **Layers menu** (top right): **Layers** (the **Platform icon**, **Effort** (the on-effort track), **Track** (the off-effort track), sightings, **resights** (their markers and the lines to and through them; the first sightings stay when it's off), events, waypoints, routes, imported overlays, range rings, a **graticule** (a lat/lon grid that adapts to the zoom), and each **other** GPS source in use) and **Online overlays** (AIS, weather radar, map feeds).
 - **Right-click menu:** add a sighting, event or waypoint at that point; measure from here; copy the position.
 - **Readout (bottom left):** the cursor position, its bearing and distance from the vessel, the depth at the cursor on the Seascape map, and a scale.
+- **Map credits (ⓘ, bottom right):** click or tap it to see who made the map tiles; click it again, or the map, to fold them away.
 
 ### Tabs
 
@@ -220,11 +220,12 @@ The tables work like a spreadsheet:
 - Enter **Bearing** and **Distance**, and the animals' position (**SigLat/SigLon**) is worked out. Bearings can be negative and count back from 360 (−10 is stored as 350), which is handy for relative bearings to port. Without a bearing and distance, SigLat/SigLon are the vessel position. A position picked on the map gets its bearing and distance worked out backwards.
 - Each row stores its own bearing reference (**Ref**: M magnetic, T true, R relative to the bow, **C clock**) and distance **Unit**, so changing the defaults in Settings never changes old rows. The vessel heading is saved in the CSV (`VesHdg`, not shown) so relative bearings can be converted. Magnetic bearings use the World Magnetic Model.
 - **Clock bearings (Ref C):** the Bearing cell offers 1 to 12 o'clock. Each hour is 30° from the bow: 12 dead ahead, 3 the starboard beam, 6 astern, 9 the port beam. Choose C as the **Default bearing reference** in Settings → General to have it on every new sighting.
-- **Reticle distances** (Settings → Dropdowns → Reticles): each entry of the reticles list is a **Unit**, `reticles-<name>` (e.g. `reticles-binos`), offered in the Unit column and as the default distance unit. With one, Dist is a reading, and Spyhop works out the distance from it and the sighting's **Alt** (filled in from the survey's platform altitude; edit it if the height was different), allowing for the curvature of the earth (Lerczak & Hobbs 1998). A reading at or above the horizon gives no distance. Each entry has a **name** (letters, digits, `-`, `_` and `.`; no spaces) and a method:
+- **Reticle distances** (Settings → Dropdowns → Reticles): each entry of the reticles list is a **Unit**, `reticles-<name>` (e.g. `reticles-binos`), offered in the Unit column and as the default distance unit. With one, Dist is a reading, and Spyhop works out the distance from it and the sighting's **Alt** (filled in from the **Default observer altitude**, Settings → General → Altitude and reticles; edit it if the height was different), allowing for the curvature of the earth (Lerczak & Hobbs 1998). A reading at or above the horizon gives no distance. Each entry has a **name** (letters, digits, `-`, `_` and `.`; no spaces) and a method:
   - **Binocular reticles:** the number of divisions counted down from the horizon to the animals. Choose the **magnification**, which suggests the angle of one division, and correct **Degrees per division** for your binoculars. Many 7× and 10× marine binoculars have a 10-mil scale (0.573°); Fujinon 25×150 big-eyes are 0.0771° (Kinzey & Gerrodette 2001).
   - **Calibrated marks:** evenly spaced marks (e.g. on an aircraft's window or wing strut), counted down from the horizontal (mark 0). **Degrees per division** is the angle from one mark to the next; type the mark number (it can be a fraction, e.g. 2.5) in Dist.
   - **Inclinometer degrees:** the angle below the horizontal, in degrees (90° is straight down).
   - The default list has `binos` (7×, 0.573°), `big-eyes` (25×, 0.0771°) and `incl` (inclinometer). Several can be used in one survey, and each sighting records which.
+- **Default observer altitude (ft)** (Settings → General → Altitude and reticles): the observers' eye height above the water on a ship or station, or the usual survey altitude for an aircraft. It fills in each new sighting's Alt, which turns reticle readings into distances. It's a shared setting, so it travels with the template.
 - **The Alt column** (Settings → General → Altitude and reticles): *Automatic* shows it for aerial surveys and hides it for shipboard and stationary ones; it can also be always shown or hidden. It is always kept in the file.
 
 ### Resights
@@ -296,7 +297,7 @@ Inputs are set up in **Settings → Inputs** (GPS / NMEA inputs).
 - **Mapping ‘Other’ inputs** (below the inputs): a row for each input in use that isn't the primary. Changes here are saved at once, without Apply:
   - **Show on the map:** a secondary is drawn as a purple point with its name; an other source is on the map unless unticked.
   - For an other source: its **Icon** (circle, square, triangle, diamond, star, a vessel, aircraft or drone that turns with its heading, or a tower), **Color**, **Line**, **Width**, **Trail** (the whole survey, the last 10 min to 3 hours, or none) and **Show name**. Each has its own entry in the map's layers menu, *<name> (other)*, drawn below the survey's own track and markers. **Click its icon** for its name, position, speed, heading, bearing and distance from the platform, and when it was last updated. If its GPS is lost (no position for 15 s), a red ✕ is drawn over its icon.
-  - **Record track** (on unless unticked): while a survey is active, every fix is saved in the survey folder as `<survey>_<name>_gps.csv`. With no survey open, a warning says the track is drawn but not saved.
+  - **Record track** (on unless unticked): while a survey is active, every fix is saved in the survey folder as `<survey>_<name>_gps.gpx`. With no survey open, a warning says the track is drawn but not saved.
 - **Start New Survey** warns when there's no GPS position (no input in use, or nothing from the primary), with a link here. *Start anyway* starts the survey regardless. A stationary survey with a station position doesn't need a GPS (see [Survey details and platform types](#survey-details-and-platform-types)).
 - **Fall back to a secondary** (off unless ticked): if the primary sends no position for 5 s, the position is taken from the first secondary with one (never an other source) until the primary is back, with a red **GPS FALLBACK** banner across the top of the window.
 
@@ -333,7 +334,7 @@ Spyhop reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS,
 
 ### Survey details and platform types
 
-The details are **platform name** (vessel, aircraft or station), **platform type**, **platform altitude (ft)**, **organization**, **chief scientist** and **chief scientist email**. They're filled in from your last survey and can be changed any time in Survey.
+The details are **platform name** (vessel, aircraft or station), **platform type**, **organization**, **chief scientist** and **chief scientist email**. They're filled in from your last survey and can be changed any time in Survey.
 
 - **Platform type** sets the map marker and how the trackline is kept:
   - **Shipboard:** a ship, turned to the heading.
@@ -341,7 +342,7 @@ The details are **platform name** (vessel, aircraft or station), **platform type
   - **Stationary:** a tower. The platform doesn't move, so only the Start and End positions are recorded, with no trackline in between. The status bar says *Stationary (no trackline)*.
     - **Station latitude / longitude** (shown only for Stationary): the station's position, in any lat/lon format (e.g. `41 54.05 N`, `070 19.80 W`). When both are given, that position is the platform position for the whole survey (every row, the map), the status bar says **STATION**, and no GPS is needed: Start New Survey doesn't ask for a GPS fix or check the clock. Give both or neither; leave them blank to use the GPS. They can be corrected during the survey (new records use the new position).
   - **Other:** a dot. The trackline is recorded.
-- **Platform altitude (ft)** is the observers' eye height above the water on a ship or station, or the usual survey altitude for an aircraft. It fills in each new sighting's Alt and turns reticle readings into distances.
+- The observers' height above the water is **Default observer altitude (ft)** in Settings → General → Altitude and reticles (see [Sightings](#sightings)).
 - **Survey notes** (below the details): general notes or a summary of the survey, as many lines as you like. They're shown in the Summary and its HTML and PDF files.
 - The details are saved with the survey as `<survey>_metadata.csv` and included in exports and the summary.
 
@@ -374,7 +375,7 @@ Phones, tablets or a screen on the bridge or in the galley can follow the survey
 1. On the laptop, open **Settings → Sharing** and tick **Let other devices on this network watch**.
 2. On the other device, join the same network (Wi-Fi or cable) and scan the QR code shown there, or type the address under it (for example `http://192.168.1.20:8766`).
 
-The status bar shows **Sharing: N viewers**, and Settings → Sharing lists who is watching. **Disconnect all viewers** closes their connections.
+Settings → Sharing lists who is watching (the Survey tab shows how many). **Disconnect all viewers** closes their connections.
 
 - **A PIN** (optional, 4–12 letters or digits): viewers type it once on each device. Leave it blank to let anyone on the network watch. Changing the PIN, or Disconnect all viewers, asks every viewer for it again. A wrong PIN is refused, and each wrong try makes the next one wait longer.
 - **What viewers see:** everything but the laptop's folders, its GPS / NMEA inputs and the details remembered from earlier surveys. The survey details shown in the Summary are included. Viewers see the settings tabs, but nothing there can be changed except how Spyhop looks in that browser: text size, the map display, columns, lat/lon format, clock. **Use the laptop's settings again** (in their Settings → General) undoes those. Each viewer also keeps its own tab, map view and Follow vessel choice.
@@ -389,7 +390,9 @@ The status bar shows **Sharing: N viewers**, and Settings → Sharing lists who 
 
 **Tools → Error check:** press **Run error check** before you finish a survey (or any time). It lists problems as **errors** (must fix), **warnings** (probably wrong) and **notes** (worth a look). **Show** takes you to the row and column in the data table (the row flashes). It doesn't change anything, except when you press a **Fix** button. **Save report…** downloads the list as a CSV.
 
-**Check automatically** runs the check quietly every 1, 2, 5, 10, 15 or 30 minutes while a survey is active (off by default). The counts show in the status bar, the highlights in the tables are kept up to date, and a message pops up when a check finds more errors or warnings than the one before. It's a shared setting, so it travels with the template.
+The counts of the last check (errors, warnings, notes) show at the right of the data tables' header, next to the Sightings, Effort and Events tabs; click them to open the Error check. A dot means the data has changed since. **What is checked** lists every check, with a link to your rules (Settings → Rules).
+
+**Check automatically** runs the check quietly every 1, 2, 5, 10, 15 or 30 minutes while a survey is active (off by default). The counts next to the data tabs, the highlights in the tables are kept up to date, and a message pops up when a check finds more errors or warnings than the one before. It's a shared setting, so it travels with the template.
 
 **Highlight in the tables** (next to the Show filter) colors each cell with a problem in the Sightings, Effort and Events tables, in the color of its level (red for errors, amber for warnings, blue for notes), for the levels ticked in Show. A problem with a whole row colors the row number; hover over a cell to read its problems. The colors are from the last check: run it again after fixing things. It's remembered on this computer.
 
@@ -607,7 +610,7 @@ Spyhop/                                   (Spyhop's own folder)
   data/                                   (the survey data folder)
     <survey name>/                one folder per survey
       <survey>_sightings.csv  _effort.csv  _events.csv  _track.csv  _metadata.csv  _nmea.csv
-      <survey>_<name>_gps.csv     the track of each "other" input
+      <survey>_<name>_gps.gpx     the track of each "other" input
       <survey>_template.zip       the template the survey was started with
       exports/     exports, summaries, reports and survey packages
       nmea_logs/   raw NMEA logs

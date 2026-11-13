@@ -16,6 +16,7 @@ import re
 import time
 import zipfile
 from datetime import datetime, timedelta, timezone
+from xml.sax.saxutils import escape as xml_escape, unescape as xml_unescape
 from pathlib import Path
 
 from . import __version__, geo, resights, reticle, schema, tzguess
@@ -353,14 +354,6 @@ class Recorder:
                 if match is None:
                     raise ValueErrorMsg("Platform type must be Shipboard, Aerial, Stationary or Other.")
                 v = match
-            if k == "platform_altitude_ft" and v:
-                try:
-                    f = float(v)
-                except ValueError:
-                    raise ValueErrorMsg("Platform altitude must be a number of feet.")
-                if not 0 < f <= 60000:
-                    raise ValueErrorMsg("Platform altitude must be more than 0 and at most 60000 ft.")
-                v = f"{f:g}"
             if k in schema.STATION_META and v:          # 0.48: the station's position, as decimal degrees
                 try:
                     v = f"{geo.parse_coord(v, k == 'platform_lat'):.6f}"
@@ -393,9 +386,10 @@ class Recorder:
         return meta
 
     def platform(self) -> tuple[str, str]:
-        """(platform type, platform altitude in ft) of the open survey, else of the last survey details."""
+        """(platform type of the open survey, else of the last survey details; the default observer altitude in ft,
+        Settings → General → Altitude and reticles, 0.54: it was the survey details' Platform altitude)."""
         meta = self.read_meta() if self.survey else (self.cfg.settings.get("last_meta") or {})
-        return meta.get("platform_type") or "", meta.get("platform_altitude_ft") or ""
+        return meta.get("platform_type") or "", str(self.cfg.settings.get("observer_altitude_ft") or "")
 
     def survey_info(self) -> dict | None:
         if self.survey is None:
@@ -754,26 +748,30 @@ class Recorder:
 
     # -- "other" inputs (0.43; called external before 0.44): a drone, a drifting buoy, a second vessel --
     # (internal names still say ext/external.) Each one's fixes: a trail kept in memory for the map (since the survey started, or since Spyhop
-    # started with no survey open) and, while a survey is active and the input's "record" is on, a file
-    # <survey>_<name>_gps.csv in the survey folder (0.44; _ext_<name> in 0.43) (DateTime, Lat, Lon, SOG, COG, Heading, GPSTime).
-    EXT_COLUMNS = ["DateTime", "Lat", "Lon", "SOG", "COG", "Heading", "GPSTime"]
+    # started with no survey open) and, while a survey is active and the input's "record" is on, a track file
+    # <survey>_<name>_gps.gpx in the survey folder (0.54: GPX, so it can be shared or opened as an overlay; a CSV
+    # in 0.43–0.53), one trkpt per fix with its time (UTC) and speed (kn), course, heading and GPS time as extensions.
     EXT_MAX_POINTS = 50000          # per external, in memory (the file keeps them all)
+    EXT_GPX_TAIL = "</trkseg></trk>\n</gpx>\n"
+    EXT_GPX_NS = "https://github.com/hansenjohnson/spyhop/gpx/1"
 
     @staticmethod
     def ext_stem(name: str) -> str:
         return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_.") or "other"
 
     def _ext_path(self, name: str) -> Path | None:
-        return self._file(self.survey["prefix"], f"{self.ext_stem(name)}_gps") if self.survey else None
+        return self._file(self.survey["prefix"], f"{self.ext_stem(name)}_gps", "gpx") if self.survey else None
 
     def _ext_files(self) -> list[Path]:
         if not self.survey:
             return []
         folder = self.cfg.survey_dir(self.survey["prefix"])
         try:
-            return sorted(folder.glob(f"{glob.escape(self.survey['prefix'])}_*_gps.csv"))
+            return sorted(folder.glob(f"{glob.escape(self.survey['prefix'])}_*_gps.gpx"))
         except OSError:
             return []
+
+    _TRKPT = re.compile(r'<trkpt lat="([-0-9.]+)" lon="([-0-9.]+)">\s*<time>([^<]+)</time>')
 
     def _load_externals(self):
         """The trails of a survey's recorded externals, from its files (so they survive a restart)."""
@@ -784,17 +782,47 @@ class Recorder:
             stem = p.stem[len(self.survey["prefix"]) + 1: -len("_gps")]
             pts = []
             try:
-                with open(p, newline="", encoding="utf-8-sig") as fh:
-                    for r in csv.DictReader(fh):
-                        t = parse_time(r.get("DateTime", ""))
-                        try:
-                            pts.append((t.timestamp(), float(r["Lat"]), float(r["Lon"])))
-                        except (AttributeError, KeyError, TypeError, ValueError):
-                            continue
+                text = p.read_text(encoding="utf-8", errors="replace")
             except OSError as e:
                 log.warning("couldn't read %s: %s", p, e)
+                continue
+            m = re.search(r"<trk>\s*<name>([^<]*)</name>", text)
+            if m:
+                self.ext_names[stem] = xml_unescape(m.group(1))
+            for la, lo, t in self._TRKPT.findall(text):
+                tt = parse_time(t)
+                try:
+                    pts.append((tt.timestamp(), float(la), float(lo)))
+                except (AttributeError, ValueError):
+                    continue
             if pts:
                 self.ext_tracks[stem] = pts[-self.EXT_MAX_POINTS:]
+
+    def _ext_append(self, p: Path, name: str, trkpt: str):
+        """Add one trkpt to a track file, keeping the file a complete GPX after every fix."""
+        tail = self.EXT_GPX_TAIL.encode()
+        if not p.exists():
+            head = (f'<?xml version="1.0" encoding="UTF-8"?>\n'
+                    f'<gpx version="1.1" creator="Spyhop {__version__}" xmlns="http://www.topografix.com/GPX/1/1" '
+                    f'xmlns:spyhop="{self.EXT_GPX_NS}">\n'
+                    f'<metadata><name>{xml_escape(self.survey["name"] if self.survey else "")}: {xml_escape(name)}</name>'
+                    f'<desc>Track of the "other" GPS input {xml_escape(name)}, recorded by Spyhop</desc></metadata>\n'
+                    f'<trk><name>{xml_escape(name)}</name><trkseg>\n')
+            p.write_bytes(head.encode() + trkpt.encode() + tail)
+            return
+        with open(p, "r+b") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - len(tail)))
+            if fh.read() == tail:
+                fh.seek(size - len(tail))
+            else:                              # cut off mid-write (a crash): continue after the last whole point
+                fh.seek(0)
+                data = fh.read()
+                i = data.rfind(b"</trkpt>")
+                fh.seek(i + len(b"</trkpt>\n") if i >= 0 else data.find(b"<trkseg>") + len(b"<trkseg>\n"))
+            fh.write(trkpt.encode() + tail)
+            fh.truncate()
 
     def tick_externals(self, decoder, inputs: list[dict]):
         """Called every second: add each external's new fix to its trail, and to its file while a survey is
@@ -818,16 +846,14 @@ class Recorder:
             if self.survey_active() and src.get("record", True) is not False:
                 p = self._ext_path(name)
                 hdg = st.heading if st.heading_updated and time.time() - st.heading_updated < 10 else None
-                row = [datetime.fromtimestamp(st.updated, timezone.utc).astimezone(self.tz()).isoformat(timespec="seconds"),
-                       f"{st.lat:.6f}", f"{st.lon:.6f}", "" if st.sog is None else round(st.sog, 2),
-                       "" if st.cog is None else round(st.cog, 1), "" if hdg is None else round(hdg, 1), st.gps_time or ""]
+                ext = "".join(f"<spyhop:{k}>{v}</spyhop:{k}>" for k, v in (
+                    ("sog", None if st.sog is None else round(st.sog, 2)), ("cog", None if st.cog is None else round(st.cog, 1)),
+                    ("heading", None if hdg is None else round(hdg, 1)), ("gpstime", xml_escape(str(st.gps_time)) if st.gps_time else None)) if v is not None)
+                when = datetime.fromtimestamp(st.updated, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                trkpt = (f'<trkpt lat="{st.lat:.6f}" lon="{st.lon:.6f}"><time>{when}</time>'
+                         + (f"<extensions>{ext}</extensions>" if ext else "") + "</trkpt>\n")
                 try:
-                    new = not p.exists()
-                    with open(p, "a", newline="", encoding="utf-8") as fh:
-                        w = csv.writer(fh)
-                        if new:
-                            w.writerow(self.EXT_COLUMNS)
-                        w.writerow(row)
+                    self._ext_append(p, name, trkpt)
                 except OSError as e:
                     log.warning("couldn't save the track of %s: %s", name, e)
 

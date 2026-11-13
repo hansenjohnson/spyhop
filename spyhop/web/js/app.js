@@ -229,7 +229,10 @@ class App {
           el('div', { class: 'pane-body', id: 'util-body' }),
           el('button', { class: 'strip-btn', 'data-pane': 'util', title: 'Show Survey, Tools and Settings', onclick: () => this.setPaneMin('util', false) }, '◂ Survey · Tools · Settings')),
         el('section', { id: 'data-pane', class: 'pane', 'aria-label': 'Data tables' },
-          el('div', { class: 'pane-head' }, el('nav', { id: 'tabs', class: 'pane-tabs', role: 'tablist' }), el('span', { class: 'tabs-spacer' }), ...winBtns('data', 'the data tables')),
+          el('div', { class: 'pane-head' }, el('nav', { id: 'tabs', class: 'pane-tabs', role: 'tablist' }), el('span', { class: 'tabs-spacer' }),
+            // 0.54: the last Error check's counts (in the status bar before)
+            el('button', { id: 'sf-qc', class: 'qc-head', hidden: true, title: 'The last Error check — click to open it (Tools → Error check)', onclick: () => this.showTab('qc') }),
+            ...winBtns('data', 'the data tables')),
           el('div', { class: 'pane-body', id: 'data-body' }),
           el('footer', { id: 'bottom' })),
         el('button', { id: 'split-v', class: 'pane-split', 'aria-label': 'Resize the map and Survey/Tools/Settings (drag, or use ← →)', title: 'Drag to resize · double-click to share equally' }),
@@ -257,8 +260,6 @@ class App {
       f('sf-survey', 'Current survey'),
       f('sf-track', 'Internal trackline (recorded while a survey is active)'),
       f('sf-effort', 'Latest effort state'),
-      f('sf-qc', 'The last Error check — click to open it (Tools → Error check)'),
-      f('sf-sharing', 'Other devices watching this Spyhop (view only) — click for Settings → Sharing'),
       f('sf-viewer', 'This window is view only: data and settings are changed on the laptop running Spyhop', 'View only'),
       el('div', { class: 'sf grow' }),
       f('sf-version', 'Spyhop version — click for details (Settings → About)', `Spyhop ${this.S.about?.spyhop || ''}`));
@@ -267,8 +268,6 @@ class App {
     this.updateClockCheck();
     $('#sf-remind').addEventListener('click', () => this.showTab('effort'));
     $('#sf-survey').addEventListener('click', () => this.showTab('survey'));
-    $('#sf-qc').addEventListener('click', () => this.showTab('qc'));
-    $('#sf-sharing').addEventListener('click', () => this.showTab('sharing'));
     $('#sf-viewer').hidden = !this.S.viewer;
     this.updateSharingStatus();
     this.updateQcStatus();
@@ -1545,7 +1544,9 @@ class App {
         if (shown.length < rep.issues.length) kids.push(el('p', { class: 'hint' }, `${rep.issues.length - shown.length} hidden by the Show filter.`));
       }
       kids.push(el('details', {}, el('summary', {}, 'What is checked'),
-        el('ul', { class: 'qc-checks' }, rep.checks.map(([name, what]) => el('li', {}, el('b', {}, name), ' — ', what)))));
+        el('ul', { class: 'qc-checks' }, rep.checks.map(([name, what]) => el('li', {}, el('b', {}, name), ' — ', what,
+          // 0.54: the rules are edited in Settings → Rules
+          name === 'Rules' ? [' ', el('a', { href: '#', id: 'qc-rules-link', onclick: (e) => { e.preventDefault(); this.showTab('rules'); } }, 'See or change the rules (Settings → Rules)')] : null)))));
     }
     return el('section', { class: 'settings-sec', id: 'qc-section' }, el('h3', {}, 'Error check'), ...kids);
   }
@@ -1633,13 +1634,13 @@ class App {
     const auto = Number(this.S.config.settings.qc_auto_minutes) || 0;
     if (!sv || !rep || rep.survey !== sv.prefix) {
       f.hidden = !(sv?.active && auto);
-      f.replaceChildren('Check: ', el('span', { class: 'hint' }, `every ${auto} min`));
+      f.replaceChildren('Error check: ', el('span', { class: 'hint' }, `every ${auto} min`));
       return;
     }
     f.hidden = false;
     const c = rep.counts, t = timeParts(rep.generated, this.clock());
     f.title = `Error check at ${t.time.slice(0, 5)} ${t.abbr}${this.qcStale ? ' (the data has changed since)' : ''}${auto ? `; checked automatically every ${auto} min` : ''} — click to open it`;
-    f.replaceChildren('Check ',
+    f.replaceChildren('Error check ',
       el('span', { class: 'qc-pill error' }, String(c.error)), ' ',
       el('span', { class: 'qc-pill warning' }, String(c.warning)), ' ',
       el('span', { class: 'qc-pill info' }, String(c.info)),
@@ -2170,7 +2171,7 @@ class App {
       el('div', { class: 'summary-details' }, kv([['Started', fmtT(sv.start_time)],
         ['Ended', sv.ended ? fmtT(sv.end_time) : 'still active'],
         ['Duration', t0 ? fmtDuration((t1 - t0) / 1000) : '—'],
-        ['Platform', platform || '—'], ['Platform altitude', meta.platform_altitude_ft ? `${meta.platform_altitude_ft} ft` : '—'], ['Organization', meta.organization || '—'], ['Chief scientist', meta.chief_scientist || '—'],
+        ['Platform', platform || '—'], ['Organization', meta.organization || '—'], ['Chief scientist', meta.chief_scientist || '—'],
         ['Chief scientist email', meta.chief_scientist_email ? el('a', { href: `mailto:${meta.chief_scientist_email}` }, meta.chief_scientist_email) : '—']])),
       meta.survey_notes ? el('h3', {}, 'Survey notes') : null,
       meta.survey_notes ? el('p', { class: 'survey-notes' }, meta.survey_notes) : null,
@@ -2536,8 +2537,12 @@ class App {
   altitudeSection(sec, sel) {
     return sec('Altitude and reticles',
       el('div', { class: 'grid2' },
-        el('label', { class: 'row' }, 'Altitude column in Sightings', sel('altitude_column', [['auto', 'Automatic'], ['show', 'Always shown'], ['hide', 'Hidden']]))),
-      el('p', { class: 'hint help' }, 'Automatic shows the Alt column for aerial surveys and hides it for shipboard and stationary ones (Survey tab → Platform type). It is always kept in the file. How reticle readings become distances (binoculars, calibrated marks, an inclinometer) is set up in Settings → Dropdowns → Reticles: each entry becomes a Unit, reticles-<name>, in Sightings.'),
+        el('label', { class: 'row' }, 'Altitude column in Sightings', sel('altitude_column', [['auto', 'Automatic'], ['show', 'Always shown'], ['hide', 'Hidden']])),
+        // 0.54: was the survey details' Platform altitude
+        el('label', { class: 'row' }, 'Default observer altitude (ft)', el('input', { type: 'number', id: 'observer-altitude', min: 0, max: 60000, step: 'any',
+          value: this.S.config.settings.observer_altitude_ft ?? '', placeholder: 'none',
+          onchange: (e) => this.saveSettings({ observer_altitude_ft: e.target.value.trim() }) }))),
+      el('p', { class: 'hint help' }, 'Default observer altitude: the observers’ eye height above the water (on a ship or station), or the usual survey altitude (aircraft). It fills in each new sighting’s Alt, which turns reticle readings into distances; change a row’s Alt if the height was different. Automatic shows the Alt column for aerial surveys and hides it for shipboard and stationary ones (Survey tab → Platform type). It is always kept in the file. How reticle readings become distances (binoculars, calibrated marks, an inclinometer) is set up in Settings → Dropdowns → Reticles: each entry becomes a Unit, reticles-<name>, in Sightings.'),
       el('p', {}, 'Reticles: ', el('a', { href: '#', id: 'link-reticles', onclick: (e) => { e.preventDefault(); this.ddTab = 'reticles'; this.showTab('dropdowns'); } }, 'Settings → Dropdowns → Reticles')));
   }
 
@@ -3006,7 +3011,7 @@ class App {
       visibility: 'The Vis drop-down in Effort. The Error check reads distances from the names (e.g. “1-2 nm” is at most 2 nm, “<0.5 nm” at most 0.5; km, m and mi are understood) to flag sightings beyond the visibility.',
       weather: 'The Weather drop-down in Effort.',
       effort: 'The Effort drop-down in Effort. Status decides whether a value counts as on or off effort: for the track on the map (drawn in the value’s color, with the on- or off-effort width and line from Settings → General → Map display), the Summary’s time on effort and distances, reports and the Error check. Start, End and ERROR are needed by Spyhop and can’t be renamed or removed: Start and End are the first and last rows (Start / End survey in the Survey tab), and Error check → Fix adds ERROR rows to mark a trackline break.',
-      reticles: 'How reticle readings are turned into distances. Each entry is a Unit in Sightings, reticles-<name> (e.g. reticles-binos): type the reading in Dist and the animals’ position comes from the bearing, the reading and the platform altitude (the row’s Alt), allowing for the curvature of the earth (Lerczak & Hobbs 1998). Binocular reticles: divisions counted down from the horizon, each a fixed angle (the magnification suggests one, but check the binoculars’ manual or calibrate them: many 7×50 and 10× marine binoculars have a 10-mil scale, 0.573° per division; Fujinon 25×150 big-eyes are 0.0771°, Kinzey & Gerrodette 2001). Calibrated marks: evenly spaced marks (e.g. on an aircraft’s window or strut), counted down from the horizontal (mark 0); Degrees per division is the angle between one mark and the next, so mark n is n × that angle below the horizontal (no magnification). Inclinometer degrees: the reading is the angle below the horizontal (90 = straight down). Other (reticles-Other) is the placeholder: the reading is kept, but no distance is worked out until the right reticle is put in after the survey. Names may use letters, digits, - _ and . (no spaces).' }[cur];
+      reticles: 'How reticle readings are turned into distances. Each entry is a Unit in Sightings, reticles-<name> (e.g. reticles-binos): type the reading in Dist and the animals’ position comes from the bearing, the reading and the observer altitude (the row’s Alt; new rows get the default from Settings → General), allowing for the curvature of the earth (Lerczak & Hobbs 1998). Binocular reticles: divisions counted down from the horizon, each a fixed angle (the magnification suggests one, but check the binoculars’ manual or calibrate them: many 7×50 and 10× marine binoculars have a 10-mil scale, 0.573° per division; Fujinon 25×150 big-eyes are 0.0771°, Kinzey & Gerrodette 2001). Calibrated marks: evenly spaced marks (e.g. on an aircraft’s window or strut), counted down from the horizontal (mark 0); Degrees per division is the angle between one mark and the next, so mark n is n × that angle below the horizontal (no magnification). Inclinometer degrees: the reading is the angle below the horizontal (90 = straight down). Other (reticles-Other) is the placeholder: the reading is kept, but no distance is worked out until the right reticle is put in after the survey. Names may use letters, digits, - _ and . (no spaces).' }[cur];
     pane.replaceChildren(pills, el('section', { class: `settings-sec dd-sec${locked ? ' dd-locked' : ''}` },
       el('h3', {}, Object.fromEntries(lists)[cur]),
       locked ? el('p', { class: 'warnbox', id: 'dd-locked' }, el('b', {}, cols.includes('color') ? 'A survey is under way, so only the colors can be changed. ' : 'A survey is under way, so this list can’t be changed. '),
@@ -3156,13 +3161,7 @@ class App {
   // ---------------------------------------------------------------- Settings → Sharing (0.53)
   // Other devices on the vessel's network (phones, tablets, a screen on the bridge) watch in a browser,
   // view only. Only this laptop can enter or change data.
-  updateSharingStatus() {
-    const f = $('#sf-sharing');
-    if (!f) return;
-    const sh = this.S.sharing;
-    f.hidden = !!this.S.viewer || !sh?.listening;
-    if (sh?.listening) { const n = sh.viewers.length; f.textContent = `Sharing: ${n} viewer${n === 1 ? '' : 's'}`; }
-  }
+  updateSharingStatus() {}         // 0.54: the count is in Settings → Sharing (and the Survey tab) only
 
   async renderSharing() {
     const pane = $('#pane-sharing');
@@ -3362,7 +3361,7 @@ class App {
       }
     }).catch(() => {});
     return el('section', { class: 'settings-sec' }, el('h3', {}, 'GPS / NMEA inputs'),
-      el('p', { class: 'hint help' }, 'Name each input for its device (e.g. “Tablet GPS”, “External GPS”, “Ship’s network”): the names travel in templates, so a template can list the inputs of every computer a team uses, and each computer ticks the ones it has. Each input in use has a role. Primary (one): the platform’s position, course, speed and heading for the survey (the track, new rows, the map). Secondary: another of the platform’s own inputs (a backup GPS, the depth sounder): its readings appear in Tools → Instruments where the primary has none, and it can stand in for the primary if you allow that below. Other: something that isn’t the platform at all — a drone, a drifting buoy, a second vessel: never used for the platform, drawn on the map with its own trail and recorded to <survey>_<name>_gps.csv (set in Mapping ‘Other’ inputs, below). Every input’s readings (position included) are saved in the survey’s <survey>_nmea.csv with its role, every sentence goes in the raw NMEA log, and secondaries can be shown on the map as purple points. An external GPS device on the platform itself (a USB puck) is a primary or secondary, not “other”. Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
+      el('p', { class: 'hint help' }, 'Name each input for its device (e.g. “Tablet GPS”, “External GPS”, “Ship’s network”): the names travel in templates, so a template can list the inputs of every computer a team uses, and each computer ticks the ones it has. Each input in use has a role. Primary (one): the platform’s position, course, speed and heading for the survey (the track, new rows, the map). Secondary: another of the platform’s own inputs (a backup GPS, the depth sounder): its readings appear in Tools → Instruments where the primary has none, and it can stand in for the primary if you allow that below. Other: something that isn’t the platform at all — a drone, a drifting buoy, a second vessel: never used for the platform, drawn on the map with its own trail and recorded to <survey>_<name>_gps.gpx (set in Mapping ‘Other’ inputs, below). Every input’s readings (position included) are saved in the survey’s <survey>_nmea.csv with its role, every sentence goes in the raw NMEA log, and secondaries can be shown on the map as purple points. An external GPS device on the platform itself (a USB puck) is a primary or secondary, not “other”. Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
       list, ports,
       el('div', { class: 'btnrow' }, el('button', { id: 'btn-add-input', onclick: () => { sources.push({ name: '', type: 'serial', enabled: true, role: sources.some((x) => x.enabled !== false && x.role !== 'other') ? 'secondary' : 'primary', ...defaults.serial }); markDirty(); draw();
           $$('#pane-inputs .src-name').at(-1)?.focus(); } }, '+ Add input')),
@@ -3435,7 +3434,7 @@ class App {
       } catch { this.renderMapping(); }
     };
     const head = el('h3', {}, 'Mapping ‘Other’ inputs');
-    const help = el('p', { class: 'hint help' }, 'How the inputs in use that aren’t the primary are drawn on the map. Changes here are saved at once (no Apply needed); an input added or renamed above shows here after Apply. An “other” input (a drone, a buoy, a second vessel) has a layer of its own in the map’s Layers menu (“<name> (other)”), below the survey’s own track and markers: its trail in the color, line and width you choose, its icon at its latest position (a red ✕ over it when its GPS is lost; click it for its position, speed, heading, bearing and distance from the platform and when it was last updated) and, if ticked, its name. With Record track ticked, its fixes are saved to <survey>_<name>_gps.csv in the survey folder while a survey is active. A secondary is a purple point with its name. These choices travel in templates with the input.');
+    const help = el('p', { class: 'hint help' }, 'How the inputs in use that aren’t the primary are drawn on the map. Changes here are saved at once (no Apply needed); an input added or renamed above shows here after Apply. An “other” input (a drone, a buoy, a second vessel) has a layer of its own in the map’s Layers menu (“<name> (other)”), below the survey’s own track and markers: its trail in the color, line and width you choose, its icon at its latest position (a red ✕ over it when its GPS is lost; click it for its position, speed, heading, bearing and distance from the platform and when it was last updated) and, if ticked, its name. With Record track ticked, its fixes are saved to <survey>_<name>_gps.gpx in the survey folder while a survey is active. A secondary is a purple point with its name. These choices travel in templates with the input.');
     if (!rows.length) { box.replaceChildren(head, help, el('p', { class: 'hint' }, 'No other or secondary inputs in use.'), el('div', { id: 'other-record-warn' })); return; }
     const trailsFor = (s) => {
       const t = [['all', 'Whole survey'], ['10', 'Last 10 min'], ['30', 'Last 30 min'], ['60', 'Last hour'], ['180', 'Last 3 hours'], ['none', 'None (position only)']];
@@ -3459,7 +3458,7 @@ class App {
           trailsFor(s).map(([v, l]) => el('option', { value: v, selected: String(s.trail ?? 'all') === v }, l)))),
         el('td', { class: 'c' }, el('input', { type: 'checkbox', class: 'src-label', 'aria-label': 'Show the name', title: 'Write the name beside its position on the map',
           checked: s.label !== false, onchange: (e) => set(s, 'label', e.target.checked) })),
-        el('td', { class: 'c' }, el('input', { type: 'checkbox', class: 'src-record', 'aria-label': 'Record track', title: 'While a survey is active, save every fix to <survey>_<name>_gps.csv in the survey folder',
+        el('td', { class: 'c' }, el('input', { type: 'checkbox', class: 'src-record', 'aria-label': 'Record track', title: 'While a survey is active, save every fix to <survey>_<name>_gps.gpx in the survey folder',
           checked: s.record !== false, onchange: (e) => set(s, 'record', e.target.checked) }))];
     };
     const table = el('table', { class: 'nmea-map-table' },

@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.54.0 — 2026-11-13
+
+- **Map credits** fold into a small ⓘ at the bottom right, so they no longer cover the cursor position, distance and depth readout; click or tap it to read them. The Seascape credit no longer names OpenStreetMap (Spyhop leaves out Seascape's OpenStreetMap background).
+- **Default observer altitude (ft)** is now in Settings → General → Altitude and reticles (it was **Platform altitude** in the survey details). It fills in new sightings' Alt as before, and travels with the template. Surveys started earlier keep the altitude already in their rows; set the default once in Settings.
+- **"Other" GPS inputs' tracks** are saved as GPX files, `<survey>_<name>_gps.gpx`, so they can be shared or opened as overlays (they were CSV files). Each point has its time and, as GPX extensions, speed, course and heading. Tracks recorded as CSV by earlier versions aren't read any more.
+- **The Error check counts** moved from the status bar to the right of the data tables' header (next to Sightings, Effort and Events).
+- **Error check → What is checked** has a link to Settings → Rules.
+- **The status bar** no longer shows "Sharing: N viewers"; Settings → Sharing and the Survey tab do.
+
 ## 0.53.0 — 2026-11-13
 
 - **Settings → Sharing:** phones, tablets or a screen on the bridge on the vessel's network can open Spyhop in a browser and follow the survey live, view only. Only the laptop running Spyhop enters or changes data. Sharing is off until it's switched on. Settings → Sharing shows the address to type, with a QR code for each, the devices watching and **Disconnect all viewers**; the status bar shows **Sharing: N viewers**.

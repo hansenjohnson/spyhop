@@ -329,6 +329,7 @@ DEFAULT_SETTINGS = {
     "nmea_log_enabled": False,      # write every received NMEA sentence to <data folder>/nmea_logs
     "nmea_log_timestamps": True,
     "altitude_column": "auto",      # Sightings' Alt column: auto (shown for aerial surveys) | show | hide
+    "observer_altitude_ft": "",     # 0.54: the default observer altitude (ft), filled in as new sightings' Alt (was the survey details' Platform altitude)
     "segment_column": "show",       # Effort's Seg (effort segment) column: show | hide
     "qc_auto_minutes": 0,           # 0.52: run the Error check every N minutes (1–30) during a survey; 0: off
     "column_layout": {},            # this computer's column order and widths: {tab: {order: [keys], widths: {key: px}}}
@@ -378,6 +379,7 @@ SHARED_SETTINGS = {
     "nmea_log_enabled": "Raw NMEA log",
     "nmea_log_timestamps": "Raw NMEA log time stamps",
     "altitude_column": "Altitude column",
+    "observer_altitude_ft": "Default observer altitude (ft)",
     "segment_column": "Effort segment column",
     "qc_auto_minutes": "Error check automatically (min)",
 }
@@ -394,7 +396,7 @@ INPUT_FLAGS = ("enabled", "role", "show_on_map", "primary")
 
 # 0.43: how an "other" source is drawn and kept: its color, line (solid/dashed/dotted/dashdot) and width, how
 # much trail (all of it, the last N minutes, or none: a point only), whether its name shows on the map and
-# whether its fixes are recorded to <survey>_<name>_gps.csv (0.44). They belong to the device, so they travel in
+# whether its fixes are recorded to <survey>_<name>_gps.gpx (0.44). They belong to the device, so they travel in
 # templates with the input (preferences, never data).
 EXTERNAL_COLORS = ["#e07000", "#0097a7", "#c2185b", "#7cb342", "#5e35b1", "#6d4c41"]
 LINE_STYLES = ("solid", "dashed", "dotted", "dashdot")
@@ -516,7 +518,7 @@ TEMPLATE_FORMAT = 3
 DEFAULT_TILE_SOURCES = ["name", "url", "attribution", "overlay", "max_zoom", "kind"], [
     # kind "style": a MapLibre style (vector tiles), drawn with MapLibre GL and cached like the rest
     ["Seascape depths (feet)", "https://tiles.openwaters.io/seascape/style.json?unit=ft",
-     "Seascape by Open Waters (CC BY 4.0), © OpenStreetMap contributors — not for navigation", "0", "22", "style"],
+     "Seascape by Open Waters (CC BY 4.0) — not for navigation", "0", "22", "style"],
     ["Esri Ocean", "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
      "Esri, GEBCO, NOAA, Garmin, HERE", "0", "13", "raster"],
     ["Esri Imagery", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -935,6 +937,17 @@ class Config:
             updates = {**updates, "nmea_sources": clean_inputs(updates["nmea_sources"])}
         if updates and "keep_awake" in updates and updates["keep_awake"] not in ("off", "survey", "always"):
             updates = {**updates, "keep_awake": "survey"}
+        if updates and "observer_altitude_ft" in updates:
+            v = str(updates["observer_altitude_ft"] if updates["observer_altitude_ft"] is not None else "").strip()
+            if v:
+                try:
+                    f = float(v)
+                except ValueError:
+                    raise ValueError("The default observer altitude is a number of feet (or blank).")
+                if not 0 < f <= 60000:
+                    raise ValueError("The default observer altitude is more than 0 and at most 60000 ft.")
+                v = f"{f:g}"
+            updates = {**updates, "observer_altitude_ft": v}
         if updates and "qc_auto_minutes" in updates:
             try:
                 n = int(float(updates["qc_auto_minutes"] or 0))

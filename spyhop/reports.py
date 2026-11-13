@@ -360,7 +360,7 @@ def to_html(rec, res: dict) -> str:
     dates = _dates(rec, res.get("survey")) if rec.survey is not None else ""
     if dates:
         info.append(("Date" if "–" not in dates else "Dates", dates))
-    info += [(labels[k], meta[k]) for k in ("platform_name", "platform_type", "platform_altitude_ft", "organization", "chief_scientist",
+    info += [(labels[k], meta[k]) for k in ("platform_name", "platform_type", "organization", "chief_scientist",
                                             "chief_scientist_email") if meta.get(k)]
     now = rec.now()
     cols = res["columns"]

@@ -45,8 +45,6 @@ FIXED_LISTS = {
 SURVEY_META = [
     ("platform_name", "Platform name", "Vessel, aircraft or station name"),
     ("platform_type", "Platform type", "Shipboard, Aerial, Stationary or Other"),
-    ("platform_altitude_ft", "Platform altitude (ft)",
-     "Observers’ average eye height above the water (ship or station), or the usual survey altitude (aircraft)"),
     # 0.48: a Stationary platform's position, used for every record of the survey (no GPS needed)
     ("platform_lat", "Station latitude", "Stationary platforms: the station's latitude, used for every record (e.g. 41 54.05 N)"),
     ("platform_lon", "Station longitude", "Stationary platforms: the station's longitude (e.g. 070 19.80 W)"),

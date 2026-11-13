@@ -2215,7 +2215,8 @@ def test_reticle_sighting_altitude_and_platforms(tmp_path):
     rec = Recorder(tmp_path)
     rec.decoder.feed(with_checksum("GPRMC,120000,A,4154.000,N,07020.000,W,10.0,045.0,041126,14.5,W"))
     rec.cfg.save_settings({"distance_unit": "reticles-binos", "tracking_interval": 1})      # 0.37: the reticles list
-    rec.start_survey("R", meta={"platform_type": "Shipboard", "platform_altitude_ft": "33"})
+    rec.cfg.save_settings({"observer_altitude_ft": "33"})          # 0.54: Settings → General (was the survey's Platform altitude)
+    rec.start_survey("R", meta={"platform_type": "Shipboard"})
     r = rec.new_row("sightings", {"Bearing": "90", "BrgRef": "T", "Distance": "1"}, lat=41.0, lon=-70.0)["row"]
     row = next(x for x in rec.tables["sightings"].rows if x["RowID"] == r["RowID"])
     assert row["Altitude"] == "33" and row["DistUnit"] == "reticles-binos"
@@ -2224,13 +2225,14 @@ def test_reticle_sighting_altitude_and_platforms(tmp_path):
     rec.edit("sightings", r["RowID"], {"Altitude": "66"})                      # a higher eye: further away
     row = next(x for x in rec.tables["sightings"].rows if x["RowID"] == r["RowID"])
     assert geo.haversine_m(41.0, -70.0, float(row["SigLat"]), float(row["SigLon"])) > got * 1.2
-    with pytest.raises(ValueErrorMsg, match="Platform altitude must be a number"):
-        rec.set_meta({"platform_altitude_ft": "high"})
+    with pytest.raises(ValueError, match="number of feet"):
+        rec.cfg.save_settings({"observer_altitude_ft": "high"})
+    assert "platform_altitude_ft" not in [m[0] for m in schema.SURVEY_META]
     with pytest.raises(ValueErrorMsg, match="Shipboard, Aerial, Stationary or Other"):
         rec.set_meta({"platform_type": "Vessel"})
     rec.end_survey()
     # a stationary platform: no background track points
-    rec.start_survey("S", meta={"platform_type": "Stationary", "platform_altitude_ft": "60"})
+    rec.start_survey("S", meta={"platform_type": "Stationary"})
     n = len(rec.track.points)
     rec._last_track_t = 0
     rec.tick_tracker()
@@ -2648,7 +2650,8 @@ def test_reticles_visibility_weather_lists_and_glare(tmp_path):
     assert "marks" not in cfg.list_header("reticles")
     assert by["big-eyes"]["method"] == "binoculars"
     _sim_fix(rec)
-    rec.start_survey("R", meta={"platform_type": "Aerial", "platform_altitude_ft": "750"})
+    rec.cfg.save_settings({"observer_altitude_ft": "750"})
+    rec.start_survey("R", meta={"platform_type": "Aerial"})
     def place(unit, dist):
         r = rec.new_row("sightings", {"Bearing": "90", "BrgRef": "T", "Distance": dist, "DistUnit": unit}, lat=41.0, lon=-70.0)
         row = next(x for x in rec.tables["sightings"].rows if x["RowID"] == r["row"]["RowID"])
@@ -2956,7 +2959,7 @@ def test_external_inputs_and_failover_notice(rec, tmp_path):
 
 
 def test_external_tracks_recorded_and_styled(rec):
-    """0.43: each external's fixes go to <survey>_<name>_gps.csv (0.44) while a survey is active (if recording is
+    """0.43: each external's fixes go to <survey>_<name>_gps.gpx (0.54; .csv 0.44–0.53) while a survey is active (if recording is
     on), and into a trail for the map, read back when the survey is opened again; styles are cleaned."""
     from spyhop.nmea import with_checksum as w
     from spyhop.config import clean_inputs, input_definition
@@ -2977,13 +2980,24 @@ def test_external_tracks_recorded_and_styled(rec):
         rec.tick_externals(d, inputs)
         rec.tick_externals(d, inputs)                # no new fix: nothing added
     p = rec._ext_path("Drone 1")
-    assert p.name == "Test_Drone_1_gps.csv"
-    lines = p.read_text().splitlines()
-    assert lines[0] == "DateTime,Lat,Lon,SOG,COG,Heading,GPSTime" and len(lines) == 3 and ",42.000000,-70.000000,8.0,45.0," in lines[1]
+    assert p.name == "Test_Drone_1_gps.gpx"                    # 0.54: a GPX track (a CSV before)
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(p.read_bytes())                        # a complete GPX after every fix
+    ns = {"g": "http://www.topografix.com/GPX/1/1", "s": rec.EXT_GPX_NS}
+    pts = root.findall(".//g:trkpt", ns)
+    assert len(pts) == 2 and pts[0].get("lat") == "42.000000" and pts[0].get("lon") == "-70.000000"
+    assert pts[0].find("g:time", ns).text.endswith("Z") and pts[0].find(".//s:sog", ns).text == "8.0"
+    assert root.find(".//g:trk/g:name", ns).text == "Drone 1"
+    # a file cut off mid-write (a crash) is carried on from its last whole point
+    raw = p.read_bytes()
+    p.write_bytes(raw[:-12])
+    rec._ext_append(p, "Drone 1", '<trkpt lat="42.1" lon="-70.1"><time>2026-11-11T12:00:05Z</time></trkpt>\n')
+    assert len(ET.fromstring(p.read_bytes()).findall(".//g:trkpt", ns)) == 3
+    p.write_bytes(raw)
     assert rec._ext_path("Buoy").exists() is False                                 # not recorded
     tr = rec.external_tracks(inputs)
     assert len(tr["Drone 1"]) == 2 and len(tr["Buoy"]) == 2
-    assert "Test_Drone_1_gps.csv" in {n.split("/")[-1] for n in zipfile.ZipFile(rec.export(["csv"])).namelist()}
+    assert "Test_Drone_1_gps.gpx" in {n.split("/")[-1] for n in zipfile.ZipFile(rec.export(["csv"])).namelist()}
     prefix = rec.survey["prefix"]
     rec.close_survey()
     assert rec.external_tracks(inputs) == {}

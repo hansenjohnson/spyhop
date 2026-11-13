@@ -699,14 +699,15 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 .rule-msg { display: flex; align-items: center; gap: 0.4em; }
 .rule-msg input { flex: 1; min-width: 12em; }
 .rule-test-result button.link { background: none; border: none; padding: 0 0.25em; color: #1565c0; text-decoration: underline; cursor: pointer; }
-#sf-qc { cursor: pointer; }
-#sf-qc .qc-pill { font-size: 0.8em; padding: 0 0.4em; }
+#sf-qc.qc-head { background: none; border: 1px solid transparent; border-radius: 5px; padding: 0.1em 0.45em; margin-right: 0.4em;
+  font-size: 0.85em; color: var(--muted); white-space: nowrap; cursor: pointer; }
+#sf-qc.qc-head:hover { border-color: var(--line); background: var(--panel); }
+#sf-qc .qc-pill { font-size: 0.85em; padding: 0 0.4em; }
 
 /* 0.53: view-only windows and Settings → Sharing */
 #conn-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 3000; background: #a1271c; color: #fff; text-align: center;
   padding: 0.45em 1em; font-weight: 600; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25); }
 #sf-viewer { background: #0b5c8a; color: #fff; border-radius: 9px; padding: 0 0.6em; font-weight: 600; }
-#sf-sharing { cursor: pointer; color: #0b5c8a; font-weight: 600; }
 body.viewer .toolbar > button:not(.columns-btn):not(.showcols-btn) { display: none; }
 body.viewer .view-locked { cursor: not-allowed; }
 .share-addrs { display: flex; flex-wrap: wrap; gap: 1em 2em; margin: 0.5em 0 1em; }
@@ -717,3 +718,12 @@ body.viewer .view-locked { cursor: not-allowed; }
   body.viewer .leaflet-popup-content { font-size: 1.05em; }
   body.viewer .pane-tabs button, body.viewer .sub-tabs button { padding: 0.5em 0.8em; }
 }
+
+/* 0.54: the map credits, folded into ⓘ until clicked */
+.leaflet-control-attribution.att-compact { cursor: pointer; font-size: 10px; line-height: 1.3; max-width: 60vw; }
+.leaflet-control-attribution.att-compact:not(.open) { font-size: 0; padding: 0; width: 18px; height: 18px; border-radius: 9px 0 0 0;
+  background: rgba(255, 255, 255, 0.75); }
+.leaflet-control-attribution.att-compact:not(.open) > * { display: none; }
+.leaflet-control-attribution.att-compact:not(.open)::before { content: 'ⓘ'; font-size: 14px; line-height: 18px; display: block;
+  text-align: center; color: #333; }
+.leaflet-control-attribution.att-compact.open { background: rgba(255, 255, 255, 0.92); }

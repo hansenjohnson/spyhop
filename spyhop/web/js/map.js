@@ -86,6 +86,15 @@ export class MapView {
     this.map.createPane('externalLabels').style.zIndex = 406;
     this.map.createPane('vessel').style.zIndex = 650;
     this.map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
+    // 0.54: the map credits fold into a small ⓘ (click or tap to read them), so they don't cover the readout
+    const att = this.map.attributionControl.getContainer();
+    att.classList.add('att-compact');
+    att.title = 'Map credits (click to show or hide)';
+    att.addEventListener('click', (e) => {
+      if (att.classList.contains('open') && e.target.closest('a')) return;      // a credit's link, once they're shown
+      e.preventDefault(); att.classList.toggle('open');
+    }, true);
+    this.map.on('click movestart', () => att.classList.remove('open'));
     this.map.on('dragstart', () => { this.userMoved = Date.now(); this.setFollow(false); });
     this.map.on('mousemove', (e) => this.cursor(e.latlng));
     this.map.on('contextmenu', (e) => this.contextMenu(e));

@@ -53,8 +53,8 @@ OPTIONAL = {
     "effort": {"Notes", "GlareStart", "GlareEnd", "GlareRef"},
     "events": {"ID", "Notes"},
 }
-# survey details that may be blank (platform altitude matters only for reticle distances: checked there)
-META_OPTIONAL = {"platform_altitude_ft", "survey_notes", "platform_lat", "platform_lon"}   # station: Stationary only, optional
+# survey details that may be blank
+META_OPTIONAL = {"survey_notes", "platform_lat", "platform_lon"}   # station: Stationary only, optional
 # Start and End rows need only their time and position
 OTHER_LISTS = {"species": "Species", "event_types": "Events", "behaviors": "Behaviors", "observers": "Observers",
                "effort": "Effort", "visibility": "Visibility", "weather": "Weather", "distunit": "Reticles"}
@@ -621,9 +621,9 @@ def run_qc(rec) -> dict:
             vis_nm = visibility_nm((stt or {}).get("Visibility"))
             far_nm = None
             if schema.reticle_name(r.get("DistUnit")) is not None:
-                if not (r.get("Altitude") or meta.get("platform_altitude_ft")):
+                if not r.get("Altitude"):
                     add("warning", "Plausible bearings and distances",
-                        "Dist is a reticle reading, but there's no altitude (this row's Alt or the survey's Platform altitude), "
+                        "Dist is a reticle reading, but the row has no Alt (fill it in; new rows get Settings → General → Default observer altitude), "
                         "so the animal's position couldn't be worked out.", "sightings", r, "Altitude", name)
                 if vp and sp:
                     far_nm = geo.haversine_m(vp[0], vp[1], sp[0], sp[1]) / M_PER_NM
@@ -725,7 +725,7 @@ def run_rules(rec, add, lab, tables: dict) -> int:
 
 # What is checked, for the report's "What is checked" list.
 CHECKS = [
-    ("Survey details complete", "Every survey detail is filled in (platform, organization, chief scientist and email; the platform altitude only when reticle distances need it)."),
+    ("Survey details complete", "Every survey detail is filled in (platform, organization, chief scientist and email)."),
     ("Required fields filled", "Sightings: everything except Behaviors, Bearing, Ref, Dist, Unit, FieldID and Notes. "
      "Effort: everything except Notes (Start and End rows: time and position only). Events: everything except ID and Notes."),
     ("Values from the lists", "Choices are in their lists (species, observers, behaviors, event types, sea state…)."),
