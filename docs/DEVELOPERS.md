@@ -33,6 +33,7 @@ spyhop/
   layout.py       one-time moves from older folder layouts: 0.27 → 0.28, and survey files into a folder each (0.36); remove before 1.0
   nmea.py         NMEA 0183 parser, vessel state, instrument readings, raw log
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
+  trackers.py     satellite trackers (SPOT feeds, inReach MapShare): parse the feeds, poll them in the background, hand device fixes to the "other" path
   qc.py           the error check (thresholds in LIMITS); run_rules() checks the rules
   rules.py        rules (Settings → Rules, rules.csv): parse, check and evaluate "if … then …" conditions on one row
   resights.py     resights: ResightOf → the first sighting, groups (the same rules as web/js/resights.js)
@@ -69,7 +70,7 @@ spyhop/
 Spyhop always listens on 127.0.0.1:8765, so only the laptop can enter or change data. With Settings → Sharing on (or `python -m spyhop --viewers [PORT]` for one session), a second listener on 0.0.0.0:8766 serves `App.build(viewer=True)`: the same handlers and state behind `sharing.gate`, which allows only the `(method, route)` pairs in `sharing.ALLOWED` and refuses everything else with 403. Whether a request is a viewer's depends only on which listener it arrived on. When adding a route, leave it off `ALLOWED` unless a viewer needs it and it changes nothing; `test_viewer_port_allows_only_its_list` checks every registered route.
 
 docs/            USER_GUIDE.md (shown in Settings → Guide), TEMPLATES.md, this file
-tests/test_core.py   pytest
+tests/test_core.py   pytest (tests/data: recorded SPOT JSON and inReach KML samples)
 CHANGELOG.md     changes in each version (shown in Settings → About)
 ```
 

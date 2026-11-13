@@ -119,7 +119,7 @@ def _dict_rows(text: str | None) -> list[dict]:
     if text is None:
         return []
     return [r for r in csv.DictReader(io.StringIO(text)) if any((v or "").strip() for v in r.values())]
-INPUTS_LABEL = "GPS / NMEA inputs (serial, UDP, TCP, gpsd)"
+INPUTS_LABEL = "GPS / NMEA inputs (serial, UDP, TCP, gpsd, SPOT, inReach)"
 DISPLAY_LABEL = "Map display"
 
 class TemplateError(Exception):

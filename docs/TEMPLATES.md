@@ -5,7 +5,7 @@ A **template** is your team's Spyhop settings in one small file, so every comput
 - the drop-down lists (species, event types, behaviors, observers, effort, visibility, weather) and the reticles, and the keyboard shortcuts
 - the map display (marker shapes and colors, track styles, text sizes)
 - the saved reports (Tools → Reports)
-- the shared settings (clock, units, track point interval, magnetic variation, keep awake, raw NMEA log…) and the named GPS / NMEA inputs (serial, UDP, TCP, gpsd)
+- the shared settings (clock, units, track point interval, magnetic variation, keep awake, raw NMEA log…) and the named GPS / NMEA inputs (serial, UDP, TCP, gpsd, and SPOT / inReach tracker feeds without their passwords)
 - the map feeds and which online overlays are switched on
 - and, if you choose, waypoints, routes and overlays
 
@@ -79,7 +79,7 @@ The lists, shortcuts and rules stay as CSV files so they can be edited in a spre
 | `spyhop_template`, `min_spyhop`, `made_with`, `includes` | The template's format, the **oldest Spyhop that can use it**, the version that made it, and which optional parts it has. |
 | `history` | The record of changes (see below). |
 | `settings` | The shared settings. |
-| `nmea_inputs` | The GPS / NMEA inputs (serial, UDP, TCP, gpsd), each with its name, without which are in use. |
+| `nmea_inputs` | The GPS / NMEA inputs (serial, UDP, TCP, gpsd, SPOT feeds, inReach MapShare feeds), each with its name, without which are in use, and without tracker passwords (each computer keeps its own). |
 | `map_feeds` | Each map feed's name, address, color and refresh time. The feed's data isn't stored: each computer downloads it. |
 | `online_overlays` | Which online overlays to switch on, and the radar opacity and hide-stopped setting. |
 | `map_display` | The map display. |

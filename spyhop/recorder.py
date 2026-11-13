@@ -844,18 +844,51 @@ class Recorder:
             if len(pts) > self.EXT_MAX_POINTS:
                 del pts[: len(pts) - self.EXT_MAX_POINTS]
             if self.survey_active() and src.get("record", True) is not False:
-                p = self._ext_path(name)
                 hdg = st.heading if st.heading_updated and time.time() - st.heading_updated < 10 else None
-                ext = "".join(f"<spyhop:{k}>{v}</spyhop:{k}>" for k, v in (
-                    ("sog", None if st.sog is None else round(st.sog, 2)), ("cog", None if st.cog is None else round(st.cog, 1)),
-                    ("heading", None if hdg is None else round(hdg, 1)), ("gpstime", xml_escape(str(st.gps_time)) if st.gps_time else None)) if v is not None)
-                when = datetime.fromtimestamp(st.updated, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                trkpt = (f'<trkpt lat="{st.lat:.6f}" lon="{st.lon:.6f}"><time>{when}</time>'
-                         + (f"<extensions>{ext}</extensions>" if ext else "") + "</trkpt>\n")
-                try:
-                    self._ext_append(p, name, trkpt)
-                except OSError as e:
-                    log.warning("couldn't save the track of %s: %s", name, e)
+                self._ext_write(name, st.updated, st.lat, st.lon, st.sog, st.cog, hdg, st.gps_time)
+
+    def _ext_write(self, name, t, lat, lon, sog=None, cog=None, hdg=None, gps_time=None):
+        """One fix to the input's track file (t: the fix's time, epoch s)."""
+        p = self._ext_path(name)
+        ext = "".join(f"<spyhop:{k}>{v}</spyhop:{k}>" for k, v in (
+            ("sog", None if sog is None else round(sog, 2)), ("cog", None if cog is None else round(cog, 1)),
+            ("heading", None if hdg is None else round(hdg, 1)), ("gpstime", xml_escape(str(gps_time)) if gps_time else None)) if v is not None)
+        when = datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        trkpt = (f'<trkpt lat="{lat:.6f}" lon="{lon:.6f}"><time>{when}</time>'
+                 + (f"<extensions>{ext}</extensions>" if ext else "") + "</trkpt>\n")
+        try:
+            self._ext_append(p, name, trkpt)
+        except OSError as e:
+            log.warning("couldn't save the track of %s: %s", name, e)
+
+    # 0.55: satellite trackers (trackers.py) hand over their new fixes here, with the device's own fix times
+    def ext_last_time(self, name: str) -> float | None:
+        """The newest fix of an "other" source already in its trail (from its file after a restart)."""
+        if not hasattr(self, "ext_tracks"):
+            self._load_externals()
+        pts = self.ext_tracks.get(self.ext_stem(name))
+        return pts[-1][0] if pts else None
+
+    def add_external_fixes(self, name: str, src: dict, fixes: list[dict]):
+        """A tracker device's new fixes (oldest first): into its trail and, while a survey is active (and for
+        fixes made since it started), its track file. GPSTime is the device's fix time."""
+        if not hasattr(self, "ext_tracks"):
+            self._load_externals()
+        stem = self.ext_stem(name)
+        self.ext_names[stem] = name
+        pts = self.ext_tracks.setdefault(stem, [])
+        start = self._ts(self.tables["effort"].rows[0]["DateTime"]) if self.survey and self.tables["effort"].rows else None
+        start = None if start == float("inf") else start
+        record = self.survey_active() and src.get("record", True) is not False
+        for f in fixes:
+            if pts and f["time"] <= pts[-1][0]:
+                continue
+            pts.append((f["time"], f["lat"], f["lon"]))
+            if record and (start is None or f["time"] >= start):
+                gt = datetime.fromtimestamp(f["time"], timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                self._ext_write(name, f["time"], f["lat"], f["lon"], f.get("sog"), f.get("cog"), None, gt)
+        if len(pts) > self.EXT_MAX_POINTS:
+            del pts[: len(pts) - self.EXT_MAX_POINTS]
 
     def external_tracks(self, inputs=None, max_points: int = 5000) -> dict:
         """{input name: [[epoch ms, lat, lon], …]} for the map (thinned to max_points each)."""

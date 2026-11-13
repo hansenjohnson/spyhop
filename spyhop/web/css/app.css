@@ -727,3 +727,8 @@ body.viewer .view-locked { cursor: not-allowed; }
 .leaflet-control-attribution.att-compact:not(.open)::before { content: 'ⓘ'; font-size: 14px; line-height: 18px; display: block;
   text-align: center; color: #333; }
 .leaflet-control-attribution.att-compact.open { background: rgba(255, 255, 255, 0.92); }
+
+/* 0.55: satellite trackers */
+.external-input.external-stale .ext-rot { opacity: 0.6; filter: grayscale(1); }
+.tracker-note { margin-top: 0.3em; max-width: 46em; white-space: normal; }
+.src-st .tracker-st { color: var(--muted); }

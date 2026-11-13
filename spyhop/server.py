@@ -25,6 +25,7 @@ mimetypes.add_type("text/javascript", ".mjs")   # the MapLibre modules
 from . import tiles as tiles_mod
 from .tiles import TileService
 from . import sharing as sharing_mod
+from . import trackers as trackers_mod
 
 log = logging.getLogger(__name__)
 perf_log = logging.getLogger("spyhop.slow")
@@ -238,6 +239,9 @@ class App:
         self.awake = awake.KeepAwake()
         self._nmea_lines0 = 0
         self.sharing = sharing_mod.Sharing(self)       # 0.53: view-only devices on the network
+        # 0.55: SPOT / inReach feeds, polled in the background; their devices are "other" sources
+        self.trackers = trackers_mod.TrackerPoller(self._tracker_fixes, self.rec.ext_last_time,
+                                                   on_devices=lambda: self._broadcast_soon({"type": "externals"}))
 
     # -- websocket --------------------------------------------------------------
     def _broadcast_soon(self, msg: dict):
@@ -331,7 +335,7 @@ class App:
 
     def nmea_status(self, raw=True) -> dict:
         d = self.rec.decoder
-        out = {"sources": list(self.sources.status.values()), "counts": d.counts,
+        out = {"sources": list(self.sources.status.values()) + list(self.trackers.status.values()), "counts": d.counts,
                "errors": d.errors, "log": self.rec.raw_log_status(),
                "position_source": d.state.source if d.state.updated and time.time() - d.state.updated < 10 else ""}
         if raw:
@@ -442,7 +446,30 @@ class App:
             except Exception:  # noqa: BLE001
                 pass
 
+    def _tracker_fixes(self, src: dict, name: str, fixes: list[dict]):
+        src = next((x for x in getattr(self, "running_inputs", []) if x.get("name") == src.get("name")), src)   # its Record track now
+        self.rec.add_external_fixes(name, src, fixes)
+        log.info("tracker %s: %d new fix%s for %s", src.get("name"), len(fixes), "" if len(fixes) == 1 else "es", name)
+        self._broadcast_soon({"type": "externals", "names": [name]})
+
+    MAP_KEYS = ("name", "type", "role", "enabled", "show_on_map", "color", "line", "width", "trail", "label", "record", "icon")
+
+    def map_inputs(self) -> list[dict]:
+        """The "other" sources as the map draws them (0.55): each tracker feed stands for its devices, which
+        take its style; connection details and passwords left out."""
+        out = []
+        for x in getattr(self, "running_inputs", []):
+            base = {k: x[k] for k in self.MAP_KEYS if k in x}
+            if trackers_mod.is_tracker(x):
+                for dev, info in sorted(self.trackers.devices.items()):
+                    if info["feed"] == x.get("name"):
+                        out.append({**base, "name": dev, "feed": x["name"], "tracker": x["type"]})
+            else:
+                out.append(base)
+        return out
+
     async def on_cleanup(self, app):
+        await self.trackers.close()
         await self.sharing.stop()
         if self._loop_task:
             self._loop_task.cancel()
@@ -914,18 +941,23 @@ class App:
     async def start_inputs(self):
         self.running_inputs = self.all_sources()
         await self.sources.start(self.running_inputs, failover=bool(self.rec.cfg.settings.get("nmea_failover")))
+        await self.trackers.start(self.running_inputs)
 
     def others_on_map(self) -> list[dict]:
-        """The secondaries and externals to draw, with each external's style (0.43)."""
-        if not self.sources.on_map:
-            return []
+        """The secondaries and externals to draw, with each external's style (0.43), and the trackers' devices'
+        latest fixes, however old (0.55; the map greys out a stale one)."""
         style = {x["name"]: {k: x.get(k) for k in ("color", "line", "width", "trail", "label", "icon")}
                  for x in getattr(self, "running_inputs", []) if x.get("role") == "other"}
-        return [{**o, **style.get(o["name"], {})} for o in self.rec.decoder.secondaries(self.sources.on_map)]
+        out = [{**o, **style.get(o["name"], {})} for o in self.rec.decoder.secondaries(self.sources.on_map)] if self.sources.on_map else []
+        shown = {x["name"] for x in getattr(self, "running_inputs", []) if trackers_mod.is_tracker(x) and x.get("show_on_map", True)}
+        out += [{**o, **style.get(o["feed"], {})} for o in self.trackers.latest() if o["feed"] in shown]
+        return out
 
     async def externals(self, request):
-        """The externals' trails so far: {name: [[epoch ms, lat, lon], …]} (0.43)."""
-        return json_ok(tracks=self.rec.external_tracks(getattr(self, "running_inputs", [])))
+        """The externals' trails so far: {name: [[epoch ms, lat, lon], …]} (0.43), and (0.55) the sources the map
+        draws, trackers' devices included (also for viewers: no connection details)."""
+        inputs = self.map_inputs()
+        return json_ok(tracks=self.rec.external_tracks(inputs), inputs=inputs)
 
     # -- tiles ------------------------------------------------------------------------
     async def tile_online(self, request):

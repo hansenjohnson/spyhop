@@ -3308,3 +3308,114 @@ def test_viewer_pin_and_no_internet(tmp_path):
         except OSError:
             pass
     asyncio.run(go())
+
+
+DATA = Path(__file__).parent / "data"
+
+
+def test_tracker_feeds_parse(tmp_path):
+    """0.55: SPOT message.json (several devices, hidden messages, one message as a dict, errors) and inReach
+    MapShare KML (points only, invalid fixes left out, km/h → kn), from recorded samples."""
+    from datetime import datetime, timezone
+    from spyhop import trackers as T
+    fixes, n = T.parse_spot((DATA / "spot_message.json").read_text())
+    assert n == 4 and len(fixes) == 3                                  # the hidden one is left out
+    assert {f["device"] for f in fixes} == {"Buoy A", "Buoy B"}
+    a = next(f for f in fixes if f["id"] == "1872001237")
+    assert (a["lat"], a["lon"], a["time"], a["battery"]) == (41.85, -70.25, 1794583200.0, "GOOD")
+    one, _ = T.parse_spot((DATA / "spot_single.json").read_text())
+    assert len(one) == 1 and one[0]["device"] == "Buoy A"
+    assert T.parse_spot((DATA / "spot_nomessages.json").read_text()) == ([], 0)
+    with pytest.raises(T.FeedError, match="no such feed"):
+        T.parse_spot((DATA / "spot_notfound.json").read_text())
+    with pytest.raises(T.FeedError, match="password"):
+        T.parse_spot('{"response":{"errors":{"error":{"code":"E-0161","text":"Invalid password"}}}}')
+    kml = T.parse_inreach((DATA / "inreach.kml").read_text())
+    assert len(kml) == 2 and kml[0]["device"] == "Tender" and kml[0]["id"] == "901001"
+    assert kml[0]["time"] == datetime(2026, 11, 13, 15, 0, tzinfo=timezone.utc).timestamp()
+    assert abs(kml[0]["sog"] - 18.5 / 1.852) < 1e-6 and kml[0]["cog"] == 90.0 and kml[1]["lon"] == -70.27
+    with pytest.raises(T.FeedError, match="MapShare"):
+        T.parse_inreach("<html><body>Not found</body></html>")
+    # addresses: the password and the catch-up dates; pasted feed links are trimmed to the ID / name
+    src = {"type": "spot", "feed_id": " https://api.findmespot.com/spot-main-web/consumer/rest-api/2.0/public/feed/0abc/message.xml ", "interval": 30}
+    T.clean_tracker(src)
+    assert src["feed_id"] == "0abc" and src["interval"] == T.MIN_SPOT_INTERVAL and src["role"] == "other"
+    u = T.spot_url({**src, "password": "p w"}, start=1794583200)
+    assert u.startswith(T.SPOT_BASE + "/0abc/message.json?") and "feedPassword=p%20w" in u and "startDate=2026-11-13T" in u and "-0000" in u
+    ir = {"type": "inreach", "mapshare": "https://share.garmin.com/MyTeam", "interval": 10}
+    T.clean_tracker(ir)
+    assert ir["mapshare"] == "MyTeam" and ir["interval"] == T.MIN_INREACH_INTERVAL
+    assert T.inreach_url(ir, 1794583200).endswith("/MyTeam?d1=2026-11-13T15:20z")
+
+
+def test_tracker_poller_records_device_fixes(rec):
+    """0.55: the poller (with a fake network) hands each device's new fixes, with their own times, to the
+    survey's GPX file; duplicates are skipped; a later poll catches up from the last fix; SPOT requests are
+    2 s apart; errors land in the status; templates carry the feed but not its password."""
+    import asyncio
+    import time
+    from spyhop import trackers as T
+    from spyhop.config import clean_inputs, input_definition, merge_inputs
+    asked = []
+    pages = {"spot": [(DATA / "spot_message.json").read_text(), (DATA / "spot_single.json").read_text()],
+             "inreach": [(DATA / "inreach.kml").read_text()]}
+
+    async def fake(url, password=""):
+        asked.append((url, password, time.monotonic()))
+        if "nope" in url:
+            return 200, (DATA / "spot_notfound.json").read_text()
+        if "offline" in url:
+            raise aiohttp.ClientConnectionError("no route")
+        kind = "spot" if "findmespot" in url else "inreach"
+        return 200, pages[kind].pop(0) if len(pages[kind]) > 1 else pages[kind][0]
+    import aiohttp
+    inputs = clean_inputs([{"name": "Tags", "type": "spot", "feed_id": "0abc", "password": "secret", "interval": 150},
+                           {"name": "Tender feed", "type": "inreach", "mapshare": "MyTeam", "password": "pw"},
+                           {"name": "Bad", "type": "spot", "feed_id": "0nope"},
+                           {"name": "Off", "type": "spot", "feed_id": "offline"}])
+    assert all(x["role"] == "other" for x in inputs)
+    got = []
+    poller = T.TrackerPoller(lambda src, name, fx: (got.append((name, len(fx))), rec.add_external_fixes(name, src, fx)), rec.ext_last_time)
+    poller.fetch = fake
+
+    async def go():
+        await poller.start(inputs)
+        for _ in range(60):
+            if all(s.get("last_poll") for s in poller.status.values()):
+                break
+            await asyncio.sleep(0.1)
+        await poller.stop()
+    # the survey started before the fixes (their own times): pretend it began at 15:00 UTC
+    rec.tables["effort"].rows[0]["DateTime"] = "2026-11-13T15:00:00+00:00"
+    asyncio.run(go())
+    st = poller.status
+    assert st["Tags"]["state"] == "ok" and st["Tags"]["devices"] == ["Buoy A", "Buoy B"]
+    assert st["Bad"]["state"] == "error" and "no such feed" in st["Bad"]["error"]
+    assert "no internet" in st["Off"]["error"]
+    spot_times = sorted(t for u, _, t in asked if "findmespot" in u)
+    assert all(b - a >= 1.9 for a, b in zip(spot_times, spot_times[1:]))        # 2 s between SPOT requests
+    assert any("feedPassword=secret" in u for u, _, _ in asked) and any(p == "pw" and "garmin" in u for u, p, _ in asked)
+    assert ("Buoy A", 2) in got and ("Buoy B", 1) in got and ("Tender", 2) in got
+    p = rec._ext_path("Buoy A")
+    import xml.etree.ElementTree as ET
+    ns = {"g": "http://www.topografix.com/GPX/1/1", "s": rec.EXT_GPX_NS}
+    pts = ET.fromstring(p.read_bytes()).findall(".//g:trkpt", ns)
+    assert [x.find("g:time", ns).text for x in pts] == ["2026-11-13T15:15:00Z", "2026-11-13T15:20:00Z"]   # the device's times
+    assert pts[1].find(".//s:gpstime", ns).text == "2026-11-13T15:20:00Z"
+    # the same fixes again are skipped; a newer one is added, asking SPOT only for messages since the last
+    src = inputs[0]
+    asked.clear()
+    assert poller.take(src, T.parse_spot((DATA / "spot_message.json").read_text())[0]) == 0
+    asyncio.run(poller.poll(src))
+    assert "startDate=2026-11-13T15:20:01-0000" in asked[0][0]
+    assert len(ET.fromstring(p.read_bytes()).findall(".//g:trkpt", ns)) == 3
+    latest = {o["name"]: o for o in poller.latest()}
+    assert latest["Buoy A"]["lat"] == 41.86 and latest["Tender"]["sog"] and latest["Buoy A"]["age"] > 0
+    # a restart: the recorded trail says what's already there
+    p2 = T.TrackerPoller(lambda *a: got.append(a), rec.ext_last_time)
+    assert p2.take(src, T.parse_spot((DATA / "spot_message.json").read_text())[0]) == 0
+    # templates: the feed, never its password; this computer keeps its own password when a template comes in
+    d = input_definition(inputs[0])
+    assert d["feed_id"] == "0abc" and "password" not in d and d["role"] == "other"
+    merged = merge_inputs(inputs, [d])
+    assert next(x for x in merged if x["name"] == "Tags")["password"] == "secret"

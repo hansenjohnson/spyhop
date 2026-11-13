@@ -874,6 +874,8 @@ class App {
         break;
       case 'overlays': api('/api/bootstrap').then((d) => { this.S.overlays = d.overlays; this.S.surveys = d.surveys; this.map.loadOverlays(d.overlays); this.renderOverlays(); }); break;
       case 'reload': this.reload(); break;
+      // 0.55: a tracker brought new fixes (or a new device): the trails again
+      case 'externals': this.refreshExternals(); break;
       case 'sharing': this.S.sharing = m.sharing; this.updateSharingStatus(); if (this.shown('survey') && !document.activeElement?.closest('#pane-survey input[type=text], #pane-survey textarea')) this.renderSurvey(); if (this.shown('sharing') && !document.activeElement?.closest('#pane-sharing input[type=text], #pane-sharing input[type=number]')) this.renderSharing(); break;
       case 'closing': this.showClosing(m.message); break;
       case 'reports': this.reportsTool.onDefsChanged(); break;
@@ -2751,12 +2753,12 @@ class App {
   }
 
   // the external inputs' layers and trails (0.43), from the inputs as they run
+  // 0.55: from /api/externals (the sources the map draws: trackers' devices included; viewers can ask too)
   async refreshExternals() {
     try {
-      const r = await api('/api/nmea');
-      this.S.nmea = { ...(this.S.nmea || {}), ...r };
-      this.map.syncExternals(r.all_sources);
-      await this.map.loadExternals();
+      const r = await api('/api/externals');
+      this.map.syncExternals(r.inputs);
+      this.map.loadExternals(r.tracks);
     } catch {}
   }
 
@@ -3268,8 +3270,14 @@ class App {
     const fields = { serial: [['port', 'Port', 'text'], ['baud', 'Baud', 'number']], udp: [['port', 'UDP port', 'number']],
       tcp: [['host', 'Host', 'text'], ['port', 'Port', 'number']], gpsd: [['host', 'Host', 'text'], ['port', 'Port', 'number']],
       file: [['path', 'File path', 'text'], ['speed', 'Speed ×', 'number']],
-      sim: [['heading', 'Heading °T', 'number'], ['speed_kn', 'Speed kn', 'number'], ['lat', 'Start lat', 'number'], ['lon', 'Start lon', 'number']] };
-    const defaults = { serial: { port: '', baud: 4800 }, udp: { port: 10110 }, tcp: { host: '192.168.1.1', port: 10110 }, gpsd: { host: '127.0.0.1', port: 2947 }, file: { path: '', speed: 1 }, sim: { lat: 41.9, lon: -70.33, speed_kn: 10, heading: 0 } };
+      sim: [['heading', 'Heading °T', 'number'], ['speed_kn', 'Speed kn', 'number'], ['lat', 'Start lat', 'number'], ['lon', 'Start lon', 'number']],
+      // 0.55: satellite trackers, polled over the internet (always "other")
+      spot: [['feed_id', 'XML Feed ID', 'text'], ['password', 'Feed password (optional)', 'password'], ['interval', 'Check every (s, ≥ 150)', 'number']],
+      inreach: [['mapshare', 'MapShare name', 'text'], ['password', 'MapShare password (optional)', 'password'], ['interval', 'Check every (s, ≥ 60)', 'number']] };
+    const TRACKER = (t) => t === 'spot' || t === 'inreach';
+    const KIND_LABEL = { sim: 'SIMULATOR', spot: 'SPOT feed', inreach: 'inReach MapShare' };
+    const defaults = { serial: { port: '', baud: 4800 }, udp: { port: 10110 }, tcp: { host: '192.168.1.1', port: 10110 }, gpsd: { host: '127.0.0.1', port: 2947 }, file: { path: '', speed: 1 }, sim: { lat: 41.9, lon: -70.33, speed_kn: 10, heading: 0 },
+      spot: { feed_id: '', password: '', interval: 300 }, inreach: { mapshare: '', password: '', interval: 300 } };
     const applyBtn = el('button', { class: 'primary', onclick: () => apply() }, 'Apply');
     const markDirty = () => {
       draft.dirty = true;
@@ -3284,8 +3292,7 @@ class App {
         for (const x of sources) { const n = now.get(x.name); if (n) for (const k of MAPKEYS) if (k in n) x[k] = n[k]; }
         const r = await api('/api/nmea/sources', { sources, failover: draft.failover });
         this.S.nmea = { ...(this.S.nmea || {}), all_sources: r.sources };
-        this.map.syncExternals(r.sources);
-        this.map.loadExternals();
+        this.refreshExternals();
         this.nmeaDraft = null;
         toast('GPS inputs applied');
         this.renderInputs();
@@ -3308,11 +3315,13 @@ class App {
     // (0.45: mappingSection, saved at once, outside Apply / Revert)
     const kindCell = (s, i) => el('select', { class: 'src-kind', 'aria-label': 'Kind of input', onchange: (e) => {
       const keep = Object.fromEntries(['color', 'line', 'width', 'trail', 'label', 'record', 'icon'].filter((k) => k in s).map((k) => [k, s[k]]));
-      sources[i] = { name: s.name, type: e.target.value, enabled: inUse(s), role: s.role, show_on_map: !!s.show_on_map, ...keep, ...defaults[e.target.value], ...(s.session ? { session: true } : {}) };
+      const tr = TRACKER(e.target.value);
+      sources[i] = { name: s.name, type: e.target.value, enabled: inUse(s), role: tr ? 'other' : s.role, show_on_map: tr || !!s.show_on_map, ...keep, ...defaults[e.target.value], ...(s.session ? { session: true } : {}) };
       markDirty(); draw(); } },
-      Object.keys(fields).map((t) => el('option', { value: t, selected: t === s.type }, t === 'sim' ? 'SIMULATOR' : t.toUpperCase())));
+      Object.keys(fields).map((t) => el('option', { value: t, selected: t === s.type }, KIND_LABEL[t] || t.toUpperCase())));
     const fieldCells = (s) => el('div', { class: 'nmea-src-body' }, ...(fields[s.type] || []).flatMap(([k, label, type]) => [el('label', { class: 'inline' }, label,
-      el('input', { type, value: s[k] ?? '', size: k === 'path' ? 30 : (k === 'heading' || k === 'speed_kn' ? 5 : 10),
+      el('input', { type, value: s[k] ?? '', size: k === 'path' || k === 'feed_id' ? 30 : (k === 'heading' || k === 'speed_kn' ? 5 : k === 'mapshare' ? 16 : 10),
+        class: `src-${k}`, autocomplete: type === 'password' ? 'off' : null,
         style: type === 'number' ? { width: k === 'heading' || k === 'speed_kn' ? '5em' : '7em' } : null,
         min: k === 'heading' ? 0 : null, max: k === 'heading' ? 359 : null,
         list: k === 'port' && s.type === 'serial' ? 'serial-ports' : null,
@@ -3323,7 +3332,10 @@ class App {
         let r;
         try { r = await api('/api/pick-file', { current: s.path || '' }); } catch { return; }
         if (r.path) { s.path = r.path; markDirty(); draw(); }
-      } }, 'Choose…') : null]));
+      } }, 'Choose…') : null]),
+      // 0.55: a tracker's feed comes over the internet
+      TRACKER(s.type) ? el('div', { class: 'hint tracker-note' }, '⚠ Needs an internet connection on this computer (positions come from ',
+        s.type === 'spot' ? 'SPOT’s servers' : 'Garmin’s MapShare', '). Each device in the feed is its own “other” source, named after the device. The password stays on this computer (templates leave it out).') : null);
     const draw = () => {
       fixPrimary();
       list.replaceChildren(el('div', { class: 'table-scroll' }, el('table', { class: 'nmea-table' },
@@ -3334,7 +3346,7 @@ class App {
           el('td', {}, el('input', { type: 'text', class: 'src-name', value: s.name || '', placeholder: 'Name, e.g. External GPS', size: 16, 'aria-label': 'Input name',
               oninput: () => markDirty(), onchange: (e) => { s.name = e.target.value.trim(); markDirty(); draw(); } }),
             s.session ? el('span', { class: 'hint session-tag', title: 'Started from the command line (e.g. --sim). Changes apply until Spyhop is closed.' }, ' this session only') : null),
-          el('td', {}, el('select', { class: 'src-role', 'aria-label': 'Role', title: 'Primary: the platform’s position, course, speed and heading (one input). Secondary: another of the platform’s inputs (logged; fills in readings; can stand in for the primary). Other: not the platform at all — a drone, a drifting buoy, a second vessel (logged and on the map; never the platform).',
+          el('td', {}, el('select', { class: 'src-role', 'aria-label': 'Role', disabled: TRACKER(s.type), title: 'Primary: the platform’s position, course, speed and heading (one input). Secondary: another of the platform’s inputs (logged; fills in readings; can stand in for the primary). Other: not the platform at all — a drone, a drifting buoy, a second vessel (logged and on the map; never the platform).',
             onchange: (e) => {
               const v = e.target.value;
               if (v === 'primary') { sources.forEach((x) => { if (x !== s && x.role === 'primary') x.role = 'secondary'; }); s.enabled = true; }
@@ -3361,7 +3373,7 @@ class App {
       }
     }).catch(() => {});
     return el('section', { class: 'settings-sec' }, el('h3', {}, 'GPS / NMEA inputs'),
-      el('p', { class: 'hint help' }, 'Name each input for its device (e.g. “Tablet GPS”, “External GPS”, “Ship’s network”): the names travel in templates, so a template can list the inputs of every computer a team uses, and each computer ticks the ones it has. Each input in use has a role. Primary (one): the platform’s position, course, speed and heading for the survey (the track, new rows, the map). Secondary: another of the platform’s own inputs (a backup GPS, the depth sounder): its readings appear in Tools → Instruments where the primary has none, and it can stand in for the primary if you allow that below. Other: something that isn’t the platform at all — a drone, a drifting buoy, a second vessel: never used for the platform, drawn on the map with its own trail and recorded to <survey>_<name>_gps.gpx (set in Mapping ‘Other’ inputs, below). Every input’s readings (position included) are saved in the survey’s <survey>_nmea.csv with its role, every sentence goes in the raw NMEA log, and secondaries can be shown on the map as purple points. An external GPS device on the platform itself (a USB puck) is a primary or secondary, not “other”. Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
+      el('p', { class: 'hint help' }, 'Name each input for its device (e.g. “Tablet GPS”, “External GPS”, “Ship’s network”): the names travel in templates, so a template can list the inputs of every computer a team uses, and each computer ticks the ones it has. Each input in use has a role. Primary (one): the platform’s position, course, speed and heading for the survey (the track, new rows, the map). Secondary: another of the platform’s own inputs (a backup GPS, the depth sounder): its readings appear in Tools → Instruments where the primary has none, and it can stand in for the primary if you allow that below. Other: something that isn’t the platform at all — a drone, a drifting buoy, a second vessel: never used for the platform, drawn on the map with its own trail and recorded to <survey>_<name>_gps.gpx (set in Mapping ‘Other’ inputs, below). Every input’s readings (position included) are saved in the survey’s <survey>_nmea.csv with its role, every sentence goes in the raw NMEA log, and secondaries can be shown on the map as purple points. An external GPS device on the platform itself (a USB puck) is a primary or secondary, not “other”. Position, course and speed come from RMC, GGA, GLL and VTG; heading from HDT, HDG, HDM or THS. Use UDP to share OpenCPN’s, a multiplexer’s or a plotter’s output; Serial for a USB GPS puck. SPOT feed and inReach MapShare (always Other, and need an internet connection) follow satellite trackers on buoys, tag boats or drifters: for SPOT, create an XML Feed in your SPOT account (Settings → XML Feed → Create XML Feed) and paste its XML Feed ID; for inReach, switch MapShare on in Garmin Explore (Social → MapShare) and type the MapShare name from share.garmin.com/<name>. Passwords stay on this computer. SPOT allows a check at most every 150 s per feed. Changes take effect when you press Apply (or Enter in a box). The simulator keeps its position when you change its heading or speed.'),
       list, ports,
       el('div', { class: 'btnrow' }, el('button', { id: 'btn-add-input', onclick: () => { sources.push({ name: '', type: 'serial', enabled: true, role: sources.some((x) => x.enabled !== false && x.role !== 'other') ? 'secondary' : 'primary', ...defaults.serial }); markDirty(); draw();
           $$('#pane-inputs .src-name').at(-1)?.focus(); } }, '+ Add input')),
@@ -3427,7 +3439,7 @@ class App {
       try {
         const r = await api('/api/nmea/map', { name: s.name, style: { [k]: v } });
         this.S.nmea = { ...(this.S.nmea || {}), all_sources: r.sources };
-        this.map.syncExternals(r.sources);
+        this.refreshExternals();
         const now = r.sources.find((x) => x.name === s.name);
         if (now) Object.assign(s, now);
         this.updateRecordWarning();
@@ -3464,12 +3476,20 @@ class App {
     const table = el('table', { class: 'nmea-map-table' },
       el('thead', {}, el('tr', {}, ['Name', 'Role', 'Show on the map', 'Icon', 'Color', 'Line', 'Width', 'Trail', 'Show name', 'Record track'].map((h) => el('th', {}, h)))),
       el('tbody', {}, rows.map((s) => el('tr', { class: `nmea-map-row role-${s.role}`, 'data-name': s.name || '' },
-        el('td', {}, el('b', {}, s.name || '(no name)')),
+        el('td', {}, el('b', {}, s.name || '(no name)'),
+          // 0.55: a tracker feed's style is its devices'
+          s.type === 'spot' || s.type === 'inreach' ? el('div', { class: 'hint' }, `${s.type === 'spot' ? 'SPOT' : 'inReach'} feed: ${((this.S.nmea?.sources || []).find((x) => x.tracker && x.name === s.name)?.devices || []).join(', ') || 'no devices yet'}`) : null),
         el('td', {}, s.role === 'other' ? 'Other' : 'Secondary'),
         el('td', { class: 'c' }, el('input', { type: 'checkbox', class: 'src-map', 'aria-label': 'Show on the map', title: 'Show where this input says it is on the map',
           checked: !!s.show_on_map, onchange: (e) => set(s, 'show_on_map', e.target.checked) })),
         ...(s.role === 'other' ? cells(s) : [el('td', { colspan: 7, class: 'hint' }, 'A purple point with its name')])))));
-    box.replaceChildren(head, help, el('div', { class: 'table-scroll' }, table), el('div', { id: 'other-record-warn' }));
+    // 0.55: satellite trackers report every few minutes: their markers are greyed out after this long
+    const trackers = rows.some((s) => s.type === 'spot' || s.type === 'inreach');
+    const stale = trackers ? el('div', { class: 'btnrow' }, el('label', { class: 'inline', title: 'A tracker’s marker turns grey when its last fix is older than this' },
+      'Grey out a tracker when its last fix is older than ',
+      el('input', { type: 'number', id: 'tracker-stale-min', min: 1, max: 10080, value: this.S.config.settings.tracker_stale_min ?? 30, style: { width: '5em' },
+        onchange: (e) => this.saveSettings({ tracker_stale_min: +e.target.value || 30 }) }), ' min')) : null;
+    box.replaceChildren(head, help, el('div', { class: 'table-scroll' }, table), stale, el('div', { id: 'other-record-warn' }));
     this.updateRecordWarning(sources);
   }
 
@@ -3548,7 +3568,18 @@ class App {
     if (!box || !this.S.nmea) return;
     const n = this.S.nmea;
     const pos = n.position_source || '';
+    const hhmm = (t) => { if (!t) return '—'; const p = timeParts(new Date(t * 1000).toISOString(), this.clock()); return `${p.time.slice(0, 5)} ${p.abbr}`; };
+    const ago = (t) => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 1 ? 'just now' : m < 120 ? `${m} min ago` : `${(m / 60).toFixed(1)} h ago`; };
     box.replaceChildren(...(n.sources || []).map((s) => {
+      // 0.55: a satellite tracker's feed: when it was last checked, its newest fix and devices, or what's wrong
+      if (s.tracker) {
+        return el('div', { class: `src-st ${s.state}` },
+          el('b', {}, s.name), el('span', { class: 'role-tag other' }, 'other'), ` — ${s.type === 'spot' ? 'SPOT feed' : 'inReach MapShare'}`,
+          el('span', { class: 'tracker-st' }, ` · checked ${hhmm(s.last_poll)}`, s.next_poll ? `, next ${hhmm(s.next_poll)}` : '',
+            ` · last fix ${s.last_fix ? `${hhmm(s.last_fix)} (${ago(s.last_fix)})` : '—'}`,
+            s.devices?.length ? ` · ${s.devices.length === 1 ? 'device' : 'devices'}: ${s.devices.join(', ')}` : ''),
+          s.error ? el('span', { class: 'err' }, ` · ${s.error}`) : '');
+      }
       const prog = s.total ? ` · line ${s.at || 0} of ${s.total}${s.loops ? ` (replay ${s.loops + 1})` : ''}` : (s.lines ? ` · ${s.lines} lines` : '');
       return el('div', { class: `src-st ${s.state}` },
         el('b', {}, s.name), el('span', { class: `role-tag ${s.role || 'primary'}` }, s.role || 'primary'), ` — ${s.state}`, prog,

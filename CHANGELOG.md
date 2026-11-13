@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.55.0 — 2026-11-13
+
+- **Satellite trackers as inputs:** two new kinds in Settings → Inputs, **SPOT feed** (Globalstar SPOT Gen4, SPOT Trace…: the XML Feed ID, an optional feed password, how often to check, at least every 150 s) and **inReach MapShare** (Garmin: the MapShare name, an optional password, how often to check). They're always "other" inputs and need an internet connection. Each device in a feed is its own "other" source, named after the device: its map layer, trail and popup, and its track in `<survey>_<device>_gps.gpx` while a survey is active.
+- Positions keep the device's own fix time; ones already recorded are skipped, and a check after a gap catches up on what was missed.
+- Each feed's status line shows its last check, its newest fix and devices, or what's wrong (no internet connection, no such feed, password protected). Checks run in the background with a time limit, so no internet never slows Spyhop down.
+- A tracker's marker turns grey when its last fix is older than a set time (30 min by default, in Mapping 'Other' inputs); the popup shows the fix's age, and SPOT's battery state.
+- Templates carry tracker feeds but never their passwords, which stay on each computer (diagnostics leave them out too).
+- The map's "other" layers now come from `/api/externals`, so view-only windows see them too.
+
 ## 0.54.0 — 2026-11-13
 
 - **Map credits** fold into a small ⓘ at the bottom right, so they no longer cover the cursor position, distance and depth readout; click or tap it to read them. The Seascape credit no longer names OpenStreetMap (Spyhop leaves out Seascape's OpenStreetMap background).

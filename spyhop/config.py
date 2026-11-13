@@ -331,6 +331,7 @@ DEFAULT_SETTINGS = {
     "altitude_column": "auto",      # Sightings' Alt column: auto (shown for aerial surveys) | show | hide
     "observer_altitude_ft": "",     # 0.54: the default observer altitude (ft), filled in as new sightings' Alt (was the survey details' Platform altitude)
     "segment_column": "show",       # Effort's Seg (effort segment) column: show | hide
+    "tracker_stale_min": 30,        # 0.55: a satellite tracker's marker is greyed out when its last fix is older (min)
     "qc_auto_minutes": 0,           # 0.52: run the Error check every N minutes (1–30) during a survey; 0: off
     "column_layout": {},            # this computer's column order and widths: {tab: {order: [keys], widths: {key: px}}}
     # --- also in spyhop-config.json, under their own keys (see CONFIG_KEYS)
@@ -382,6 +383,7 @@ SHARED_SETTINGS = {
     "observer_altitude_ft": "Default observer altitude (ft)",
     "segment_column": "Effort segment column",
     "qc_auto_minutes": "Error check automatically (min)",
+    "tracker_stale_min": "Trackers greyed out after (min)",
 }
 # The GPS / NMEA inputs a template carries (0.41: serial too, named for the device, e.g. "External GPS").
 # Each has a role (0.42): the platform's primary (its position, course, speed and heading), a secondary
@@ -389,7 +391,8 @@ SHARED_SETTINGS = {
 # other (0.44; "external" before: not the platform at all: a drone, a drifting buoy, a second vessel;
 # logged and drawn on the map, never the platform; "other" so it isn't confused with an external GPS device). Which inputs are in use, primary or secondary, and which show on the map is this
 # computer's choice (INPUT_FLAGS), kept by name when a template is used; "other" travels with the input.
-TEMPLATE_INPUTS = ("serial", "udp", "tcp", "gpsd")
+TEMPLATE_INPUTS = ("serial", "udp", "tcp", "gpsd", "spot", "inreach")     # 0.55: + satellite trackers (no passwords)
+PRIVATE_INPUT_KEYS = ("password",)       # this computer's only: never in a template
 INPUT_ROLES = ("primary", "secondary", "other")
 INPUT_FLAGS = ("enabled", "role", "show_on_map", "primary")
 
@@ -428,7 +431,7 @@ def _clean_external(x: dict, i: int):
 
 def input_definition(src: dict) -> dict:
     """An input without this computer's choices: what a template holds (role only if other)."""
-    d = {k: v for k, v in src.items() if k not in INPUT_FLAGS and k != "session"}
+    d = {k: v for k, v in src.items() if k not in INPUT_FLAGS and k != "session" and k not in PRIVATE_INPUT_KEYS}
     if src.get("role") == "other":
         d["role"] = "other"
     return d
@@ -456,6 +459,10 @@ def clean_inputs(sources) -> list[dict]:
             role = "other"
         if role not in INPUT_ROLES:
             role = "primary" if x.get("primary") else "secondary"     # 0.41's primary flag
+        from .trackers import is_tracker, clean_tracker
+        if is_tracker(x):                 # 0.55: SPOT / inReach feeds are always "other"
+            clean_tracker(x)
+            role = "other"
         x["role"] = role
         x.pop("primary", None)
         x["show_on_map"] = bool(x.get("show_on_map", role == "other"))
@@ -484,7 +491,7 @@ def merge_inputs(mine: list[dict], template: list[dict]) -> list[dict]:
     use (as secondaries, or other), unless none would be in use."""
     mine = clean_inputs(mine)
     template = clean_inputs(template)      # names from the type and port where none is given, as here
-    flags = {str(x.get("name", "")).lower(): {k: x.get(k) for k in INPUT_FLAGS if k in x} for x in mine if x.get("name")}
+    flags = {str(x.get("name", "")).lower(): {k: x.get(k) for k in (*INPUT_FLAGS, *PRIVATE_INPUT_KEYS) if k in x} for x in mine if x.get("name")}
     first = next((i for i, x in enumerate(mine) if x.get("type") in TEMPLATE_INPUTS), None)
     rest = [x for x in mine if x.get("type") not in TEMPLATE_INPUTS]
     at = len(rest) if first is None else sum(1 for x in mine[:first] if x.get("type") not in TEMPLATE_INPUTS)
@@ -948,6 +955,12 @@ class Config:
                     raise ValueError("The default observer altitude is more than 0 and at most 60000 ft.")
                 v = f"{f:g}"
             updates = {**updates, "observer_altitude_ft": v}
+        if updates and "tracker_stale_min" in updates:
+            try:
+                n = int(float(updates["tracker_stale_min"]))
+            except (TypeError, ValueError):
+                raise ValueError("Trackers greyed out after: a number of minutes.")
+            updates = {**updates, "tracker_stale_min": max(1, min(7 * 24 * 60, n))}
         if updates and "qc_auto_minutes" in updates:
             try:
                 n = int(float(updates["qc_auto_minutes"] or 0))

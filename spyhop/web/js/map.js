@@ -691,11 +691,18 @@ export class MapView {
     const key = `${icon}|${color}|${lost}|${hdg == null ? '' : Math.round(hdg)}`;
     if (key === x.iconKey) return;
     x.iconKey = key;
-    x.dot.setIcon(L.divIcon({ className: `external-input${lost ? ' external-lost' : ''}`, html: externalIconHtml(icon, color, hdg, lost), iconSize: [28, 28], iconAnchor: [14, 14] }));
+    const stale = lost && s.tracker;          // a tracker: greyed out, no ✕ (it reports every few minutes)
+    x.dot.setIcon(L.divIcon({ className: `external-input${lost ? (stale ? ' external-stale' : ' external-lost') : ''}`, html: externalIconHtml(icon, stale ? '#8a8a8a' : color, hdg, lost && !stale), iconSize: [28, 28], iconAnchor: [14, 14] }));
   }
 
   // 0.45: lost = no fix for EXTERNAL_LOST_MS (or none since its trail was read back from the file)
-  externalLost(x) { return !x.lastFixMs || Date.now() - x.lastFixMs > EXTERNAL_LOST_MS; }
+  // 0.55: a satellite tracker reports every few minutes: it's "stale" (greyed) when its last fix is older
+  // than Settings → Inputs → Trackers greyed out after (30 min by default)
+  externalLost(x) {
+    if (x.style?.tracker) return !x.lastFixMs || Date.now() - x.lastFixMs > this.trackerStaleMs();
+    return !x.lastFixMs || Date.now() - x.lastFixMs > EXTERNAL_LOST_MS;
+  }
+  trackerStaleMs() { return (+this.app.S.config.settings.tracker_stale_min || 30) * 60000; }
 
   // every vessel message: an "other" input that wasn't in it may have just been lost
   checkExternalsLost() {
@@ -747,20 +754,24 @@ export class MapView {
       const agoText = ago < 120 ? `${ago} s ago` : ago < 7200 ? `${Math.round(ago / 60)} min ago` : `${(ago / 3600).toFixed(1)} h ago`;
       updated = `${tp.date !== timeParts(new Date().toISOString(), this.app.clock()).date ? tp.date + ' ' : ''}${tp.time} ${tp.abbr} (${agoText})`;
     }
-    const lostRow = lost ? '<tr><th></th><td class="ext-lost-note">✕ GPS lost: no position for over 15 s</td></tr>' : '';
-    return `<b>${esc(name)}</b> <span class="hint">(other source)</span><table class="pop">
+    const tr = x.style?.tracker;
+    const lostRow = !lost ? '' : tr ? `<tr><th></th><td class="ext-lost-note">No fix for over ${Math.round(this.trackerStaleMs() / 60000)} min</td></tr>`
+      : '<tr><th></th><td class="ext-lost-note">✕ GPS lost: no position for over 15 s</td></tr>';
+    const kind = tr ? `${tr === 'spot' ? 'SPOT' : 'inReach'} tracker${x.style.feed && x.style.feed !== name ? `, feed “${esc(x.style.feed)}”` : ''}` : 'other source';
+    const extra = tr ? `${f.battery ? `<tr><th>Battery</th><td>${esc(f.battery)}</td></tr>` : ''}${f.kind ? `<tr><th>Message</th><td>${esc(f.kind)}</td></tr>` : ''}` : '';
+    return `<b>${esc(name)}</b> <span class="hint">(${kind})</span><table class="pop">
       <tr><th>Position</th><td>${lat != null ? fmtPos(lat, lon, fmt) : '—'}</td></tr>
       <tr><th>Speed</th><td>${num(f.sog, 1)} kn</td></tr>
       <tr><th>Heading</th><td>${fmtBrg(f.heading ?? f.cog)}T</td></tr>
       ${rel}
-      <tr><th>Last updated</th><td class="ext-updated">${updated}</td></tr>${lostRow}</table>`;
+      <tr><th>${tr ? 'Last fix' : 'Last updated'}</th><td class="ext-updated">${updated}</td></tr>${extra}${lostRow}</table>`;
   }
 
   // the trails so far, from the server (at start, and when a survey is started, opened or closed)
-  async loadExternals() {
+  async loadExternals(tracks = null) {
     if (!this.externals?.size) return;
-    let r;
-    try { r = await api('/api/externals'); } catch { return; }
+    let r = tracks ? { tracks } : null;
+    if (!r) { try { r = await api('/api/externals'); } catch { return; } }
     for (const [name, x] of this.externals) {
       x.pts = (r.tracks || {})[name] || [];
       this.drawExternal(name);

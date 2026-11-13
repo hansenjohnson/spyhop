@@ -271,8 +271,8 @@ def _redact(v):
         return v.split("?", 1)[0] + "?…" if "://" in v and "?" in v else v
     if isinstance(v, list):
         return [_redact(x) for x in v]
-    if isinstance(v, dict):
-        return {k: _redact(x) for k, x in v.items()}
+    if isinstance(v, dict):          # 0.55: tracker passwords (and the sharing PIN) never leave the computer
+        return {k: ("…" if k in ("password", "viewer_pin") and x else _redact(x)) for k, x in v.items()}
     return v
 
 

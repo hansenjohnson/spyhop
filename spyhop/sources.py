@@ -42,6 +42,9 @@ def describe(src: dict) -> str:
         return f"Replay {src.get('path')}"
     if t == "sim":
         return "Simulator"
+    if t in ("spot", "inreach"):
+        from .trackers import describe as tdescribe
+        return tdescribe(src)
     return str(t)
 
 
@@ -115,6 +118,9 @@ class SourceManager:
                 continue
             self.status[i] = {"name": label(src), "state": "starting", "lines": 0, "error": "",
                               "role": role(src), "type": src.get("type")}
+            if src.get("type") in ("spot", "inreach"):        # 0.55: polled by trackers.TrackerPoller instead
+                del self.status[i]
+                continue
             runner = getattr(self, "_run_" + str(src.get("type")), None)
             if runner is None:
                 self.status[i].update(state="error", error="unknown source type")

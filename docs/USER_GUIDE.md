@@ -311,8 +311,22 @@ Inputs are set up in **Settings → Inputs** (GPS / NMEA inputs).
 | **GPSD** | Linux gpsd. |
 | **File** | Replays an NMEA log in real time (or faster, with *Speed ×*). Spyhop's own raw logs are replayed at the pace they were recorded; plain NMEA files at the pace of their RMC/GGA times. Make it the primary to replay a survey's track. |
 | **Simulator** | Practice and testing (see the [Quick start](#b-try-it-with-the-simulator)). |
+| **SPOT feed** | Globalstar SPOT trackers (SPOT Gen4, SPOT Trace, SPOT X…) on a buoy, a tag boat or a drifter, through their XML feed. Always an "other" input. Needs an internet connection. |
+| **inReach MapShare** | Garmin inReach devices, through their MapShare page. Always an "other" input. Needs an internet connection. |
 
 Spyhop reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG and HDM for heading. For the Instruments panel it also reads VHW and VBW (speed through water), DPT, DBT, DBS and DBK (depth), MWV, VWR, VWT and MWD (wind), MTW, MTA, MHU, MMB and MDA (weather), RPM (engines), ROT, RSA, and XDR transducers. The raw NMEA monitor at the bottom of Settings → Inputs shows exactly what is arriving.
+
+### Satellite trackers (SPOT and inReach)
+
+A SPOT or inReach tracker reports its position over satellite every few minutes. Spyhop checks the tracker's web feed in the background and draws each device as an **other** source: its own map layer and trail, its popup, and its track saved as `<survey>_<device>_gps.gpx` while a survey is active (Record track). **The laptop needs an internet connection** (Wi-Fi, a ship's satellite link, a phone hotspot); without one, the status line says so and Spyhop keeps trying, while everything else carries on as normal.
+
+- **SPOT feed:** in your SPOT account (login.findmespot.com), open **XML Feed** (under Settings or Share), choose **Create XML Feed**, tick the devices to include, and save. Copy the **XML Feed ID** (the long code; pasting the whole feed address works too). If you set the feed to private, type its password too. In Spyhop add an input, choose **SPOT feed**, and paste the ID. One feed can hold several devices: each one appears on the map under its own name. SPOT allows a check no more often than every 2.5 minutes per feed (150 s is the shortest Check every), and Spyhop waits 2 s between feeds. Because of that rule, pressing Apply again within 2.5 minutes of a check makes a SPOT feed wait out the rest of that time before its next check. A new feed only has positions from the time it was made.
+- **inReach MapShare:** in Garmin Explore (explore.garmin.com), open **Social** (MapShare), switch **MapShare** on, and note the MapShare address, `share.garmin.com/<name>`; set a MapShare password if you want one. Spyhop reads MapShare's **Raw KML** feed (the Feeds button there shows it). In Spyhop add an input, choose **inReach MapShare**, and type the name (or paste the address) and the password. MapShare only shows what its settings allow, so leave the locations visible.
+- **Check every:** how often Spyhop asks for new positions (5 minutes by default). After a gap (no internet for a while, Spyhop closed), the next check catches up: it asks for everything since the last position it has.
+- **Times:** each position keeps the time the device took it, not when Spyhop heard of it. Only positions from after the survey's Start go in the survey's track file; positions Spyhop already has are skipped.
+- **Status:** under the inputs, each feed's line says when it was last checked, the time and age of its newest position, its devices, and any problem: *no internet connection*, *no such feed* (check the ID), or *password protected* (type the password, or it's wrong).
+- **On the map** (Mapping 'Other' inputs): a feed's devices share its icon, color, line, trail and Record track. A tracker's marker turns grey when its last position is older than **Grey out a tracker when its last fix is older than** (30 min by default); its popup shows the last fix and how long ago it was, and the battery state for SPOT.
+- **Templates** carry tracker feeds (their ID or MapShare name and check interval), never their passwords: each computer types its own.
 
 ### Instruments and NMEA logs
 
@@ -531,7 +545,7 @@ A **template** is one small file, `<name>.spyhop-template.zip`, holding a team's
   - the keyboard shortcuts
   - the map display (markers, trackline, lines, fading, overlay colors)
   - shared settings: lat/lon format, clock, default bearing reference and distance unit, map distance unit, effort reminder, keep awake, raw NMEA log, altitude and segment columns, automatic error check
-  - the named GPS / NMEA inputs (serial, UDP, TCP, gpsd), with each "other" input's look on the map
+  - the named GPS / NMEA inputs (serial, UDP, TCP, gpsd, SPOT and inReach feeds), with each "other" input's look on the map; tracker passwords stay on each computer
   - the map feeds (their addresses, not their data) and which online overlays are on
 - **Optionally** (ticked when saving): waypoints, routes and offline overlays. These are only ever added to a computer, never replacing what it already has.
 - **A record of changes** (who changed what, and when) and the oldest Spyhop that can use it.
