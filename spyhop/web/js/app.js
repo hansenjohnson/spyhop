@@ -11,6 +11,8 @@ import { openInstrumentPlot } from './plot.js';
 import { Planner } from './planning.js';
 import { ReportsTool } from './reports.js';
 import { OnlineOverlays } from './online.js';
+import { setupViewer, applyViewerPrefs, viewerRefuses, connectionBanner } from './viewer.js';
+import { qrcode } from '../vendor/qrcode/qrcode.js';
 
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = IS_MAC ? '⌘' : 'Ctrl';
@@ -27,6 +29,7 @@ class App {
 
   async start() {
     await this.load();
+    setupViewer(this);            // 0.53: a view-only window on another device
     this.buildLayout();
     this.map = new MapView(this, $('#map'));
     this.planner = new Planner(this);
@@ -71,6 +74,7 @@ class App {
 
   // Send errors in this window to Spyhop's diagnostic log, plus a performance note every 5 minutes.
   watchErrors() {
+    if (this.S.viewer) return;          // 0.53: a viewer can't write to the laptop's log
     const pending = [];
     const add = (message, stack) => { if (pending.length < 20) pending.push({ message: `${message} [${this.tab} tab]`, stack }); };
     window.addEventListener('error', (e) => add(e.message || 'error', e.error?.stack || `${e.filename}:${e.lineno}`));
@@ -93,6 +97,7 @@ class App {
 
   // Report moments when this window is busy (shown in Spyhop's Terminal window), to find slowness.
   watchSlowness() {
+    if (this.S.viewer) return;
     const pending = [];
     let mapBusyUntil = 0;
     try {
@@ -116,6 +121,7 @@ class App {
 
   async load() {
     this.S = await api('/api/bootstrap');
+    applyViewerPrefs(this);
     setEffortList(this.S.config.lists.effort);
   }
 
@@ -188,7 +194,7 @@ class App {
     return [
       ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Routes'], ['nmea', 'Instruments'], ['resights', 'Resights'], ['qc', 'Error check'], ['summary', 'Summary'], ['reports', 'Reports']]],
       ['config', 'Settings', [['settings', 'General'], ['basemap', 'Basemap'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'], ['rules', 'Rules'],
-        ['templates', 'Templates'], ['guide', 'Guide'], ['about', 'About']]]];
+        ['templates', 'Templates'], ...(this.S?.viewer ? [] : [['sharing', 'Sharing']]), ['guide', 'Guide'], ['about', 'About']]]];
   }
   groupTabs() { return this.tabGroups().flatMap(([g, , tabs]) => tabs.map(([k, l]) => [k, l, g])); }
   groupOf(tab) { return this.groupTabs().find(([k]) => k === tab)?.[2] || null; }
@@ -252,6 +258,8 @@ class App {
       f('sf-track', 'Internal trackline (recorded while a survey is active)'),
       f('sf-effort', 'Latest effort state'),
       f('sf-qc', 'The last Error check — click to open it (Tools → Error check)'),
+      f('sf-sharing', 'Other devices watching this Spyhop (view only) — click for Settings → Sharing'),
+      f('sf-viewer', 'This window is view only: data and settings are changed on the laptop running Spyhop', 'View only'),
       el('div', { class: 'sf grow' }),
       f('sf-version', 'Spyhop version — click for details (Settings → About)', `Spyhop ${this.S.about?.spyhop || ''}`));
     $('#sf-version').addEventListener('click', () => this.showTab('about'));
@@ -260,6 +268,9 @@ class App {
     $('#sf-remind').addEventListener('click', () => this.showTab('effort'));
     $('#sf-survey').addEventListener('click', () => this.showTab('survey'));
     $('#sf-qc').addEventListener('click', () => this.showTab('qc'));
+    $('#sf-sharing').addEventListener('click', () => this.showTab('sharing'));
+    $('#sf-viewer').hidden = !this.S.viewer;
+    this.updateSharingStatus();
     this.updateQcStatus();
   }
 
@@ -600,7 +611,7 @@ class App {
 
   // draw one of the panes that aren't data tables
   renderPane(tab) {
-    const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, dropdowns: this.renderDropdowns, rules: this.renderRules, nmea: this.renderNmea,
+    const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, dropdowns: this.renderDropdowns, rules: this.renderRules, sharing: this.renderSharing, nmea: this.renderNmea,
       inputs: this.renderInputs, templates: this.renderTemplates, overlays: this.renderOverlays, basemap: this.renderBasemap,
       qc: this.renderQc, summary: this.renderSummaryPane, resights: () => this.resightTool.render(), reports: () => this.reportsTool.render(), guide: this.renderGuide, about: this.renderAbout,
       route: () => this.planner.render() }[tab];
@@ -767,8 +778,16 @@ class App {
   // ---------------------------------------------------------------- live updates
   connect() {
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-    ws.onopen = () => { if (this.wsOk === null) this.reload(); this.wsOk = true; this.updateStatus(); };
-    ws.onclose = () => { this.wsOk = null; this.updateStatus(); if (!this.noReconnect) setTimeout(() => this.connect(), 2000); };
+    ws.onopen = () => { if (this.wsOk === null) this.reload(); this.wsOk = true; connectionBanner(this, false); this.updateStatus(); };
+    ws.onclose = (ev) => {
+      this.wsOk = null; this.updateStatus();
+      if (this.noReconnect) return;
+      // 0.53: say so (a viewer: the laptop), and keep trying; the data is loaded again when it's back
+      connectionBanner(this, true, ev.code === 4001 ? 'The laptop disconnected the viewers' : '');
+      // a viewer whose PIN is no longer accepted (changed, or Disconnect all) types it again
+      if (this.S.viewer) fetch('/api/clock').then((r) => { if (r.status === 401) location.assign('/viewer/pin'); }).catch(() => {});
+      setTimeout(() => this.connect(), 2000);
+    };
     ws.onmessage = (ev) => this.onMessage(JSON.parse(ev.data));
   }
 
@@ -825,6 +844,7 @@ class App {
         if (this.shown('shortcuts')) this.renderShortcuts();
         if (this.shown('qc') && !document.activeElement?.closest('#pane-qc select')) this.renderQc();
         this.updateQcStatus();
+        if (this.shown('sharing') && !document.activeElement?.closest('#pane-sharing input[type=text], #pane-sharing input[type=number]')) this.renderSharing();
         break;
       }
       case 'display':
@@ -855,6 +875,7 @@ class App {
         break;
       case 'overlays': api('/api/bootstrap').then((d) => { this.S.overlays = d.overlays; this.S.surveys = d.surveys; this.map.loadOverlays(d.overlays); this.renderOverlays(); }); break;
       case 'reload': this.reload(); break;
+      case 'sharing': this.S.sharing = m.sharing; this.updateSharingStatus(); if (this.shown('survey') && !document.activeElement?.closest('#pane-survey input[type=text], #pane-survey textarea')) this.renderSurvey(); if (this.shown('sharing') && !document.activeElement?.closest('#pane-sharing input[type=text], #pane-sharing input[type=number]')) this.renderSharing(); break;
       case 'closing': this.showClosing(m.message); break;
       case 'reports': this.reportsTool.onDefsChanged(); break;
       case 'routes': this.planner.loadSaved(); break;
@@ -1282,7 +1303,11 @@ class App {
           el('tr', {}, el('th', {}, 'Trackline'), el('td', {}, sv.active ? `● recording (a point every ${S.config.settings.tracking_interval || 1} s while the survey is active)` : 'stopped (the survey has ended)')),
           el('tr', {}, el('th', {}, 'Folder'), el('td', {}, el('span', { class: 'mono' }, sv.prefix), ' in the data folder · ',
             el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('survey'); } }, 'Open folder'))),
-          el('tr', { id: 'survey-template-row' }, el('th', {}, 'Template'), el('td', {}, this.surveyTemplateLine(sv))))),
+          el('tr', { id: 'survey-template-row' }, el('th', {}, 'Template'), el('td', {}, this.surveyTemplateLine(sv))),
+          // 0.53: other devices watching (Settings → Sharing)
+          S.viewer ? null : el('tr', { id: 'survey-sharing-row' }, el('th', {}, 'Sharing'), el('td', {},
+            S.sharing?.listening ? `on: ${S.sharing.viewers.length} watching · ` : 'off · ',
+            el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('sharing'); } }, 'Settings → Sharing'))))),
         this.surveyTemplateNote(sv),
         this.metaForm(sv),
         el('div', { class: 'btnrow' },
@@ -1311,7 +1336,7 @@ class App {
         el('button', { id: 'btn-surveys-refresh', title: 'Read the survey data folder again (e.g. after copying survey folders into it)',
           onclick: () => this.refreshFolders() }, 'Refresh')),
       el('p', { class: 'hint help' }, `Surveys are saved in Spyhop’s data folder (${S.config.data_dir}), a folder each, holding its tables, survey details, instrument readings, a copy of the template it was started with, its raw NMEA logs and its exports. To open a survey from another computer, use Open Survey Package…`));
-    pane.replaceChildren(...[current, list].filter(Boolean));
+    pane.replaceChildren(...[current, this.S.viewer ? null : list].filter(Boolean));      // 0.53: a viewer doesn't see the laptop's folders
   }
 
   // the template a survey was recorded with (a copy is kept in its folder since 0.36)
@@ -1739,6 +1764,11 @@ class App {
       if (!det.open || notes.childElementCount) return;
       fetch('/api/changelog').then((r) => r.text()).then((md) => notes.replaceChildren(...renderMarkdown(md))).catch(() => {});
     } }, el('summary', {}, 'What’s new (changelog)'), notes);
+    if (this.S.viewer) {           // 0.53: the version and the changelog only
+      return el('section', { class: 'settings-sec', id: 'about-section' }, el('h3', {}, 'About Spyhop'),
+        el('p', {}, el('b', { class: 'big' }, `Spyhop ${a.spyhop || ''}`), el('span', { class: 'hint' }, `  released ${a.spyhop_date || ''}`)),
+        el('p', { class: 'hint' }, 'View only: this window follows the laptop running Spyhop.'), det);
+    }
     return el('section', { class: 'settings-sec', id: 'about-section' }, el('h3', {}, 'About Spyhop'),
       el('p', {}, el('b', { class: 'big' }, `Spyhop ${a.spyhop || ''}`), el('span', { class: 'hint' }, `  released ${a.spyhop_date || ''}`)),
       el('table', { class: 'summary kv' }, el('tbody', {},
@@ -1967,6 +1997,7 @@ class App {
   }
 
   runAction(action, prefillStr, focus = '') {
+    if (viewerRefuses(this, action)) return;         // 0.53: a viewer's shortcuts only move around
     const prefill = {};
     for (const part of (prefillStr || '').split(';')) {
       const i = part.indexOf('=');
@@ -2853,6 +2884,7 @@ class App {
 
   // the "edit the file in a spreadsheet" box under the Shortcuts and Dropdowns editors
   fileBox(file, what, dropDraft, locked = false) {
+    if (this.S.viewer) return null;
     return el('div', { class: 'filebox' },
       el('div', {}, el('b', {}, 'Many changes at once? '), 'Edit ', el('span', { class: 'mono' }, file),
         ' in a spreadsheet or text editor, save it, then press Reload. Keep the first (header) row as it is.',
@@ -3119,6 +3151,56 @@ class App {
         el('button', { id: 'btn-rules-save', class: `primary${dirty ? ' dirty' : ''}`, disabled: locked, onclick: () => this.saveRules() }, dirty ? 'Save — unsaved changes' : 'Save'),
         el('button', { disabled: !this.rulesDraft, onclick: () => { this.rulesDraft = null; this.ruleTests = {}; redraw(); } }, 'Revert')),
       this.fileBox('rules.csv', 'config:rules', () => { this.rulesDraft = null; }, locked)));
+  }
+
+  // ---------------------------------------------------------------- Settings → Sharing (0.53)
+  // Other devices on the vessel's network (phones, tablets, a screen on the bridge) watch in a browser,
+  // view only. Only this laptop can enter or change data.
+  updateSharingStatus() {
+    const f = $('#sf-sharing');
+    if (!f) return;
+    const sh = this.S.sharing;
+    f.hidden = !!this.S.viewer || !sh?.listening;
+    if (sh?.listening) { const n = sh.viewers.length; f.textContent = `Sharing: ${n} viewer${n === 1 ? '' : 's'}`; }
+  }
+
+  async renderSharing() {
+    const pane = $('#pane-sharing');
+    if (!pane) return;
+    const sh = this.S.sharing || { enabled: false, port: 8766, viewers: [], addresses: [] };
+    const st = this.S.config.settings;
+    const qr = (url) => {
+      try { const q = qrcode(0, 'M'); q.addData(url); q.make(); return el('span', { class: 'qr', html: q.createSvgTag({ cellSize: 4, margin: 2, scalable: true }) }); } catch { return null; }
+    };
+    const portBox = el('input', { type: 'number', id: 'viewer-port', min: 1024, max: 65535, value: st.viewer_port || 8766, style: { width: '7em' } });
+    const pinBox = el('input', { type: 'text', id: 'viewer-pin', value: st.viewer_pin || '', size: 12, maxlength: 12, autocomplete: 'off', placeholder: 'no PIN' });
+    const state = !sh.enabled ? 'Off: no other device can connect.'
+      : sh.error ? sh.error
+      : sh.listening ? `On: other devices can watch on port ${sh.listening_port}${sh.session ? ' (switched on for this session when Spyhop was started)' : ''}.` : 'Starting…';
+    pane.replaceChildren(el('section', { class: 'settings-sec', id: 'sharing-section' },
+      el('h3', {}, 'Sharing with other devices'),
+      el('p', { class: 'hint help' }, 'Phones, tablets or a screen on the bridge on the same network as this laptop can open Spyhop in a browser and follow the survey live: the map, the tables, the Summary, reports and the instruments. They can’t change anything: only this laptop enters or changes data and settings. Viewers choose their own tab, map view, text size and formats. The first time, the computer may ask whether to allow Python to accept connections: allow it (on Windows, on private networks). Keep this laptop awake while others are watching (Settings → General → Keep the computer awake).'),
+      el('label', { class: 'check' }, el('input', { type: 'checkbox', id: 'sharing-on', checked: !!st.sharing_enabled, disabled: sh.session,
+        onchange: (e) => this.saveSettings({ sharing_enabled: e.target.checked }) }), 'Let other devices on this network watch (view only)'),
+      el('p', { id: 'sharing-state', class: sh.error ? 'cell-err' : 'hint' }, state),
+      el('div', { class: 'btnrow' },
+        el('label', { class: 'inline' }, 'Port ', portBox),
+        el('button', { id: 'viewer-port-save', onclick: () => this.saveSettings({ viewer_port: Number(portBox.value) }) }, 'Use this port'),
+        el('label', { class: 'inline', title: '4 to 12 letters or digits. Blank: anyone on the network can watch.' }, 'PIN ', pinBox),
+        el('button', { id: 'viewer-pin-save', onclick: () => { this.saveSettings({ viewer_pin: pinBox.value.trim() }); toast(pinBox.value.trim() ? 'PIN saved: viewers type it once on each device' : 'No PIN: anyone on the network can watch'); } }, 'Save PIN')),
+      sh.listening ? el('div', {},
+        el('h4', {}, 'Open Spyhop on another device'),
+        el('p', { class: 'hint' }, sh.addresses.length ? 'On the other device, join the same network, then scan a code or type the address. The address can change from one trip to the next: look here again.'
+          : 'This laptop has no network address that other devices can use: join a network (Wi-Fi or cable) first.'),
+        el('div', { class: 'share-addrs', id: 'sharing-addresses' }, sh.addresses.map((u) => el('div', { class: 'share-addr' }, qr(u), el('div', { class: 'mono' }, u)))),
+        el('h4', {}, `Watching now (${sh.viewers.length})`),
+        sh.viewers.length ? el('table', { class: 'summary', id: 'sharing-viewers' },
+          el('thead', {}, el('tr', {}, ['Device', 'Browser', 'Since'].map((h) => el('th', {}, h)))),
+          el('tbody', {}, sh.viewers.map((v) => el('tr', {}, el('td', { class: 'mono' }, v.address), el('td', {}, v.browser), el('td', {}, v.since)))))
+          : el('p', { class: 'hint' }, 'No one yet.'),
+        el('div', { class: 'btnrow' }, el('button', { id: 'sharing-disconnect', disabled: !sh.viewers.length, title: 'Close every viewer’s connection (with a PIN, they must type it again)',
+          onclick: async () => { try { const r = await api('/api/sharing/disconnect', {}); this.S.sharing = r.sharing; this.renderSharing(); } catch {} } }, 'Disconnect all viewers')),
+        el('p', { class: 'hint help' }, 'Can’t connect? Both devices must be on the same network; some Wi-Fi networks (often guest or hotel Wi-Fi) keep devices apart, and a small travel router on board avoids that. Check that the computer’s firewall allows Python. Viewers reconnect by themselves when this laptop wakes up or Spyhop restarts.')) : null));
   }
 
   async saveRules() {
@@ -3576,6 +3658,7 @@ class App {
     };
     // one estimate at a time across redraws (the pane redraws as chart files come and go), and only the latest is shown
     const estimate = () => {
+      if (this.S.viewer) return;              // 0.53: downloads are the laptop's
       clearTimeout(this._estTimer);
       this._estTimer = setTimeout(async () => {
         const seq = (this._estSeq = (this._estSeq || 0) + 1);

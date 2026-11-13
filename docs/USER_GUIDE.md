@@ -192,6 +192,7 @@ The **map** (top left), **Survey, Tools and Settings** (top right), and the **da
   - **Shortcuts** and **Dropdowns:** the keyboard shortcuts and the drop-down lists of the current template.
   - **Rules:** your team's own checks, run by the Error check (see [Rules](#rules)).
   - **Templates:** using, saving and sharing templates.
+  - **Sharing:** let phones, tablets or other screens on the network watch, view only (see [Sharing with other devices](#sharing-with-other-devices)).
   - **Guide:** this guide, with its contents beside it (above it in a narrow pane).
   - **About:** the version, the changelog, links to Spyhop's folders, the diagnostic logs (**Save diagnostics…**), updates, and uninstall or reinstall.
 - Clicking **Tools** or **Settings** returns to the one of its tabs you used last.
@@ -365,6 +366,24 @@ Every time in Spyhop comes from the computer's clock, so Spyhop compares it with
 
 - **Keeping the computer awake** (Settings → General → Reminders and sleep): a computer that goes to sleep stops recording the trackline and NMEA data, so by default Spyhop stops it sleeping **during a survey**. Choose **Always** to keep it awake whenever Spyhop is open, or **Never** to leave sleep to the computer's own settings. Tick **Keep the screen on too** to stop the screen turning off as well. Closing a laptop's lid still puts most laptops to sleep.
 - **Crash recovery:** if Spyhop is closed or crashes while a survey is active, it reopens that survey on the next start and asks whether to continue.
+
+## Sharing with other devices
+
+Phones, tablets or a screen on the bridge or in the galley can follow the survey live, **view only**: the map, the tables, the Summary, Reports, the instruments, resights, the Error check and this guide. Only the laptop running Spyhop enters or changes data and settings.
+
+1. On the laptop, open **Settings → Sharing** and tick **Let other devices on this network watch**.
+2. On the other device, join the same network (Wi-Fi or cable) and scan the QR code shown there, or type the address under it (for example `http://192.168.1.20:8766`).
+
+The status bar shows **Sharing: N viewers**, and Settings → Sharing lists who is watching. **Disconnect all viewers** closes their connections.
+
+- **A PIN** (optional, 4–12 letters or digits): viewers type it once on each device. Leave it blank to let anyone on the network watch. Changing the PIN, or Disconnect all viewers, asks every viewer for it again. A wrong PIN is refused, and each wrong try makes the next one wait longer.
+- **What viewers see:** everything but the laptop's folders, its GPS / NMEA inputs and the details remembered from earlier surveys. The survey details shown in the Summary are included. Viewers see the settings tabs, but nothing there can be changed except how Spyhop looks in that browser: text size, the map display, columns, lat/lon format, clock. **Use the laptop's settings again** (in their Settings → General) undoes those. Each viewer also keeps its own tab, map view and Follow vessel choice.
+- **Online overlays** (AIS, weather radar, map feeds) aren't offered to viewers, and a viewer's map uses only the map tiles already on the laptop (viewed before, downloaded areas and offline charts), so viewers never make the laptop use the internet.
+- **If the laptop goes away** (asleep, Spyhop closed, out of range), viewers show **Lost connection to the laptop running Spyhop — retrying…** and pick up again by themselves when it's back.
+- **The firewall:** the first time sharing is switched on, the computer may ask whether Python may accept incoming connections. Allow it. On Windows, allow it on **private networks**, and set the vessel's network to Private.
+- **Can't connect?** Both devices must be on the same network. Many guest, hotel and some ship Wi-Fi networks keep devices apart ("client isolation"); a small travel router on board avoids that. The laptop's address can change from one trip to the next: scan the code again.
+- **Keep the laptop awake** while others are watching: Settings → General → Keep the computer awake (during a survey, by default). A sleeping laptop stops sharing.
+- On a phone, the panes are small: maximize one (□ on its heading) to use it full-screen. Tables scroll sideways, the map pans and pinch-zooms, and markers open their popup with a tap.
 
 ## Error check
 

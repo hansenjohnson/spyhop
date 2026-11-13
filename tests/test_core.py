@@ -3180,3 +3180,117 @@ def test_rules_api_and_locked_during_survey(tmp_path):
     a.rec.cfg.rules_path.write_text("on,table,level,if,then,message,resights\n")
     k = _run(a.reload_config(_Req()))
     assert "rules.csv" in k["kept"] and len(a.rec.cfg.rules) == 1
+
+
+def test_viewer_port_allows_only_its_list(tmp_path):
+    """0.53: on the viewer app every registered route not in sharing.ALLOWED is refused (so routes added later
+    are covered), the allowed ones work, and a viewer's bootstrap and messages carry no private details."""
+    import asyncio
+    from aiohttp.test_utils import TestClient, TestServer
+    from spyhop import sharing
+    from spyhop.server import App
+    a = App(tmp_path / "a")
+    a.rec.cfg.save_settings({"last_meta": {"chief_scientist_email": "chief@example.org"}, "template_url": "https://example.org/t"})
+    a.rec.start_survey("V")
+    a.rec.new_row("sightings", {"Species": "Fin whale", "Count": "2"})
+    va = a.build(viewer=True)
+    routes = set()
+    for r in va.router.routes():
+        res = r.resource
+        if res is not None and r.method != "HEAD":
+            routes.add((r.method, res.canonical))
+    assert {k for k in routes if k in sharing.ALLOWED} and routes - sharing.ALLOWED - sharing.PIN_ROUTES
+
+    def fill(path):
+        return path.replace("{tab}", "sightings").replace("{name}", "x").replace("{i}", "0").replace("{z}", "1") \
+            .replace("{x}", "0").replace("{y}", "0").replace("{set}", "a").replace("{fontstack}", "f").replace("{range}", "0-255") \
+            .replace("{rest}", "x")
+
+    async def go():
+        async with TestClient(TestServer(va)) as c:
+            for method, path in sorted(routes - sharing.ALLOWED - sharing.PIN_ROUTES):
+                resp = await c.request(method, fill(path), json={})
+                assert resp.status == 403, (method, path, resp.status)
+            r = await c.get("/api/bootstrap")
+            assert r.status == 200
+            d = await r.json()
+            s = json.dumps(d)
+            # the survey details (shown in the Summary) are fine; the last-used details, addresses and folders aren't
+            assert d["viewer"] and "last_meta" not in d["config"]["settings"] and "example.org/t" not in s and str(tmp_path) not in s
+            assert "nmea_sources" not in d["config"]["settings"] and d["nmea"]["sources"] == []
+            assert d["tables"]["sightings"]["rows"][0]["Species"] == "Fin whale"
+            assert (await c.get("/static/js/app.js")).status == 200
+            assert (await c.post("/api/qc", json={})).status == 200           # read-only work is allowed
+            # the websocket: what a viewer sends is ignored; what it gets has no private settings
+            ws = await c.ws_connect("/ws")
+            assert len(a.sharing.viewers) == 1
+            await ws.send_str(json.dumps({"type": "edit", "tab": "sightings"}))
+            a._broadcast_soon({"type": "settings", "settings": a.rec.cfg.settings})
+            a._broadcast_soon({"type": "vessel", "vessel": {}, "nmea": {"sources": [{"port": 4800}]}})
+            m1 = json.loads((await ws.receive()).data)
+            m2 = json.loads((await ws.receive()).data)
+            assert "last_meta" not in m1["settings"] and "nmea" not in m2
+            await ws.close()
+            await asyncio.sleep(0.05)
+            assert not a.sharing.viewers and len(a.rec.tables["sightings"].rows) == 1
+            # the laptop's own app is unchanged: full access, full bootstrap with the sharing status
+        async with TestClient(TestServer(a.build())) as c:
+            d = await (await c.get("/api/bootstrap")).json()
+            assert not d.get("viewer") and d["sharing"]["enabled"] is False and d["config"]["settings"]["last_meta"]
+            assert (await c.post("/api/tab/sightings/add", json={})).status == 200
+    asyncio.run(go())
+
+
+def test_viewer_pin_and_no_internet(tmp_path):
+    import asyncio
+    import time as _t
+    from aiohttp.test_utils import TestClient, TestServer
+    from spyhop import sharing
+    from spyhop.server import App
+    a = App(tmp_path / "a")
+    a.rec.cfg.save_settings({"viewer_pin": "2468"})
+    va = a.build(viewer=True)
+    seen = []
+
+    async def fake_session_get(url):
+        seen.append(url)
+        raise AssertionError("a viewer made the laptop use the internet")
+
+    async def go():
+        async with TestClient(TestServer(va)) as c:
+            r = await c.get("/", allow_redirects=False)
+            assert r.status == 302 and r.headers["Location"] == "/viewer/pin"
+            assert (await c.get("/api/bootstrap")).status == 401
+            assert (await c.post("/viewer/pin", data={"pin": "1111"})).status == 401
+            t0 = _t.monotonic()
+            assert (await c.post("/viewer/pin", data={"pin": "0000"})).status == 401
+            assert _t.monotonic() - t0 >= 0.9                        # slower after a wrong PIN
+            r = await c.post("/viewer/pin", data={"pin": "2468"}, allow_redirects=False)
+            assert r.status == 302 and sharing.COOKIE in r.cookies
+            assert (await c.get("/api/bootstrap")).status == 200
+            a.sharing.pin_changed()                                     # a new PIN (or Disconnect all): type it again
+            assert (await c.get("/api/bootstrap")).status == 401
+            # tiles for viewers: the cache and MBTiles only
+            a.rec.cfg.save_settings({"viewer_pin": ""})
+            a.tiles._session = lambda: (_ for _ in ()).throw(AssertionError("internet"))
+            r = await c.get("/tiles/s/0/3/2/2")
+            assert r.status == 404
+        # sharing on and off opens and closes the port (a free port picked here)
+        import socket
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        a.rec.cfg.save_settings({"sharing_enabled": True, "viewer_port": port})
+        await a.sharing.sync()
+        assert a.sharing.runner is not None and a.sharing.status()["listening_port"] == port
+        r2, w2 = await asyncio.open_connection("127.0.0.1", port)
+        w2.close()
+        a.rec.cfg.save_settings({"sharing_enabled": False})
+        await a.sharing.sync()
+        assert a.sharing.runner is None
+        try:
+            await asyncio.open_connection("127.0.0.1", port)
+            assert False, "still open"
+        except OSError:
+            pass
+    asyncio.run(go())

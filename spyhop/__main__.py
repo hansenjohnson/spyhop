@@ -74,6 +74,8 @@ def main(argv=None):
     ap.add_argument("--install-shortcut", action="store_true",
                     help="make a double-clickable Spyhop icon (Desktop, Applications / Start menu)")
     ap.add_argument("--if-needed", action="store_true", help="with --install-shortcut: only if it isn't made yet")
+    ap.add_argument("--viewers", type=int, nargs="?", const=8766, default=None, metavar="PORT",
+                    help="share view-only with other devices on the network for this session (default port 8766)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
     if args.install_shortcut:
@@ -106,6 +108,8 @@ def main(argv=None):
         return
 
     server = App(data_dir, extra)
+    if args.viewers:
+        server.sharing.session_port = args.viewers
     app = server.build()
     diag.log_startup(data_dir, server.rec.cfg.data_dir, server.rec.cfg.settings, sys.argv[1:])
     url = f"http://127.0.0.1:{args.port}/"

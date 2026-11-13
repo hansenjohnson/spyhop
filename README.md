@@ -47,6 +47,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
   - **Rules:** your team's own checks, built as sentences (*if* Event is CTD cast *then* ID isn't blank), carried in the template
   - optionally runs by itself every few minutes during a survey
   - GPS jumps and gaps, each with a one-click **Fix** that marks it with an ERROR Effort row. The trackline is broken only there, so every change to the track is in the data for anyone to see.
+- **Sharing, view only:** phones, tablets or a screen on the bridge on the vessel's network follow the survey live in a browser (scan a QR code); only the laptop records
 - **Summary and reports:**
   - a Summary (totals, conditions, observers, a map), saved as HTML or PDF
   - **Reports:** pick species or event types, conditions and columns from any table, see the result live, and save it as CSV, HTML or PDF; save reports by name, share them in templates, and run them all at once

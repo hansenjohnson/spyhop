@@ -63,6 +63,8 @@ export class OnlineOverlays {
     const layers = [[AIS_NAME, this.ais], [RADAR_US_NAME, this.radarUS], [RADAR_WORLD_NAME, this.radarWorld]];
     let on = null;
     try { on = JSON.parse(localStorage.getItem('wsr.overlays') || 'null'); } catch {}
+    this.feeds = []; this.presets = []; this.feedLayers = {};
+    if (app.S.viewer) return;        // 0.53: a view-only window: no online overlays (they'd come through the laptop's internet)
     for (const [name, layer] of layers) {
       layer._group = 'online';
       mv.overlays[name] = layer;
@@ -90,6 +92,7 @@ export class OnlineOverlays {
   // online_display, with a new stamp each time a template is used). Applied once per stamp; after that
   // the person's own choices on this computer stand.
   applyPackDisplay() {
+    if (this.app.S.viewer) return;
     const d = this.app.S.config.settings.online_display;
     if (!d || !d.stamp) return;
     let done = null;
@@ -278,6 +281,7 @@ export class OnlineOverlays {
 
   // ------------------------------------------------------------------ map feeds
   async loadFeeds(initialOn = null) {
+    if (this.app.S.viewer) return;
     let r;
     try { r = await api('/api/feeds'); } catch { return; }
     this.feeds = r.feeds; this.presets = r.presets; this.feedsFolder = r.folder;

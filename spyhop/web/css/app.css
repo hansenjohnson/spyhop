@@ -701,3 +701,19 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 .rule-test-result button.link { background: none; border: none; padding: 0 0.25em; color: #1565c0; text-decoration: underline; cursor: pointer; }
 #sf-qc { cursor: pointer; }
 #sf-qc .qc-pill { font-size: 0.8em; padding: 0 0.4em; }
+
+/* 0.53: view-only windows and Settings → Sharing */
+#conn-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 3000; background: #a1271c; color: #fff; text-align: center;
+  padding: 0.45em 1em; font-weight: 600; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25); }
+#sf-viewer { background: #0b5c8a; color: #fff; border-radius: 9px; padding: 0 0.6em; font-weight: 600; }
+#sf-sharing { cursor: pointer; color: #0b5c8a; font-weight: 600; }
+body.viewer .toolbar > button:not(.columns-btn):not(.showcols-btn) { display: none; }
+body.viewer .view-locked { cursor: not-allowed; }
+.share-addrs { display: flex; flex-wrap: wrap; gap: 1em 2em; margin: 0.5em 0 1em; }
+.share-addr { display: flex; flex-direction: column; align-items: center; gap: 0.3em; }
+.share-addr .qr svg { width: 168px; height: 168px; background: #fff; }
+/* touch and narrow screens (viewers on phones and tablets) */
+@media (pointer: coarse) {
+  body.viewer .leaflet-popup-content { font-size: 1.05em; }
+  body.viewer .pane-tabs button, body.viewer .sub-tabs button { padding: 0.5em 0.8em; }
+}

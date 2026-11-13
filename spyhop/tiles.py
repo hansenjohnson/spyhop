@@ -227,6 +227,9 @@ class TileService:
     async def _download(self, url: str) -> tuple[int, bytes, str]:
         """(status, body, content type); status 0 = no connection. Never raises."""
         host = urlsplit(url).netloc.lower()
+        from .sharing import NO_NETWORK
+        if NO_NETWORK.get():                # 0.53: a viewer's request: the cache and MBTiles only
+            return 0, b"", "view only: not fetched from the internet"
         if time.monotonic() < max(self._offline_until, self._host_until.get(host, 0.0)):
             return 0, b"", "no internet connection"
         last = ""

@@ -1,5 +1,5 @@
 // Spreadsheet-style editable grid for one data tab.
-import { el, fmtCoord, timeParts, api, modal, confirmBox, isModalOpen, isOn, effortInfo } from './util.js';
+import { el, fmtCoord, timeParts, api, modal, confirmBox, isModalOpen, isOn, effortInfo, viewOnlyToast } from './util.js';
 import { shapeSvg } from './map.js';
 import { Resights } from './resights.js';
 
@@ -261,7 +261,7 @@ export class Grid {
       const none = !this.app.S.survey && this.tab !== 'marks';
       this.wrap.append(el('div', { class: 'empty' }, none
         ? 'No survey open — start a new survey or open one in the Survey tab.'
-        : `No ${this.spec.title.toLowerCase()} yet. Use “Add row” or a keyboard shortcut.`));
+        : `No ${this.spec.title.toLowerCase()} yet.${this.app.viewer ? "" : " Use “Add row” or a keyboard shortcut."}`));
     }
     [this.wrap.scrollLeft, this.wrap.scrollTop] = scroll;
     document.getElementById(`showcols-${this.tab}`)?.classList.toggle('hidden', !(this.layout().hidden || []).length);
@@ -369,12 +369,14 @@ export class Grid {
 
   // ---------------------------------------------------------------- editing
   async toggleBool(id, col) {
+    if (this.app.viewer) { viewOnlyToast(); return; }        // 0.53: view only
     const r = this.row(id);
     await this.save(id, col, r[col.key] === '1' ? '0' : '1');
   }
 
   startEdit(initial) {
     if (!this.sel) return;
+    if (this.app.viewer) { viewOnlyToast(); return; }
     const r = this.row(this.sel.id);
     const col = this.cols.find((c) => c.key === this.sel.key);
     if (!r || !col) return;

@@ -193,13 +193,44 @@ export async function promptBox(title, label, value = '', okLabel = 'OK') {
 }
 
 // ------------------------------------------------------------------ api
+// 0.53: in a view-only window (another device, Settings → Sharing on the laptop) only the requests the
+// server allows for viewers are sent: others fail quietly here (a change says once that it's view only)
+export const VIEW = { on: false, allowed: [], lastToast: 0, local: null };
+export function setViewer(allowed) {
+  VIEW.on = true;
+  VIEW.allowed = (allowed || []).map((s) => {
+    const [m, p] = s.split(' ');
+    const lit = (t) => t.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
+    const re = p === '/static' ? '^/static/.*' : `^${p.split(/\{[^}]+\}/).map(lit).join('[^/]+')}$`;
+    return [m, new RegExp(re)];
+  });
+}
+export function viewerAllows(method, path) {
+  if (!VIEW.on) return true;
+  const p = path.split('?')[0];
+  return VIEW.allowed.some(([m, re]) => m === method && re.test(p));
+}
+export function viewOnlyToast() {
+  if (Date.now() - VIEW.lastToast < 4000) return;
+  VIEW.lastToast = Date.now();
+  toast('View only: data and settings are changed on the laptop running Spyhop.', 'info', 4000);
+}
 export async function api(path, body, method) {
   const opts = { method: method || (body !== undefined ? 'POST' : 'GET'), headers: {} };
+  if (VIEW.on && VIEW.local && body !== undefined) {         // a viewer's view settings stay in this browser
+    const r = VIEW.local(path, body);
+    if (r) return r;
+  }
+  if (!viewerAllows(opts.method, path)) {
+    if (opts.method !== 'GET') viewOnlyToast();
+    const err = new Error('view only'); err.handled = true; err.viewer = true; throw err;
+  }
   if (body !== undefined) { opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
   let r;
   try { r = await fetch(path, opts); }
   catch (e) { toast('Lost connection to Spyhop. Is it still running?', 'error'); throw e; }
   const data = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }));
+  if (data.pin && VIEW.on) { location.assign('/viewer/pin'); }      // 0.53: the laptop asks viewers for a PIN
   if (!data.ok) { toast(data.error || 'Request failed', 'error'); const err = new Error(data.error); err.handled = true; throw err; }
   (data.warnings || []).forEach((w) => toast(w, 'warn'));
   return data;

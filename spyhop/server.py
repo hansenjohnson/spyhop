@@ -24,6 +24,7 @@ from .store import safe_name
 mimetypes.add_type("text/javascript", ".mjs")   # the MapLibre modules
 from . import tiles as tiles_mod
 from .tiles import TileService
+from . import sharing as sharing_mod
 
 log = logging.getLogger(__name__)
 perf_log = logging.getLogger("spyhop.slow")
@@ -236,25 +237,45 @@ class App:
         self.perf = diag.PerfMonitor()
         self.awake = awake.KeepAwake()
         self._nmea_lines0 = 0
+        self.sharing = sharing_mod.Sharing(self)       # 0.53: view-only devices on the network
 
     # -- websocket --------------------------------------------------------------
     def _broadcast_soon(self, msg: dict):
         data = json.dumps(msg, default=str)
+        viewers = self.sharing.viewers
+        vdata = None
+        if viewers:
+            vm = sharing_mod.viewer_message(msg)
+            vdata = None if vm is None else (data if vm is msg else json.dumps(vm, default=str))
         for ws in list(self.clients):
-            if not ws.closed:
+            if ws.closed:
+                continue
+            if ws in viewers:
+                if vdata is not None:
+                    asyncio.ensure_future(ws.send_str(vdata))
+            else:
                 asyncio.ensure_future(ws.send_str(data))
 
     async def ws_handler(self, request):
         ws = web.WebSocketResponse(heartbeat=20)
         await ws.prepare(request)
+        viewer = bool(request.app.get("viewer"))
+        if viewer:
+            self.sharing.add_viewer(ws, request)
         self.clients.add(ws)
         try:
-            async for msg in ws:
+            async for msg in ws:          # nothing a window sends is used (a viewer's messages are ignored too)
                 if msg.type == WSMsgType.ERROR:
                     break
         finally:
             self.clients.discard(ws)
+            if viewer:
+                self.sharing.remove_viewer(ws)
         return ws
+
+    @staticmethod
+    def is_viewer(request) -> bool:
+        return bool(request.app.get("viewer"))
 
     async def ticker(self):
         n = 0
@@ -287,7 +308,7 @@ class App:
         total = sum(self.rec.decoder.counts.values())
         self.perf.lines, self._nmea_lines0 = total - self._nmea_lines0, total
         sv = self.rec.survey
-        extra = {"windows": len(self.clients), "survey": sv["prefix"] if sv else "none",
+        extra = {"windows": len(self.clients) - len(self.sharing.viewers), "viewers": len(self.sharing.viewers), "survey": sv["prefix"] if sv else "none",
                  "rows": "/".join(str(len(self.rec.tables[t].rows)) for t in ("sightings", "effort", "events", "marks")),
                  "track points": len(self.rec.track.points) if self.rec.track else 0,
                  "tracking": "on" if self.rec.tracking_on() else "off"}
@@ -333,6 +354,7 @@ class App:
         if self.rec.cfg.settings.get("check_updates_on_start", True) and not os.environ.get("SPYHOP_NO_UPDATE_CHECK"):
             asyncio.create_task(self._startup_update_check())
         self.sync_awake()
+        asyncio.create_task(self.sharing.sync())        # 0.53: the viewer port, when sharing is on
 
     async def _startup_update_check(self):
         """0.45: on by default; a quick look (gives up after a few seconds, silently, when offline). A newer
@@ -411,7 +433,17 @@ class App:
         except OSError:
             return web.Response(text="", content_type="text/markdown")
 
+    async def on_shutdown(self, app):
+        """0.53: close the windows' websockets first, so quitting doesn't wait for them (it took up to 30 s)."""
+        await self.sharing.stop()
+        for ws in list(self.clients):
+            try:
+                await ws.close(code=1001, message=b"Spyhop is stopping")
+            except Exception:  # noqa: BLE001
+                pass
+
     async def on_cleanup(self, app):
+        await self.sharing.stop()
         if self._loop_task:
             self._loop_task.cancel()
         if getattr(self, "_watch_task", None):
@@ -436,9 +468,20 @@ class App:
         data["startup_update"] = getattr(self, "startup_update", None)
         last = cfg.settings.get("last_version")
         data["about"]["updated_from"] = last if last and last != __version__ else ""
+        if self.is_viewer(request):
+            return json_ok(sharing_mod.viewer_bootstrap(data))
+        data["sharing"] = self.sharing.status()
         if last != __version__:
             cfg.save_settings({"last_version": __version__})
         return json_ok(data)
+
+    # -- sharing (0.53): Settings → Sharing on the laptop
+    async def sharing_status(self, request):
+        return json_ok(sharing=self.sharing.status())
+
+    async def sharing_disconnect(self, request):
+        await self.sharing.disconnect_all()
+        return json_ok(sharing=self.sharing.status())
 
     async def tab_add(self, request):
         tab = request.match_info["tab"]
@@ -638,9 +681,27 @@ class App:
                 raise ValueError("Smooth vessel movement is on or off (true or false).")
             if "pane_layout" in updates:
                 updates["pane_layout"] = clean_pane_layout(updates["pane_layout"])
+            if "viewer_port" in updates:
+                p = int(updates["viewer_port"])
+                if not 1024 <= p <= 65535 or p == request.url.port:
+                    raise ValueError("The viewer port is a number from 1024 to 65535, not Spyhop's own port.")
+                updates["viewer_port"] = p
+            if "sharing_enabled" in updates:
+                updates["sharing_enabled"] = bool(updates["sharing_enabled"])
+            if "viewer_pin" in updates:
+                pin = str(updates["viewer_pin"] or "").strip()
+                if pin and not (4 <= len(pin) <= 12 and pin.isalnum()):
+                    raise ValueError("The PIN is 4 to 12 letters or digits (or blank for none).")
+                updates["viewer_pin"] = pin
         except (TypeError, ValueError) as e:
             raise ValueErrorMsg(str(e) if str(e) and not str(e).startswith("could not convert") else "That isn't a number.")
+        pin_before = self.rec.cfg.settings.get("viewer_pin")
         self.rec.cfg.save_settings(updates)
+        if "viewer_pin" in updates and updates["viewer_pin"] != pin_before:
+            self.sharing.pin_changed()
+        if {"sharing_enabled", "viewer_port", "viewer_pin"} & set(updates):
+            await self.sharing.sync()
+            self.sharing.changed()
         if "keep_awake" in updates or "keep_screen_on" in updates:
             self.sync_awake()
         if restart or "nmea_failover" in updates:
@@ -1182,7 +1243,7 @@ class App:
 
     # ---- saved routes (Tools → Routes; routes.py)
     async def routes_list(self, request):
-        return json_ok(routes=routes.list_routes(self.rec.cfg), folder=str(routes.routes_dir(self.rec.cfg)))
+        return json_ok(routes=routes.list_routes(self.rec.cfg), folder="" if self.is_viewer(request) else str(routes.routes_dir(self.rec.cfg)))
 
     async def route_file(self, request):
         try:
@@ -1628,10 +1689,19 @@ class App:
         self._broadcast_soon({"type": "overlays"})
         return json_ok()
 
-    def build(self) -> web.Application:
-        app = web.Application(middlewares=[timing, errors, no_cache], client_max_size=1024 ** 3)     # survey packages with raw NMEA logs can be large
+    def build(self, viewer: bool = False) -> web.Application:
+        """The app: full access (the laptop, on 127.0.0.1), or with viewer=True the view-only copy served to other
+        devices when sharing is on (0.53; same handlers, behind sharing.gate, no start-up or clean-up of its own)."""
+        mw = [timing, self.sharing.gate(), errors, no_cache] if viewer else [timing, errors, no_cache]
+        app = web.Application(middlewares=mw, client_max_size=(1024 ** 2 if viewer else 1024 ** 3))     # survey packages with raw NMEA logs can be large
+        app["viewer"] = viewer
         r = app.router
         r.add_get("/", self.index)
+        if viewer:
+            r.add_get("/viewer/pin", self.sharing.pin_page)
+            r.add_post("/viewer/pin", self.sharing.pin_post)
+        r.add_get("/api/sharing", self.sharing_status)
+        r.add_post("/api/sharing/disconnect", self.sharing_disconnect)
         r.add_get("/ws", self.ws_handler)
         r.add_get("/api/bootstrap", self.bootstrap)
         r.add_post("/api/tab/{tab}/add", self.tab_add)
@@ -1730,6 +1800,10 @@ class App:
         r.add_post("/api/routes/delete", self.route_delete)
         r.add_post("/api/overlays/survey", self.overlay_from_survey)
         r.add_static("/static/", WEB)
+        if viewer:
+            app["perf"] = self.perf
+            return app
         app.on_startup.append(self.on_startup)
+        app.on_shutdown.append(self.on_shutdown)
         app.on_cleanup.append(self.on_cleanup)
         return app

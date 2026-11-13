@@ -344,6 +344,9 @@ DEFAULT_SETTINGS = {
     "last_meta": {},                # survey details used last time, offered for the next survey
     "tracking_enabled": False,
     "clock_zone_last": "",          # the zone last found from the position (used until there's a fix)
+    "sharing_enabled": False,       # 0.53: Settings → Sharing: other devices on the network can watch (view only)
+    "viewer_port": 8766,            # … on this port (0.0.0.0); Spyhop itself stays on 127.0.0.1:8765
+    "viewer_pin": "",               # … with this PIN (blank: anyone on the network)
     "check_updates_on_start": True,   # look on GitHub for a newer Spyhop when it starts (0.45: on; quick, silent offline; always asks before installing)
     "pane_layout": {},              # this computer's panes: {fx, fy, min: {map, util, data}, max} (app.js)
     "follow_vessel": True,

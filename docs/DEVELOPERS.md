@@ -25,6 +25,7 @@ The server listens on <http://127.0.0.1:8765/>.
 spyhop/
   __main__.py     command line and start-up
   server.py       aiohttp routes, websocket push (vessel state every second, table changes as they happen)
+  sharing.py      view-only sharing (Settings → Sharing): the viewer listener, the list of requests viewers may make, the PIN, what viewers don't get
   recorder.py     every edit goes through here: validation, computed fields, surveys (a folder each, with their template copy), survey packages, tracker, export
   store.py        CSV tables with atomic writes and undo/redo; the track file
   schema.py       the columns of each table, and the fixed lists
@@ -60,8 +61,13 @@ spyhop/
     js/reports.js        Tools → Reports and Run Reports (runs reports on the server, /api/reports*)
     js/plot.js           instrument time-series plots
     js/summary_html.js   the self-contained Summary page (HTML export)
-    js/util.js           formatting, geodesy and small helpers
-    vendor/              Leaflet, the Natural Earth coastline
+    js/util.js           formatting, geodesy and small helpers (api() also keeps view-only windows to their allowed requests)
+    js/viewer.js         view-only windows: locked controls, view preferences kept in the browser, the connection banner
+    vendor/              Leaflet, the Natural Earth coastline, qrcode-generator (MIT, for Settings → Sharing)
+## View-only sharing
+
+Spyhop always listens on 127.0.0.1:8765, so only the laptop can enter or change data. With Settings → Sharing on (or `python -m spyhop --viewers [PORT]` for one session), a second listener on 0.0.0.0:8766 serves `App.build(viewer=True)`: the same handlers and state behind `sharing.gate`, which allows only the `(method, route)` pairs in `sharing.ALLOWED` and refuses everything else with 403. Whether a request is a viewer's depends only on which listener it arrived on. When adding a route, leave it off `ALLOWED` unless a viewer needs it and it changes nothing; `test_viewer_port_allows_only_its_list` checks every registered route.
+
 docs/            USER_GUIDE.md (shown in Settings → Guide), TEMPLATES.md, this file
 tests/test_core.py   pytest
 CHANGELOG.md     changes in each version (shown in Settings → About)

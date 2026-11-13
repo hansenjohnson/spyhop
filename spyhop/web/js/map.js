@@ -1261,9 +1261,10 @@ export class MapView {
     const item = (label, fn) => el('div', { class: 'ctx-item', onclick: () => { this.hideContext(); fn(); } }, label);
     const menu = el('div', { class: 'ctx-menu' },
       el('div', { class: 'ctx-head' }, fmtPos(ll.lat, ll.lng, fmt)),
-      item('Add sighting here', () => this.app.addRow('sightings', {}, ll)),
-      item('Add event here', () => this.app.addRow('events', {}, ll)),
-      item('Add waypoint here', () => this.app.addRow('marks', {}, ll)),
+      ...(this.app.viewer ? [] : [                // 0.53: a viewer only looks
+        item('Add sighting here', () => this.app.addRow('sightings', {}, ll)),
+        item('Add event here', () => this.app.addRow('events', {}, ll)),
+        item('Add waypoint here', () => this.app.addRow('marks', {}, ll))]),
       item('Measure from here', () => this.startMeasure(ll)),
       item('Center map here', () => this.map.panTo(ll)),
       item('Copy position', () => navigator.clipboard?.writeText(fmtPos(ll.lat, ll.lng, fmt)).then(() => toast('Position copied'))));

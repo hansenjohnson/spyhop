@@ -6,6 +6,14 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.53.0 — 2026-11-13
+
+- **Settings → Sharing:** phones, tablets or a screen on the bridge on the vessel's network can open Spyhop in a browser and follow the survey live, view only. Only the laptop running Spyhop enters or changes data. Sharing is off until it's switched on. Settings → Sharing shows the address to type, with a QR code for each, the devices watching and **Disconnect all viewers**; the status bar shows **Sharing: N viewers**.
+- **Optional PIN** for viewers; a wrong PIN is refused, and each wrong try makes the next one wait longer.
+- **Viewers** see every tab but can't change anything: no editing, no row buttons, no survey actions, and only the shortcuts that move around. Settings that only change how Spyhop looks (text size, map display, columns, formats) change that browser only. Viewers don't get the laptop's folders, GPS / NMEA inputs or the details remembered from earlier surveys, and never make the laptop use the internet (map tiles come from those already on the laptop; no online overlays).
+- **Lost connection banner:** when Spyhop (or, for a viewer, the laptop) can't be reached, a red banner says so, and the window reconnects and reloads by itself.
+- Fixed: quitting Spyhop with a window open took up to 30 seconds; it now takes a second or two.
+
 ## 0.52.0 — 2026-11-13
 
 - **Settings → Rules:** your team's own checks of one row of Sightings, Effort or Events, written as a sentence: *if* these conditions are true, *then* these must be true too. For example: if Event is CTD cast, then ID isn't blank; if Weather is Fog, then Glare is not Severe; if Behaviors includes Mom/calf, then Calves > 0. A value in [brackets] is another column of the same row (Num ≥ [Calves]). Each rule has a level (error, warning or note), a message, an On switch and, for Sightings, whether resights are checked. **Test on this survey** lists the rows that break a rule before you save it.
