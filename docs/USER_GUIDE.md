@@ -65,9 +65,10 @@ To change the template yourself:
 
 - **Settings → Dropdowns:** the Species, Events, Behaviors, Observers, Effort, Visibility, Weather and Reticles lists. Edit, add, reorder or remove entries, then press **Save**.
 - **Settings → Shortcuts:** the keyboard shortcuts, including ones that start a sighting of a given species.
+- **Settings → Rules:** your team's own checks, such as "every CTD cast has an ID" (see [Rules](#rules)).
 - **Settings → General** and **Tools → Reports:** shared settings, the map display and saved reports, which are part of the template too.
 
-The lists can't be changed while a survey is under way (only their colors), so set them up beforehand; every list has an **Other** entry for anything unexpected. When it's ready, **Settings → Templates → Save as a new template…** keeps it as one file to share with the team. See [Templates](#templates) for the details.
+The lists and rules can't be changed while a survey is under way (only the lists' colors), so set them up beforehand; every list has an **Other** entry for anything unexpected. When it's ready, **Settings → Templates → Save as a new template…** keeps it as one file to share with the team. See [Templates](#templates) for the details.
 
 ### d. Plan a route
 
@@ -108,7 +109,7 @@ If Spyhop is closed or crashes during a survey, it reopens the survey the next t
 
 ### g. End the survey and check for errors
 
-Open **Tools → Error check** and press **Run error check**. It lists **errors** (must fix: required fields left blank, values that aren't in the lists, impossible numbers), **warnings** (probably wrong: a sighting beyond the visibility, positions on land, GPS jumps) and **notes** (worth a look). **Show** takes you to the row. A GPS jump or gap has a **Fix** button, which marks that stretch with an ERROR row in the Effort table: the trackline is broken there and the stretch counts as off effort.
+Open **Tools → Error check** and press **Run error check**. It lists **errors** (must fix: required fields left blank, values that aren't in the lists, impossible numbers), **warnings** (probably wrong: a sighting beyond the visibility, positions on land, GPS jumps) and **notes** (worth a look). Your team's [rules](#rules) are checked too. **Show** takes you to the row. A GPS jump or gap has a **Fix** button, which marks that stretch with an ERROR row in the Effort table: the trackline is broken there and the stretch counts as off effort.
 
 Then, in **Survey**, press **End Survey…**. This adds the **End** row and stops the trackline. An ended survey can still be corrected, and deleting the End row makes it active again. **Close Survey…** puts a survey away without ending it.
 
@@ -144,6 +145,7 @@ The **map** (top left), **Survey, Tools and Settings** (top right), and the **da
 - speed, course and heading
 - the **conditions-check countdown** (click it to open the Effort table; the interval is in Settings → General), which flashes when overdue
 - the survey name, whether the trackline is being recorded (always while a survey is active), and the effort in force
+- **Check** with the number of errors, warnings and notes the last Error check found (click it to open the Error check); a dot means the data has changed since
 - **Clock N s ahead of / behind the GPS**, only when the computer's clock is more than 2 s off (click it; see [Clock check](#clock-check))
 - a red **GPS FALLBACK** banner across the top while a secondary input stands in for the primary (see [GPS and instruments](#gps-and-instruments))
 - the Spyhop version (click it for Settings → About)
@@ -188,6 +190,7 @@ The **map** (top left), **Survey, Tools and Settings** (top right), and the **da
   - **Basemap:** the map tiles, downloading areas for offline use, and the charts folder.
   - **Inputs:** the GPS / NMEA inputs, and how "other" inputs are drawn.
   - **Shortcuts** and **Dropdowns:** the keyboard shortcuts and the drop-down lists of the current template.
+  - **Rules:** your team's own checks, run by the Error check (see [Rules](#rules)).
   - **Templates:** using, saving and sharing templates.
   - **Guide:** this guide, with its contents beside it (above it in a narrow pane).
   - **About:** the version, the changelog, links to Spyhop's folders, the diagnostic logs (**Save diagnostics…**), updates, and uninstall or reinstall.
@@ -367,6 +370,8 @@ Every time in Spyhop comes from the computer's clock, so Spyhop compares it with
 
 **Tools → Error check:** press **Run error check** before you finish a survey (or any time). It lists problems as **errors** (must fix), **warnings** (probably wrong) and **notes** (worth a look). **Show** takes you to the row and column in the data table (the row flashes). It doesn't change anything, except when you press a **Fix** button. **Save report…** downloads the list as a CSV.
 
+**Check automatically** runs the check quietly every 1, 2, 5, 10, 15 or 30 minutes while a survey is active (off by default). The counts show in the status bar, the highlights in the tables are kept up to date, and a message pops up when a check finds more errors or warnings than the one before. It's a shared setting, so it travels with the template.
+
 **Highlight in the tables** (next to the Show filter) colors each cell with a problem in the Sightings, Effort and Events tables, in the color of its level (red for errors, amber for warnings, blue for notes), for the levels ticked in Show. A problem with a whole row colors the row number; hover over a cell to read its problems. The colors are from the last check: run it again after fixing things. It's remembered on this computer.
 
 It checks:
@@ -374,11 +379,35 @@ It checks:
 - **Survey details:** every field filled in (the station position and altitude only when needed), and a valid email.
 - **Required fields:** Sightings: everything except Behaviors, Bearing, Ref, Dist, Unit, Alt, ResNo, FieldID and Notes. Effort: everything except Notes (Start and End rows need only the time and position). Events: everything except ID and Notes.
 - **Valid values:** choices are in their lists; numbers, positions and times can be read; no time is in the future; nothing is before Start or after End; rows are in time order; no SigNo or EventNo is used twice; the survey starts with Start and has an End.
-- **Plausible values:** Num a whole number of at least 1 (flagged over 500); Calves not more than Num (or NA); Bearing 0–360° and Dist not negative, given together and with their Ref and Unit; relative bearings have a heading; animals within 10 nm of the vessel and no further than the visibility; vessel positions within 0.5 nm of the trackline; positions not on land (by the bundled coastline, ignoring the first 0.5 km); glare bearings given when there's glare.
+- **Plausible values:** Num a whole number of at least 1 (flagged over 500); Calves a whole number (or NA), with a warning when every animal is a calf; Bearing 0–360° and Dist not negative, given together and with their Ref and Unit; relative bearings have a heading; animals within 10 nm of the vessel and no further than the visibility; vessel positions within 0.5 nm of the trackline; positions not on land (by the bundled coastline, ignoring the first 0.5 km); glare bearings given when there's glare.
 - **Trackline:** a jump faster than **50 kn** (shipboard, and when the platform type isn't set), **30 kn** (stationary) or **200 kn** (aerial and other), or a gap with no position for over **120 s** (or 3 track intervals, if longer). The limits are fixed, so every check of every survey uses the same ones. Each jump or gap has a **Fix** button that adds an **ERROR** row to the Effort table one second after the last good track point, plus a row at its end that puts the effort and conditions back. The trackline is broken there (see *Trackline breaks* in [Map](#map)), and ERROR counts as off effort.
 - **Resights:** each ResNo names an existing earlier sighting of the same species; a **warning** when the animals would have swum faster than **30 kn** from one sighting to the next.
 - **Other placeholders:** every row that uses **Other** from a list, to fill in after the survey.
 - **Protocol:** a new Effort row at least every 1.5 × the reminder interval while on effort; nobody in two watch positions at once; the sighting's observer is on watch; a sighting entered twice or a duplicated event. Notes list sightings off effort, effort in sea state above 5 or visibility under 0.5 nm, and observers on watch over 2 hours without a break.
+- **Rules:** each row that breaks one of your team's [rules](#rules), at the rule's level and with its message. A note says when a rule names a value that's no longer in its list.
+
+### Rules
+
+**Settings → Rules** holds your team's own checks of the values in one row of **Sightings**, **Effort** or **Events**. Each rule reads as a sentence: *if* every "if" condition is true, *then* every "then" condition must be true too. For example:
+
+| Table | If | Then |
+|---|---|---|
+| Events | Event is CTD cast | ID isn't blank |
+| Effort | Weather is Fog | Glare is not Severe |
+| Sightings | Behaviors includes Mom/calf | Calves > 0 |
+| Sightings | Species is Unid. large whale | IDrel is Definite |
+| Sightings | Calves ≥ 0 | Num ≥ [Calves] |
+
+The last one is the rule Spyhop starts with: there can't be more calves than animals.
+
+- **Add a Sightings / Effort / Events rule**, then for each condition choose a column, a test and a value. The tests depend on the column: **is**, **is not**, **is one of**, **contains** and their opposites for text and choices; **includes** and **doesn't include** for Behaviors; **=**, **≠**, **>**, **≥**, **<** and **≤** for numbers; and **is blank** / **isn't blank** for any column. The value box offers the column's list entries.
+- **A value in [brackets] is another column of the same row**, e.g. Num ≥ [Calves]. For **is one of**, separate the values with `|` (`Fog | Rain`).
+- **+ and** adds a condition. A rule with no "if" conditions applies to every row.
+- **A condition on a blank cell is false**, except **is blank**. So a rule doesn't apply to a row whose "if" cell is blank, and a "then" condition fails on a blank cell. Number tests are false unless both sides are numbers (NA isn't one; use **is NA**).
+- **Level:** whether a broken rule is an error, a warning or a note. **Message:** what the Error check says (blank: the rule itself). **On:** untick to keep a rule without checking it. For Sightings, **Resights** says whether resights are checked too.
+- **Test on this survey** lists the rows of the open survey that break the rule as it is on screen, saved or not; click one to go to it. It works during a survey too.
+- **Save** keeps the rules; Spyhop says what's wrong and saves nothing until it's fixed. **Revert** discards unsaved changes.
+- The rules are in the template (`rules.csv`, in its data part), so every computer using it checks the same way, and **they can't change during a survey**. For many changes at once, edit `rules.csv` like the lists, and press **Reload from the file**.
 
 ## Summary
 
@@ -473,12 +502,13 @@ A **template** is one small file, `<name>.spyhop-template.zip`, holding a team's
 - **The data part**, which defines or works out what's recorded, and so can't change during a survey:
   - the drop-down lists: species, event types, behaviors, observers, effort, visibility and weather
   - the reticles
+  - the rules (Settings → Rules)
   - the saved reports
   - the track point interval and the magnetic variation
 - **The preferences**, which can change at any time:
   - the keyboard shortcuts
   - the map display (markers, trackline, lines, fading, overlay colors)
-  - shared settings: lat/lon format, clock, default bearing reference and distance unit, map distance unit, effort reminder, keep awake, raw NMEA log, altitude and segment columns
+  - shared settings: lat/lon format, clock, default bearing reference and distance unit, map distance unit, effort reminder, keep awake, raw NMEA log, altitude and segment columns, automatic error check
   - the named GPS / NMEA inputs (serial, UDP, TCP, gpsd), with each "other" input's look on the map
   - the map feeds (their addresses, not their data) and which online overlays are on
 - **Optionally** (ticked when saving): waypoints, routes and offline overlays. These are only ever added to a computer, never replacing what it already has.
@@ -486,7 +516,7 @@ A **template** is one small file, `<name>.spyhop-template.zip`, holding a team's
 
 Never in a template: survey data, offline charts, file replays and the simulator, and this computer's own choices (which inputs are in use and which is the primary, the window layout, column widths, the last survey details), which are kept in `spyhop-local.json`.
 
-Every computer has a **current template**: the one in use, kept unzipped in `templates/current` in Spyhop's folder. Editing a list in Settings → Dropdowns, a shortcut in Settings → Shortcuts, or a setting in Settings → General changes the current template.
+Every computer has a **current template**: the one in use, kept unzipped in `templates/current` in Spyhop's folder. Editing a list in Settings → Dropdowns, a shortcut in Settings → Shortcuts, a rule in Settings → Rules, or a setting in Settings → General changes the current template.
 
 ### Drop-down lists
 
@@ -523,7 +553,7 @@ In **Settings → Shortcuts**, click a shortcut's keys and press the new ones, c
 
 ### What can't change during a survey
 
-From Start until End, nothing in the template's data part can change: the drop-down lists (except their colors), the reticles, the saved reports, the track point interval and the magnetic variation. Their controls are greyed out, editing their files by hand is undone when they're read again, and **using a template during a survey takes only its preferences** (and list colors): its data part waits until the survey ends. So the copy of the template kept with each survey is exactly what its data were recorded with.
+From Start until End, nothing in the template's data part can change: the drop-down lists (except their colors), the reticles, the rules, the saved reports, the track point interval and the magnetic variation. Their controls are greyed out, editing their files by hand is undone when they're read again, and **using a template during a survey takes only its preferences** (and list colors): its data part waits until the survey ends. So the copy of the template kept with each survey is exactly what its data were recorded with.
 
 ### A survey recorded with another template
 

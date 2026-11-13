@@ -32,7 +32,8 @@ spyhop/
   layout.py       one-time moves from older folder layouts: 0.27 → 0.28, and survey files into a folder each (0.36); remove before 1.0
   nmea.py         NMEA 0183 parser, vessel state, instrument readings, raw log
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
-  qc.py           the error check (thresholds in LIMITS)
+  qc.py           the error check (thresholds in LIMITS); run_rules() checks the rules
+  rules.py        rules (Settings → Rules, rules.csv): parse, check and evaluate "if … then …" conditions on one row
   resights.py     resights: ResightOf → the first sighting, groups (the same rules as web/js/resights.js)
   reticle.py      Unit = reticle: angle below the horizon/horizontal → distance (Lerczak & Hobbs 1998), presets, calibrated marks
   reports.py      Tools → Reports: report specs → rows and columns, CSV/HTML pages; saved reports in the current template (Config.reports)

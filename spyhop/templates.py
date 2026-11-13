@@ -6,9 +6,9 @@ The current template (the one in use) is kept unzipped in templates/current of S
     spyhop-config.json   everything that isn't a table: the record of changes, the shared settings, the
                          network GPS / NMEA inputs, the map feeds (addresses and how to draw them), which
                          online overlays to switch on, the map display and the saved reports
-    species.csv, event_types.csv, observers.csv, behaviors.csv, shortcuts.csv
-                         the drop-down lists and keyboard shortcuts (CSV, so they can be edited in a
-                         spreadsheet)
+    species.csv, event_types.csv, observers.csv, behaviors.csv, shortcuts.csv, rules.csv
+                         the drop-down lists, keyboard shortcuts and rules (CSV, so they can be edited
+                         in a spreadsheet)
 
 A saved template (templates/saved/<name>.spyhop-template.zip) is a zip of those files, with the
 oldest Spyhop that can use it and which optional parts it has in its spyhop-config.json, and
@@ -22,7 +22,7 @@ data and offline charts are never in a template. A backup (itself a template) is
 templates/backups first; restoring the backup made before a template was used also takes away what
 that template added.
 
-A template has a data part (the lists and the data settings: fixed during a survey, copied into each
+A template has a data part (the lists, the rules and the data settings: fixed during a survey, copied into each
 survey's folder) and preferences (everything else: may change at any time); see DATA_TABLES and part_of().
 
 Nothing in a template is run: CSVs are checked for their columns, saved reports like any other, and
@@ -69,6 +69,7 @@ TABLES = {
     "effort.csv": ["name", "status"],
     "reticles.csv": ["name", "method"],
     "shortcuts.csv": ["combo", "action"],
+    "rules.csv": ["table", "if", "then"],          # 0.52: Settings → Rules (rules.py)
 }
 OPTIONAL = ("waypoints", "routes", "overlays")
 WAYPOINTS = "waypoints.csv"
@@ -86,7 +87,7 @@ DATA_SETTINGS_LABEL = "Data settings (magnetic variation, track point interval, 
 # copy. The preferences (shortcuts, map display, the other shared settings, network inputs, map feeds)
 # can change at any time, also during a survey.
 # Waypoints, routes and overlays are extras, only ever added to a computer.
-DATA_TABLES = tuple(f"{n}.csv" for n in LOCKED_LISTS)
+DATA_TABLES = tuple(f"{n}.csv" for n in LOCKED_LISTS) + ("rules.csv",)
 PARTS = {"data": "Data (fixed during a survey)", "prefs": "Preferences (can change at any time)",
          "extra": "Added to this computer"}
 

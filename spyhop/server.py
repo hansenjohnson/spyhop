@@ -678,6 +678,51 @@ class App:
         self._broadcast_soon({"type": "reload"})
         return json_ok()
 
+    async def save_rules(self, request):
+        """0.52: Settings → Rules. The rules are in the template's data part, so they can't change during a survey."""
+        b = await request.json()
+        if self.rec.survey_active():
+            raise ValueErrorMsg("A survey is under way, so the rules can't change until it ends (they're part of the "
+                                "template's data part, like the drop-down lists).")
+        try:
+            self.rec.cfg.save_rules(b.get("rules") or [])
+        except ValueError as e:
+            raise ValueErrorMsg(str(e))
+        log.info("rules saved from Settings → Rules (%d rules)", len(self.rec.cfg.rules))
+        self._broadcast_soon({"type": "reload"})
+        return json_ok(rules=self.rec.cfg.rules)
+
+    async def test_rule(self, request):
+        """0.52: the rows of the open survey that break one rule (from Settings → Rules, saved or not)."""
+        from . import rules as R
+        from .qc import run_rules
+        b = await request.json()
+        problems = []
+        rule = R.clean_rule(b.get("rule") or {}, int(b.get("n") or 1), problems)
+        if problems:
+            raise ValueErrorMsg("\n".join(problems))
+        if self.rec.survey is None:
+            raise ValueErrorMsg("Open a survey to test a rule on it.")
+        rule["on"] = True
+        tables = {t: self.rec.tables[t].rows for t in R.TABLES}
+        found = []
+
+        class _Cfg:
+            rules, rule_problems = [rule], []
+        rec = type("R", (), {"cfg": _Cfg, "list_values": self.rec.list_values})()
+
+        def add(level, check, message, tab="", row=None, column="", label="", fix=None):
+            found.append({"level": level, "message": message, "tab": tab, "row_id": (row or {}).get("RowID", ""),
+                          "column": column, "label": label})
+        lab = lambda tab, r, i: (f"Sighting {r.get('SightNo') or '?'}" if tab == "sightings" else  # noqa: E731
+                                 f"Event {r.get('EventNo') or '?'}" if tab == "events" else f"Effort row {i + 1}")
+        run_rules(rec, add, lab, tables)
+        rows = [x for x in found if x["row_id"]]
+        notes = [x["message"] for x in found if not x["row_id"]]
+        applies = sum(1 for r in tables[rule["table"]]
+                      if all(R.holds(c, r, {k["key"]: k["kind"] for k in R.columns(rule["table"])}) for c in rule["if"]))
+        return json_ok(count=len(rows), rows=rows[:500], notes=notes, applies=applies, total=len(tables[rule["table"]]))
+
     async def reload_config(self, request):
         """Read templates/current (lists, shortcuts, spyhop-config.json) and spyhop-local.json again,
         e.g. after editing them by hand."""
@@ -704,7 +749,8 @@ class App:
                 p.mkdir(parents=True, exist_ok=True)
         elif what.startswith("config:"):
             name = what.split(":", 1)[1]
-            if name not in ("species", "event_types", "observers", "behaviors", "shortcuts"):
+            from .config import DEFAULT_LISTS
+            if name not in (*DEFAULT_LISTS, "shortcuts", "rules"):
                 raise ValueErrorMsg("Unknown config file")
             p = cfg.current_dir / f"{name}.csv"
         elif what == "reportsout":                       # the folder Run Reports last saved to
@@ -1635,6 +1681,8 @@ class App:
         r.add_post("/api/config/reload", self.reload_config)
         r.add_post("/api/config/list", self.save_list)
         r.add_post("/api/config/shortcuts", self.save_shortcuts)
+        r.add_post("/api/config/rules", self.save_rules)
+        r.add_post("/api/rules/test", self.test_rule)
         r.add_get("/api/templates", self.templates_list)
         r.add_get("/api/templates/status", self.templates_status)
         r.add_post("/api/templates/check", self.templates_check)

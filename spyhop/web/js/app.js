@@ -45,6 +45,7 @@ class App {
     this.connect();
     setInterval(() => {
       this.updateStatus();
+      this.autoQcTick();
       if (this.shown('summary') && !window.getSelection()?.toString()) this.renderSummary();   // live counters
     }, 1000);
     document.addEventListener('keydown', (e) => this.onShortcut(e), true);
@@ -186,7 +187,7 @@ class App {
   tabGroups() {
     return [
       ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Routes'], ['nmea', 'Instruments'], ['resights', 'Resights'], ['qc', 'Error check'], ['summary', 'Summary'], ['reports', 'Reports']]],
-      ['config', 'Settings', [['settings', 'General'], ['basemap', 'Basemap'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'],
+      ['config', 'Settings', [['settings', 'General'], ['basemap', 'Basemap'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'], ['rules', 'Rules'],
         ['templates', 'Templates'], ['guide', 'Guide'], ['about', 'About']]]];
   }
   groupTabs() { return this.tabGroups().flatMap(([g, , tabs]) => tabs.map(([k, l]) => [k, l, g])); }
@@ -250,6 +251,7 @@ class App {
       f('sf-survey', 'Current survey'),
       f('sf-track', 'Internal trackline (recorded while a survey is active)'),
       f('sf-effort', 'Latest effort state'),
+      f('sf-qc', 'The last Error check — click to open it (Tools → Error check)'),
       el('div', { class: 'sf grow' }),
       f('sf-version', 'Spyhop version — click for details (Settings → About)', `Spyhop ${this.S.about?.spyhop || ''}`));
     $('#sf-version').addEventListener('click', () => this.showTab('about'));
@@ -257,6 +259,8 @@ class App {
     this.updateClockCheck();
     $('#sf-remind').addEventListener('click', () => this.showTab('effort'));
     $('#sf-survey').addEventListener('click', () => this.showTab('survey'));
+    $('#sf-qc').addEventListener('click', () => this.showTab('qc'));
+    this.updateQcStatus();
   }
 
   rebuildTabs() {
@@ -596,7 +600,7 @@ class App {
 
   // draw one of the panes that aren't data tables
   renderPane(tab) {
-    const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, dropdowns: this.renderDropdowns, nmea: this.renderNmea,
+    const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, dropdowns: this.renderDropdowns, rules: this.renderRules, nmea: this.renderNmea,
       inputs: this.renderInputs, templates: this.renderTemplates, overlays: this.renderOverlays, basemap: this.renderBasemap,
       qc: this.renderQc, summary: this.renderSummaryPane, resights: () => this.resightTool.render(), reports: () => this.reportsTool.render(), guide: this.renderGuide, about: this.renderAbout,
       route: () => this.planner.render() }[tab];
@@ -788,7 +792,7 @@ class App {
         break;
       case 'tab':
         this.S.tables[m.tab] = { rows: m.rows, can_undo: m.can_undo, can_redo: m.can_redo };
-        if (this.qcReport && !this.qcStale) { this.qcStale = true; if (this.shown('qc')) this.renderQc(); }
+        if (this.qcReport && !this.qcStale) { this.qcStale = true; if (this.shown('qc')) this.renderQc(); this.updateQcStatus(); }
         this.renderTab(m.tab);
         this.map.drawMarkers(m.tab);
         if (m.tab === 'effort') this.map.drawTrack();        // ERROR rows break the line
@@ -819,6 +823,8 @@ class App {
         if (this.shown('overlays')) this.renderOverlays();
         if (this.shown('templates') && !document.activeElement?.closest('#pane-templates input[type=text], #pane-templates textarea')) this.renderTemplates();
         if (this.shown('shortcuts')) this.renderShortcuts();
+        if (this.shown('qc') && !document.activeElement?.closest('#pane-qc select')) this.renderQc();
+        this.updateQcStatus();
         break;
       }
       case 'display':
@@ -937,6 +943,7 @@ class App {
 
   updateStatus() {
     if (!this.S) return;
+    this.updateQcStatus();
     const st = this.S.config.settings, v = this.S.vessel || {};
     const fmt = st.latlon_format;
     const now = timeParts(new Date(), this.clock());
@@ -1473,7 +1480,13 @@ class App {
     const kids = [el('p', { class: 'hint help' }, 'Checks this survey for missing survey details, blank required fields and values that look wrong. It doesn’t change anything — click Show to go to a row and fix it there.'),
       this.qcLimitsRow(rep),
       el('div', { class: 'btnrow' }, el('button', { class: 'primary', onclick: () => this.runQc() }, rep ? 'Run the check again' : 'Run error check'),
-        rep ? el('button', { onclick: () => this.saveQcReport() }, 'Save report…') : null)];
+        rep ? el('button', { onclick: () => this.saveQcReport() }, 'Save report…') : null,
+        // 0.52: run it quietly every few minutes during a survey (a shared setting: part of the template's preferences)
+        el('label', { class: 'inline', title: 'While a survey is active, run the check every few minutes: the counts show in the status bar, the highlights in the tables are kept up to date, and a message pops up when there are more errors or warnings than before.' },
+          'Check automatically: ',
+          el('select', { id: 'qc-auto', onchange: (e) => { this.saveSettings({ qc_auto_minutes: Number(e.target.value) }); this.autoQcSince = Date.now(); this.updateQcStatus(); } },
+            [0, 1, 2, 5, 10, 15, 30].map((m) => el('option', { value: m, selected: (Number(this.S.config.settings.qc_auto_minutes) || 0) === m }, m ? `every ${m} min` : 'off')))),
+        el('button', { onclick: () => this.showTab('rules'), title: 'Your team’s own checks (Settings → Rules)' }, 'Rules…'))];
     if (rep) {
       const t = timeParts(rep.generated, this.clock());
       const c = rep.counts;
@@ -1481,7 +1494,7 @@ class App {
         el('span', { class: 'qc-pill error' }, `${c.error} error${c.error === 1 ? '' : 's'}`), ' ',
         el('span', { class: 'qc-pill warning' }, `${c.warning} warning${c.warning === 1 ? '' : 's'}`), ' ',
         el('span', { class: 'qc-pill info' }, `${c.info} note${c.info === 1 ? '' : 's'}`),
-        this.qcStale ? el('span', { class: 'hint' }, ' · the data has changed since — run it again to update.') : null));
+        this.qcStale ? el('span', { class: 'hint' }, (Number(this.S.config.settings.qc_auto_minutes) || 0) && sv.active ? ' · the data has changed since — it will be checked again automatically.' : ' · the data has changed since — run it again to update.') : null));
       if (!rep.issues.length) kids.push(el('p', { class: 'qc-ok' }, '✓ No problems found.'));
       else {
         kids.push(el('div', { class: 'btnrow' }, el('span', { class: 'hint' }, 'Show:'),
@@ -1550,16 +1563,62 @@ class App {
     return out;
   }
 
-  async runQc() {
+  // quiet (0.52: the automatic check): no toast unless there are more errors or warnings than the last check found
+  async runQc(quiet = false) {
+    if (this._qcBusy) return;
+    this._qcBusy = true;
     let r;
-    try { r = await api('/api/qc', {}); } catch { return; }
+    try {
+      if (quiet) {
+        const res = await fetch('/api/qc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        r = await res.json();
+        if (!r.ok) return;
+      } else r = await api('/api/qc', {});
+    } catch { return; } finally { this._qcBusy = false; }
+    const before = this.qcReport?.survey === r.report.survey ? this.qcReport.counts : null;
     this.qcReport = r.report;
     this.qcStale = false;
-    this.renderQc();
+    this.lastQcAt = Date.now();
+    if (!document.activeElement?.closest('#pane-qc select')) this.renderQc();
     this.refreshQcHighlight();
+    this.updateQcStatus();
     const c = r.report.counts;
     const n = (k, w) => `${c[k]} ${w}${c[k] === 1 ? '' : 's'}`;
-    toast(c.error + c.warning ? `Error check: ${n('error', 'error')}, ${n('warning', 'warning')}, ${n('info', 'note')}` : 'Error check: no problems found');
+    if (!quiet) toast(c.error + c.warning ? `Error check: ${n('error', 'error')}, ${n('warning', 'warning')}, ${n('info', 'note')}` : 'Error check: no problems found');
+    else if (c.error + c.warning > 0 && (!before || c.error > before.error || c.warning > before.warning)) {
+      toast(`Automatic error check: ${n('error', 'error')}, ${n('warning', 'warning')} — see Tools → Error check.`, c.error ? 'warn' : 'info', 8000);
+    }
+  }
+
+  // 0.52: Error check → Check automatically (every 1–30 min while a survey is active; qc_auto_minutes, 0: off)
+  autoQcTick() {
+    const min = Number(this.S?.config?.settings?.qc_auto_minutes) || 0;
+    if (!min || !this.S.survey?.active) { this.autoQcSince = null; return; }
+    const now = Date.now();
+    if (!this.autoQcSince) this.autoQcSince = now;
+    const last = Math.max(this.autoQcSince, this.qcReport?.survey === this.S.survey.prefix ? this.lastQcAt || 0 : 0);
+    if (now - last >= min * 60000) { this.autoQcSince = now; this.runQc(true); }
+  }
+
+  // the status bar's Error check field: the counts of the last check of the open survey (hidden before one)
+  updateQcStatus() {
+    const f = $('#sf-qc');
+    if (!f) return;
+    const rep = this.qcReport, sv = this.S.survey;
+    const auto = Number(this.S.config.settings.qc_auto_minutes) || 0;
+    if (!sv || !rep || rep.survey !== sv.prefix) {
+      f.hidden = !(sv?.active && auto);
+      f.replaceChildren('Check: ', el('span', { class: 'hint' }, `every ${auto} min`));
+      return;
+    }
+    f.hidden = false;
+    const c = rep.counts, t = timeParts(rep.generated, this.clock());
+    f.title = `Error check at ${t.time.slice(0, 5)} ${t.abbr}${this.qcStale ? ' (the data has changed since)' : ''}${auto ? `; checked automatically every ${auto} min` : ''} — click to open it`;
+    f.replaceChildren('Check ',
+      el('span', { class: 'qc-pill error' }, String(c.error)), ' ',
+      el('span', { class: 'qc-pill warning' }, String(c.warning)), ' ',
+      el('span', { class: 'qc-pill info' }, String(c.info)),
+      this.qcStale ? el('span', { class: 'hint' }, ' •') : null);
   }
 
   showQcIssue(x) {
@@ -2934,6 +2993,146 @@ class App {
         el('button', { disabled: !this.ddDrafts[cur] || (locked && !cols.includes('color')), onclick: () => { delete this.ddDrafts[cur]; this.renderDropdowns(); } }, 'Revert')),
       el('p', { class: 'hint help' }, 'The order here is the order in the drop-down. Renaming or removing an entry doesn’t change rows already recorded; the Error check flags values that are no longer in the list. Every list has Other, a placeholder for anything missing from it: lists can’t change during a survey (only their colors can), so record it as Other and fill in the right entry afterwards — the Error check lists the rows that use Other.'),
       this.fileBox(`${cur}.csv`, `config:${cur}`, () => { delete this.ddDrafts[cur]; }, locked)));
+  }
+
+  // ---------------------------------------------------------------- Settings → Rules (0.52)
+  // A team's own checks of one row of Sightings, Effort or Events: "if … then …", run by the Error check.
+  // Saved in the template's rules.csv (its data part: they can't change during a survey).
+  rulesInfo() { return this.S.config.rules_info || { tests: {}, test_order: [], columns: {}, levels: [] }; }
+  ruleCols(table) { return this.rulesInfo().columns[table] || []; }
+  ruleListValues(list) {
+    const S = this.S;
+    if (!list) return [];
+    if (list === 'distunit') return [...S.schema.fixed_lists.distunit, ...(S.config.lists.reticles || []).map((r) => `reticles-${r.name}`)];
+    if (S.schema.fixed_lists[list]) return [...S.schema.fixed_lists[list]];
+    return (S.config.lists[list] || []).map((r) => r.name).filter(Boolean);
+  }
+  ruleSentence(r) {
+    const I = this.rulesInfo(), cols = Object.fromEntries(this.ruleCols(r.table).map((c) => [c.key, c.label]));
+    const one = (c) => [cols[c.column] || c.column || '?', I.tests[c.test]?.label || c.test || '?', I.tests[c.test]?.value ? (c.value || '…') : '']
+      .filter(Boolean).join(' ').replace(/\[([^\]]+)\]/g, (m, k) => `[${cols[k] || k}]`);
+    const ifs = (r.if || []).filter((c) => c.column), thens = (r.then || []).filter((c) => c.column);
+    const tab = { sightings: 'a sighting', effort: 'an Effort row', events: 'an event' }[r.table] || 'a row';
+    return `${ifs.length ? `If ${tab} has ${ifs.map(one).join(' and ')}, then` : `Every ${tab.split(' ').slice(1).join(' ')} must have`} ${thens.length ? thens.map(one).join(' and ') : '…'}${ifs.length ? ' must be true' : ''}.`;
+  }
+  newRule(table = 'sightings') {
+    return { on: true, table, level: 'error', if: [{ column: '', test: '', value: '' }], then: [{ column: '', test: '', value: '' }], message: '', resights: 'include' };
+  }
+
+  renderRules() {
+    const pane = $('#pane-rules');
+    if (!pane) return;
+    const S = this.S, I = this.rulesInfo();
+    const locked = !!S.survey?.active;
+    const saved = JSON.parse(JSON.stringify(S.config.rules || []));
+    const rules = this.rulesDraft || saved;
+    const dirty = !!this.rulesDraft && JSON.stringify(this.rulesDraft) !== JSON.stringify(saved);
+    this.ruleTests ||= {};
+    const edit = () => { if (!this.rulesDraft) this.rulesDraft = JSON.parse(JSON.stringify(rules)); return this.rulesDraft; };
+    const redraw = () => this.renderRules();
+    const changed = (i) => { delete this.ruleTests[i]; const b = $('#btn-rules-save'); if (b) { b.classList.add('dirty'); b.textContent = 'Save — unsaved changes'; }
+      const p = $(`#pane-rules .rule-card[data-rule="${i}"] .rule-sentence`); if (p) p.textContent = this.ruleSentence(this.rulesDraft[i]); };
+    const TABLES = [['sightings', 'Sightings'], ['effort', 'Effort'], ['events', 'Events']];
+    const LEVELS = [['error', 'Error'], ['warning', 'Warning'], ['info', 'Note']];
+    const sel = (opts, val, attrs, onchange) => el('select', { disabled: locked, ...attrs, onchange }, opts.map(([v, l]) => el('option', { value: v, selected: v === val }, l)));
+    const condRow = (ri, side, ci, c) => {
+      const r = rules[ri], cols = this.ruleCols(r.table), col = cols.find((x) => x.key === c.column);
+      const tests = col ? I.test_order.filter((t) => I.tests[t].kinds.includes(col.kind)) : [];
+      const needs = I.tests[c.test]?.value;
+      const dl = `rule-dl-${ri}-${side}-${ci}`;
+      const refs = col ? cols.filter((x) => x.key !== col.key && (x.kind === 'number') === (col.kind === 'number')).map((x) => `[${x.key}]`) : [];
+      const vals = col ? [...this.ruleListValues(col.list), ...(col.kind === 'number' ? ['NA'] : []), ...refs] : [];
+      const ph = !col ? '' : c.test === 'is one of' || c.test === 'is not one of' ? 'A | B | C' : col.kind === 'number' ? 'a number or [column]' : col.list ? 'choose or type' : 'text';
+      return el('div', { class: 'rule-cond', 'data-side': side, 'data-cond': ci },
+        el('span', { class: 'rule-and' }, ci ? 'and' : side === 'if' ? 'If' : 'then'),
+        el('select', { class: 'rule-col', disabled: locked, onchange: (e) => { const d = edit()[ri][side][ci]; d.column = e.target.value;
+          const k = cols.find((x) => x.key === d.column)?.kind; if (!k || !I.tests[d.test]?.kinds.includes(k)) d.test = k === 'multi' ? 'includes' : k === 'number' ? '>=' : k ? 'is' : '';
+          delete this.ruleTests[ri]; redraw(); } },
+        el('option', { value: '', selected: !c.column }, '— column —'), cols.map((x) => el('option', { value: x.key, selected: x.key === c.column }, x.label))),
+        el('select', { class: 'rule-test', disabled: locked || !col, onchange: (e) => { const d = edit()[ri][side][ci]; d.test = e.target.value; if (!I.tests[d.test]?.value) d.value = ''; delete this.ruleTests[ri]; redraw(); } },
+          !col ? el('option', { value: '' }, '—') : null, tests.map((t) => el('option', { value: t, selected: t === c.test }, I.tests[t].label))),
+        needs ? el('input', { type: 'text', class: 'rule-value', value: c.value || '', disabled: locked, list: dl, placeholder: ph, size: 22,
+          title: 'A value, or [column] for another column of the same row. For “is one of”, separate the values with |.',
+          oninput: (e) => { edit()[ri][side][ci].value = e.target.value; changed(ri); } }) : null,
+        needs ? el('datalist', { id: dl }, vals.map((v) => el('option', { value: v }))) : null,
+        el('button', { class: 'danger-outline rule-x', title: 'Remove this condition', disabled: locked || (side === 'then' && r.then.length === 1),
+          onclick: () => { edit()[ri][side].splice(ci, 1); delete this.ruleTests[ri]; redraw(); } }, '✕'));
+    };
+    const testBox = (i, r) => {
+      const t = this.ruleTests[i];
+      if (!t) return el('span', { class: 'hint' }, S.survey ? '' : 'Open a survey to test a rule on it.');
+      if (t.error) return el('span', { class: 'cell-err' }, t.error);
+      const tab = { sightings: 'sightings', effort: 'Effort rows', events: 'events' }[r.table];
+      return el('span', { class: 'rule-test-result' },
+        `${t.applies} of ${t.total} ${tab} meet the “if”; `,
+        el('b', {}, t.count ? `${t.count} break the rule` : 'none break the rule'), t.count ? ':' : '.',
+        ...t.rows.slice(0, 12).map((x) => el('button', { class: 'link', onclick: () => this.selectRow(x.tab, x.row_id, x.column, { flash: true }) }, x.label)),
+        t.count > 12 ? el('span', { class: 'hint' }, ` and ${t.count - 12} more (run the Error check for all of them)`) : null,
+        ...(t.notes || []).map((n) => el('div', { class: 'hint' }, n)));
+    };
+    const card = (r, i) => el('div', { class: `rule-card${r.on ? '' : ' rule-off'}`, 'data-rule': i },
+      el('div', { class: 'rule-head' },
+        el('b', {}, `Rule ${i + 1}`),
+        el('label', { class: 'inline', title: 'Off: kept, but not checked' }, el('input', { type: 'checkbox', class: 'rule-on', checked: r.on, disabled: locked,
+          onchange: (e) => { edit()[i].on = e.target.checked; redraw(); } }), 'On'),
+        el('label', { class: 'inline' }, 'Table ', sel(TABLES, r.table, { class: 'rule-table' }, (e) => {
+          const d = edit()[i]; d.table = e.target.value; const keys = this.ruleCols(d.table).map((c) => c.key);
+          for (const side of ['if', 'then']) d[side] = d[side].map((c) => (keys.includes(c.column) ? c : { column: '', test: '', value: '' }));
+          delete this.ruleTests[i]; redraw(); })),
+        el('label', { class: 'inline' }, 'Level ', sel(LEVELS, r.level, { class: 'rule-level' }, (e) => { edit()[i].level = e.target.value; redraw(); })),
+        r.table === 'sightings' ? el('label', { class: 'inline', title: 'Resights: rows with a ResNo (later sightings of the same animals)' }, 'Resights ',
+          sel([['include', 'checked too'], ['skip', 'skipped']], r.resights, { class: 'rule-resights' }, (e) => { edit()[i].resights = e.target.value; delete this.ruleTests[i]; redraw(); })) : null,
+        el('span', { class: 'grow' }),
+        el('button', { title: 'Move up', disabled: locked || i === 0, onclick: () => { const d = edit(); [d[i - 1], d[i]] = [d[i], d[i - 1]]; this.ruleTests = {}; redraw(); } }, '↑'),
+        el('button', { title: 'Move down', disabled: locked || i === rules.length - 1, onclick: () => { const d = edit(); [d[i + 1], d[i]] = [d[i], d[i + 1]]; this.ruleTests = {}; redraw(); } }, '↓'),
+        el('button', { title: 'Copy this rule', disabled: locked, onclick: () => { const d = edit(); d.splice(i + 1, 0, JSON.parse(JSON.stringify(d[i]))); this.ruleTests = {}; redraw(); } }, 'Copy'),
+        el('button', { class: 'danger-outline', title: 'Delete this rule', disabled: locked, onclick: () => { edit().splice(i, 1); this.ruleTests = {}; redraw(); } }, '✕')),
+      el('div', { class: 'rule-side' }, ...(r.if.length ? r.if.map((c, ci) => condRow(i, 'if', ci, c))
+        : [el('div', { class: 'rule-cond' }, el('span', { class: 'rule-and' }, 'If'), el('span', { class: 'hint' }, 'every row (no conditions)'))]),
+      el('button', { class: 'small', disabled: locked, onclick: () => { edit()[i].if.push({ column: '', test: '', value: '' }); redraw(); } }, r.if.length ? '+ and' : '+ condition')),
+      el('div', { class: 'rule-side' }, ...r.then.map((c, ci) => condRow(i, 'then', ci, c)),
+        el('button', { class: 'small', disabled: locked, onclick: () => { edit()[i].then.push({ column: '', test: '', value: '' }); redraw(); } }, '+ and')),
+      el('p', { class: 'rule-sentence hint' }, this.ruleSentence(r)),
+      el('label', { class: 'rule-msg' }, 'Message ', el('input', { type: 'text', class: 'rule-message', value: r.message || '', disabled: locked, size: 60,
+        placeholder: 'Shown in the Error check (blank: the rule itself)', oninput: (e) => { edit()[i].message = e.target.value; changed(i); } })),
+      el('div', { class: 'btnrow' },
+        el('button', { class: 'rule-test-btn', disabled: !S.survey, title: S.survey ? 'Which rows of the open survey break this rule (as it is here, saved or not)' : 'Open a survey to test a rule on it',
+          onclick: async () => {
+            const res = await fetch('/api/rules/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rule: rules[i], n: i + 1 }) }).then((x) => x.json()).catch(() => null);
+            this.ruleTests[i] = !res ? { error: 'Lost connection to Spyhop.' } : res.ok ? res : { error: res.error };
+            redraw();
+          } }, 'Test on this survey'),
+        testBox(i, r)));
+    const probs = S.config.rule_problems || [];
+    pane.replaceChildren(el('section', { class: `settings-sec rules-sec${locked ? ' dd-locked' : ''}` },
+      el('h3', {}, 'Rules'),
+      locked ? el('p', { class: 'warnbox', id: 'rules-locked' }, el('b', {}, 'A survey is under way, so the rules can’t be changed. '),
+        'They’re part of the template’s data part, like the drop-down lists. You can still test them on this survey. End the survey (in Survey) to edit them.') : null,
+      el('p', { class: 'hint help' }, 'Your team’s own checks of the values in a row of Sightings, Effort or Events: if every “if” condition is true, every “then” condition must be true too. The Error check (Tools → Error check) lists each row that breaks a rule, at the rule’s level and with its message. For example: if Event is CTD cast, then ID isn’t blank; if Weather is Fog, then Glare is not Severe; if Behaviors includes Mom/calf, then Calves > 0. A value in [brackets] is another column of the same row (Num ≥ [Calves]). A condition on a blank cell is false, except “is blank”. The rules are part of the template, so every computer using it checks the same way.'),
+      probs.length ? el('div', { class: 'errbox', id: 'rules-problems' }, el('b', {}, 'rules.csv has rules that can’t be used (they aren’t checked):'), el('ul', {}, probs.map((p) => el('li', {}, p)))) : null,
+      el('div', { id: 'rules-list' }, rules.length ? rules.map(card) : el('p', { class: 'hint' }, 'No rules yet.')),
+      el('div', { class: 'btnrow' },
+        ...TABLES.map(([k, l]) => el('button', { disabled: locked, class: 'rules-add', 'data-table': k, onclick: () => { edit().push(this.newRule(k)); redraw();
+          $$('#pane-rules .rule-card:last-child select.rule-col')[0]?.focus(); } }, `Add a ${l} rule`))),
+      el('div', { id: 'rules-errors' }),
+      el('div', { class: 'btnrow' },
+        el('button', { id: 'btn-rules-save', class: `primary${dirty ? ' dirty' : ''}`, disabled: locked, onclick: () => this.saveRules() }, dirty ? 'Save — unsaved changes' : 'Save'),
+        el('button', { disabled: !this.rulesDraft, onclick: () => { this.rulesDraft = null; this.ruleTests = {}; redraw(); } }, 'Revert')),
+      this.fileBox('rules.csv', 'config:rules', () => { this.rulesDraft = null; }, locked)));
+  }
+
+  async saveRules() {
+    const rules = this.rulesDraft;
+    if (!rules) { toast('No changes to save.', 'info', 2000); return; }
+    const box = $('#rules-errors');
+    try {
+      await api('/api/config/rules', { rules });
+    } catch (e) {
+      if (box) box.replaceChildren(el('div', { class: 'errbox' }, el('b', {}, 'Not saved:'), el('ul', {}, String(e.message || '').split('\n').map((l) => el('li', {}, l)))));
+      return;
+    }
+    this.rulesDraft = null;
+    toast('Rules saved');
   }
 
   async saveDropdown(list) {

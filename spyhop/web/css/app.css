@@ -682,3 +682,22 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 #sf-clockcheck { cursor: pointer; }
 
 .hidden { display: none !important; }
+
+/* 0.52: Settings → Rules */
+.rule-card { border: 1px solid var(--line); border-radius: 6px; padding: 0.5em 0.7em; margin: 0.6em 0; background: var(--panel2); }
+.rule-card.rule-off { opacity: 0.6; }
+.rule-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4em 0.9em; margin-bottom: 0.35em; }
+.rule-head .grow { flex: 1; }
+.rule-side { margin: 0.2em 0 0.3em; }
+.rule-cond { display: flex; align-items: center; gap: 0.35em; margin: 0.2em 0; }
+.rule-cond select { min-width: 0; max-width: 11em; flex: 0 1 auto; }
+.rule-cond input.rule-value { flex: 1 1 6em; min-width: 4em; width: 6em; }
+.rule-cond .rule-x { flex: none; padding: 0.15em 0.5em; }
+.rule-and { display: inline-block; min-width: 2.6em; font-weight: 600; color: var(--muted); }
+.rule-side > button.small { margin-left: 3em; font-size: 0.85em; padding: 0.05em 0.6em; }
+.rule-sentence { margin: 0.35em 0; font-style: italic; }
+.rule-msg { display: flex; align-items: center; gap: 0.4em; }
+.rule-msg input { flex: 1; min-width: 12em; }
+.rule-test-result button.link { background: none; border: none; padding: 0 0.25em; color: #1565c0; text-decoration: underline; cursor: pointer; }
+#sf-qc { cursor: pointer; }
+#sf-qc .qc-pill { font-size: 0.8em; padding: 0 0.4em; }

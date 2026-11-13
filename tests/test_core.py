@@ -736,13 +736,13 @@ def test_qc_finds_problems(rec):
     assert ("Required fields filled", "SeaState") in got
     assert ("Required fields filled", "Count") in got and ("Required fields filled", "Observer") in got
     assert ("Observers in one position at a time", "Port") in got
-    assert ("Plausible numbers", "Calves") in got
+    assert ("Rules", "Count") in got               # the default rule: Num ≥ Calves (0.52; a built-in check before)
     assert ("Plausible bearings and distances", "Distance") in got and "40.0 nm" in msgs
     assert ("Positions match the trackline", "Lat") in got
     assert ("Sighting observer on watch", "Observer") in got
     assert not any(x["column"] in ("Behaviors", "FieldID", "Notes", "ID") for x in r["issues"] if x["check"] == "Required fields filled")
     assert r["counts"]["error"] >= 5 and r["issues"][0]["level"] == "error"
-    first = next(x for x in r["issues"] if x["check"] == "Plausible numbers")
+    first = next(x for x in r["issues"] if x["check"] == "Rules")
     assert first["tab"] == "sightings" and first["row_id"] == s["RowID"] and first["label"] == "Sighting 1"
 
 
@@ -1862,7 +1862,7 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
         names = set(z.namelist())
         doc = json.loads(z.read("spyhop-config.json"))
     assert names == {"spyhop-config.json", "species.csv", "event_types.csv", "observers.csv", "behaviors.csv", "shortcuts.csv",
-                     "visibility.csv", "weather.csv", "reticles.csv", "effort.csv",
+                     "visibility.csv", "weather.csv", "reticles.csv", "effort.csv", "rules.csv",
                      "waypoints.csv", "routes/Line 1.gpx", "overlays/zones.geojson"}      # no feed data, no display.csv
     assert doc["min_spyhop"] == "0.28.0" and doc["includes"] == ["waypoints", "routes", "overlays"] and doc["made_with"] == __version__
     # 0.41: serial inputs are in templates too, named; which are in use stays with each computer
@@ -3107,3 +3107,76 @@ def test_shortcut_focus_hidden_columns_and_template_units(tmp_path):
         assert b.rec.new_row("sightings", {})["row"]["DistUnit"] == ("km" if not during else "reticles-incl")
         if not during:
             b.rec.end_survey(); b.rec.close_survey()
+
+
+def test_rules_parse_evaluate_and_template(rec, tmp_path):
+    from spyhop import rules as R, templates
+    from spyhop.qc import run_qc
+    cfg = rec.cfg
+    # the default rule ships in templates/current/rules.csv, part of the template's data part
+    assert cfg.rules_path.exists() and len(cfg.rules) == 1 and cfg.rules[0]["then"][0]["value"] == "[Calves]"
+    assert "rules.csv" in templates.DATA_TABLES and templates.part_of("rules.csv") == "data"
+    assert "rules.csv" in zipfile.ZipFile(io.BytesIO(templates.make_zip(cfg))).namelist()
+    # parsing: tests with spaces in them, "is one of" lists, [column] values, written without spaces
+    c = R.parse_conditions("Count>=1 AND Weather is not one of Fog | Rain AND Glare is not blank")
+    assert [(x["column"], x["test"], x["value"]) for x in c] == [("Count", ">=", "1"), ("Weather", "is not one of", "Fog | Rain"), ("Glare", "is not blank", "")]
+    probs = []
+    assert R.clean_rule({"table": "events", "if": "Nope is 1", "then": "ID is not blank"}, 1, probs) is None or probs
+    assert any("no column" in p for p in probs)
+    probs = []
+    assert R.clean_rule({"table": "sightings", "if": "", "then": "Behaviors > 2"}, 2, probs) is None and probs
+    probs = []
+    assert R.clean_rule({"table": "sightings", "if": "", "then": "Count >= lots"}, 3, probs) is None and "number" in probs[0]
+    kinds = {k["key"]: k["kind"] for k in R.columns("sightings")}
+    assert R.holds({"column": "Behaviors", "test": "includes", "value": "mom/calf"}, {"Behaviors": "Feeding; Mom/calf"}, kinds)
+    assert not R.holds({"column": "Calves", "test": ">", "value": "0"}, {"Calves": "NA"}, kinds)
+    assert R.holds({"column": "Calves", "test": "is", "value": "NA"}, {"Calves": "na"}, kinds)
+    assert not R.holds({"column": "IDrel", "test": "is", "value": "Definite"}, {"IDrel": ""}, kinds)
+    # save: the team's rules (Sightings, Effort and Events), checked by the Error check
+    cfg.save_rules([
+        {"table": "events", "level": "error", "if": "EventType is CTD cast", "then": "ID is not blank", "message": "CTD casts need an ID."},
+        {"table": "effort", "level": "warning", "if": [{"column": "Weather", "test": "is", "value": "Fog"}],
+         "then": [{"column": "Glare", "test": "is not", "value": "Severe"}]},
+        {"table": "sightings", "if": "Behaviors includes Mom/calf", "then": "Calves > 0", "resights": "skip"},
+        {"table": "sightings", "on": "no", "if": "", "then": "Notes is not blank"},
+    ])
+    assert len(cfg.rules) == 4 and not cfg.rules[3]["on"] and cfg.rules[2]["resights"] == "skip"
+    assert "Weather is Fog" in cfg.rules_path.read_text()
+    with pytest.raises(ValueError):
+        cfg.save_rules([{"table": "effort", "if": "Weather is Fog", "then": ""}])
+    s = rec.new_row("sightings", {"Species": "Fin whale", "Count": "2", "Calves": "0", "Behaviors": "Mom/calf"})["row"]
+    rec.new_row("sightings", {"Species": "Fin whale", "Count": "2", "Calves": "0", "Behaviors": "Mom/calf", "ResightOf": s["SightNo"]})
+    rec.new_row("effort", {"Effort": "ON", "Weather": "Fog", "Glare": "Severe"})
+    rec.new_row("events", {"EventType": "CTD cast"})
+    rec.new_row("events", {"EventType": "CTD cast", "ID": "C1"})
+    r = run_qc(rec)
+    ru = [x for x in r["issues"] if x["check"] == "Rules"]
+    assert {(x["tab"], x["column"], x["level"]) for x in ru} >= {("events", "ID", "error"), ("effort", "Glare", "warning"), ("sightings", "Calves", "error")}
+    assert sum(1 for x in ru if x["tab"] == "sightings") == 1          # the resight is skipped
+    assert any(x["message"].startswith("CTD casts need an ID.") for x in ru)
+    assert not any("Notes" == x["column"] for x in ru)                 # the rule that's off
+    assert any(c[0] == "Rules" for c in r["checks"])
+
+
+def test_rules_api_and_locked_during_survey(tmp_path):
+    import asyncio
+    from spyhop.server import App
+    a = App(tmp_path / "a")
+    pub = a.rec.cfg.public()
+    assert pub["rules"][0]["table"] == "sightings" and "includes" in pub["rules_info"]["tests"]
+    assert [c["key"] for c in pub["rules_info"]["columns"]["events"]] == ["EventNo", "EventType", "ID", "Notes"]
+    rule = {"table": "events", "if": "EventType is CTD cast", "then": "ID is not blank"}
+    assert _run(a.save_rules(_Req({"rules": [rule]})))["ok"]
+    with pytest.raises(ValueErrorMsg, match="Open a survey"):
+        asyncio.run(a.test_rule(_Req({"rule": rule})))
+    a.rec.start_survey("T")
+    a.rec.new_row("events", {"EventType": "CTD cast"})
+    a.rec.new_row("events", {"EventType": "Other"})
+    t = _run(a.test_rule(_Req({"rule": rule})))
+    assert t["count"] == 1 and t["applies"] == 1 and t["total"] == 2 and t["rows"][0]["column"] == "ID", t
+    with pytest.raises(ValueErrorMsg, match="survey is under way"):
+        asyncio.run(a.save_rules(_Req({"rules": []})))
+    # the rules are kept with the other locked parts: a hand-edited rules.csv is put back during a survey
+    a.rec.cfg.rules_path.write_text("on,table,level,if,then,message,resights\n")
+    k = _run(a.reload_config(_Req()))
+    assert "rules.csv" in k["kept"] and len(a.rec.cfg.rules) == 1

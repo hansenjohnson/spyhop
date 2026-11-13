@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.52.0 — 2026-11-13
+
+- **Settings → Rules:** your team's own checks of one row of Sightings, Effort or Events, written as a sentence: *if* these conditions are true, *then* these must be true too. For example: if Event is CTD cast, then ID isn't blank; if Weather is Fog, then Glare is not Severe; if Behaviors includes Mom/calf, then Calves > 0. A value in [brackets] is another column of the same row (Num ≥ [Calves]). Each rule has a level (error, warning or note), a message, an On switch and, for Sightings, whether resights are checked. **Test on this survey** lists the rows that break a rule before you save it.
+- The rules are part of the template's data part (`rules.csv`), so every computer using a template checks the same way, and they can't change during a survey. The Error check lists each row that breaks one (check **Rules**).
+- **The Calves ≤ Num check is now a rule** (the one Spyhop starts with), so it can be changed or switched off. Its message has moved from the Plausible numbers check to Rules.
+- **Error check → Check automatically:** runs the check quietly every 1–30 minutes while a survey is active (off by default; a shared setting). A message pops up when it finds more errors or warnings than before.
+- **Status bar:** a **Check** field shows the counts from the last Error check; click it to open the Error check.
+- **Open** on a list's file in Settings → Dropdowns now works for every list (it only worked for species, events, observers and behaviors).
+
 ## 0.51.0 — 2026-11-12
 
 - **Columns… can hide columns:** select columns and press **Hide** to save screen space. Hidden columns stay in the data, the files and the exports, and are shown greyed in Columns…. While any are hidden, **Show hidden columns** appears next to Columns… and brings them all back. This applies to this computer only.

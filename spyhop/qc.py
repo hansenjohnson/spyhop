@@ -578,9 +578,7 @@ def run_qc(rec) -> dict:
         if calves is not None:
             if calves < 0 or calves != int(calves):
                 add("error", "Plausible numbers", "Calves should be a whole number, 0 or more.", "sightings", r, "Calves", name)
-            elif n is not None and calves > n:
-                add("error", "Plausible numbers", f"More calves ({calves:g}) than animals (Num {n:g}).", "sightings", r, "Calves", name)
-            elif n is not None and calves == n and n > 0:
+            elif n is not None and calves == n and n > 0:      # more calves than animals: the default rule (0.52)
                 add("warning", "Plausible numbers", "Every animal is a calf — is Num missing the adults?", "sightings", r, "Calves", name)
         b, d = _num(r.get("Bearing")), _num(r.get("Distance"))
         if b is not None and r.get("BrgRef") == "C" and not 0 <= b <= 12:
@@ -687,6 +685,9 @@ def run_qc(rec) -> dict:
                 break
         prev.append((t, r, name))
 
+    # ---- rules (0.52: Settings → Rules, the template's rules.csv)
+    run_rules(rec, add, lab, {"sightings": S, "effort": E, "events": V})
+
     order = {"error": 0, "warning": 1, "info": 2}
     tab_order = {"survey": 0, "sightings": 1, "effort": 2, "events": 3, "track": 4}
     row_index = {r["RowID"]: i for rows in (S, E, V) for i, r in enumerate(rows) if r.get("RowID")}
@@ -696,6 +697,30 @@ def run_qc(rec) -> dict:
     return {"survey": rec.survey["prefix"], "generated": now.isoformat(), "counts": counts, "issues": issues,
             "checked": {"sightings": len(S), "effort": len(E), "events": len(V), "track": len(T)},
             "checks": CHECKS, "limits": LIMITS, "track_limits": used_limits, "track_defaults": track_limit_defaults(rec)}
+
+
+def run_rules(rec, add, lab, tables: dict) -> int:
+    """The template's rules, each broken row an issue of check "Rules" (the rule's level and message)."""
+    from . import rules as R
+    cfg = rec.cfg
+    S = tables["sightings"]
+    rs_index = resights.by_sightno(S)
+    is_resight = lambda r: resights.original_of(r, S, rs_index) is not r      # noqa: E731
+    n = 0
+    for p in getattr(cfg, "rule_problems", []) or []:
+        add("info", "Rules", f"rules.csv: {p} (this rule wasn't checked)", "survey", label="Rules")
+    for k, rule in enumerate(getattr(cfg, "rules", []) or [], 1):
+        if not rule.get("on"):
+            continue
+        for v in R.unknown_values(rule, rec.list_values):
+            add("info", "Rules", f"Rule {k} names {v}, which isn't in its list: check the rule.", "survey", label="Rules")
+        rows = tables[rule["table"]]
+        index = {id(r): i for i, r in enumerate(rows)}
+        msg = rule.get("message") or R.auto_message(rule)
+        for r, col in R.broken(rule, rows, is_resight):
+            n += 1
+            add(rule["level"], "Rules", f"{msg} (rule {k})", rule["table"], r, col, lab(rule["table"], r, index[id(r)]))
+    return n
 
 
 # What is checked, for the report's "What is checked" list.
@@ -709,7 +734,7 @@ CHECKS = [
     ("Effort starts with Start / Survey ended", "The first Effort row is Start; the survey has an End row."),
     ("Times within the survey", "Nothing is timed before Start, after End, or in the future; rows are in time order."),
     ("Unique numbers", "No SigNo or EventNo is used twice; gaps in the numbering are noted."),
-    ("Plausible numbers", f"Num is a whole number ≥ 1 (flagged above {LIMITS['max_group']}); Calves ≤ Num (or NA)."),
+    ("Plausible numbers", f"Num is a whole number ≥ 1 (flagged above {LIMITS['max_group']}); Calves a whole number (or NA), not all of Num."),
     ("Plausible bearings and distances", f"Bearing 0–360°, Dist not negative, both or neither given, Ref/Unit set, "
      f"relative bearings have a heading, animals within {LIMITS['max_sighting_nm']:g} nm of the vessel."),
     ("Positions match the trackline", f"Vessel positions within {LIMITS['pos_vs_track_nm']:g} nm of the trackline at that time."),
@@ -725,5 +750,6 @@ CHECKS = [
     ("Resights linked", "Each ResNo names an existing sighting, timed before the resight and of the same species."),
     ("Glare bearings", "With Glare None, Gstart and Gend are NA; with any other glare they're given (an error if not), with a Gref, and are 0–360° (1–12 for clock bearings)."),
     ("Resight swim speeds", f"The animals don’t swim faster than {LIMITS['max_resight_kn']:g} kn from one sighting of them to the next (warning; positions from SigLat/SigLon, else the platform’s)."),
+    ("Rules", "Your team's rules (Settings → Rules, part of the template): each row that breaks one is listed with the rule's level and message. The default rule: Num is at least Calves."),
     ("No duplicate records", "A sighting with the same time, species, number and position as another (entered twice), or the same event and ID within 30 s."),
 ]

@@ -330,6 +330,7 @@ DEFAULT_SETTINGS = {
     "nmea_log_timestamps": True,
     "altitude_column": "auto",      # Sightings' Alt column: auto (shown for aerial surveys) | show | hide
     "segment_column": "show",       # Effort's Seg (effort segment) column: show | hide
+    "qc_auto_minutes": 0,           # 0.52: run the Error check every N minutes (1–30) during a survey; 0: off
     "column_layout": {},            # this computer's column order and widths: {tab: {order: [keys], widths: {key: px}}}
     # --- also in spyhop-config.json, under their own keys (see CONFIG_KEYS)
     "online_feeds": [],             # map feeds (Tools → Overlays → Online overlays; feeds.py) → map_feeds
@@ -375,6 +376,7 @@ SHARED_SETTINGS = {
     "nmea_log_timestamps": "Raw NMEA log time stamps",
     "altitude_column": "Altitude column",
     "segment_column": "Effort segment column",
+    "qc_auto_minutes": "Error check automatically (min)",
 }
 # The GPS / NMEA inputs a template carries (0.41: serial too, named for the device, e.g. "External GPS").
 # Each has a role (0.42): the platform's primary (its position, course, speed and heading), a secondary
@@ -583,6 +585,10 @@ class Config:
     def shortcuts_path(self) -> Path:
         return self.current_dir / "shortcuts.csv"
 
+    @property
+    def rules_path(self) -> Path:
+        return self.current_dir / "rules.csv"
+
     # -- survey data folder (survey CSVs, waypoints, exports) ------------------------
     @property
     def default_data_dir(self) -> Path:
@@ -626,6 +632,9 @@ class Config:
                 _write_csv(self.list_path(name), hdr, rows)
         if not self.shortcuts_path.exists():
             _write_csv(self.shortcuts_path, *DEFAULT_SHORTCUTS)
+        if not self.rules_path.exists():
+            from .rules import DEFAULT_RULES
+            _write_csv(self.rules_path, *DEFAULT_RULES)
         if not self.config_path.exists():
             reps = {}
             for p in sorted((Path(__file__).parent / "report_defs").glob("*.json")):     # the starting reports
@@ -650,7 +659,8 @@ class Config:
     def locked_snapshot(self) -> dict:
         return {"lists": {n: [dict(r) for r in self.lists.get(n, [])] for n in LOCKED_LISTS},
                 "settings": {k: self.settings.get(k) for k in LOCKED_SETTINGS},
-                "reports": json.loads(json.dumps(self.reports))}           # saved reports: data part too (0.40)
+                "reports": json.loads(json.dumps(self.reports)),           # saved reports: data part too (0.40)
+                "rules": self.rules_loaded}                                # and the rules (0.52)
 
     def restore_locked(self, snap: dict) -> list[str]:
         """Put back the locked lists and settings from a snapshot (files too) if they changed; returns what was put back."""
@@ -663,6 +673,10 @@ class Config:
                 _write_csv(self.list_path(n), hdr, [[r.get(c, "") for c in hdr] for r in rows])
                 self.lists[n] = rows
                 back.append(f"{n}.csv")
+        if snap.get("rules") is not None and self.rules_text() != snap["rules"]:
+            self.rules_path.write_text(snap["rules"], encoding="utf-8")
+            self.reload()
+            back.append("rules.csv")
         if "reports" in snap and self.reports != snap["reports"]:
             self.save_reports(snap["reports"])
             back.append("saved reports")
@@ -797,8 +811,28 @@ class Config:
         self.reload()
         return out
 
+    def rules_text(self) -> str | None:
+        try:
+            return self.rules_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    def save_rules(self, rows: list[dict]) -> list[dict]:
+        """Replace the rules (Settings → Rules). Raises ValueError listing the problems."""
+        from . import rules as R
+        problems, out = [], []
+        for i, r in enumerate(rows or [], 1):
+            c = R.clean_rule(r, i, problems)
+            if c:
+                out.append(c)
+        if problems:
+            raise ValueError("\n".join(problems))
+        _write_csv(self.rules_path, R.COLUMNS, [R.to_csv_row(r) for r in out])
+        self.reload()
+        return self.rules
+
     def reload(self):
-        """Read the lists and shortcuts again (they're CSV files in templates/current)."""
+        """Read the lists, shortcuts and rules again (they're CSV files in templates/current)."""
         self.lists: dict[str, list[dict]] = {}
         for name in DEFAULT_LISTS:
             try:
@@ -819,6 +853,12 @@ class Config:
             self.shortcuts = [r for r in _read_csv(self.shortcuts_path) if r.get("combo")]
         except FileNotFoundError:
             self.shortcuts = []
+        from . import rules as R
+        try:
+            self.rules, self.rule_problems = R.load(_read_csv(self.rules_path))
+        except FileNotFoundError:
+            self.rules, self.rule_problems = [], []
+        self.rules_loaded = self.rules_text()          # as read, for locked_snapshot (the file may be edited by hand)
         # the online map layers are defined in code, so fixes arrive with updates
         hdr = DEFAULT_TILE_SOURCES[0]
         self.tile_sources = [dict(zip(hdr, r)) for r in DEFAULT_TILE_SOURCES[1]]
@@ -892,6 +932,12 @@ class Config:
             updates = {**updates, "nmea_sources": clean_inputs(updates["nmea_sources"])}
         if updates and "keep_awake" in updates and updates["keep_awake"] not in ("off", "survey", "always"):
             updates = {**updates, "keep_awake": "survey"}
+        if updates and "qc_auto_minutes" in updates:
+            try:
+                n = int(float(updates["qc_auto_minutes"] or 0))
+            except (TypeError, ValueError):
+                n = 0
+            updates = {**updates, "qc_auto_minutes": max(0, min(30, n))}
         for k, v in (updates or {}).items():
             if k in DEFAULT_SETTINGS:
                 self.settings[k] = v
@@ -933,6 +979,9 @@ class Config:
             "list_columns": {k: self.list_header(k) for k in DEFAULT_LISTS},
             "list_labels": LIST_COLUMNS,
             "default_shortcuts": [dict(zip(DEFAULT_SHORTCUTS[0], r)) for r in DEFAULT_SHORTCUTS[1]],
+            "rules": self.rules,
+            "rule_problems": self.rule_problems,
+            "rules_info": rules_info(),
             "display": self.display,
             "settings": self.settings,
             "tile_sources": self.tile_sources,
@@ -942,6 +991,11 @@ class Config:
             "default_data_dir": str(self.default_data_dir),
             "current_dir": str(self.current_dir),
         }
+
+
+def rules_info() -> dict:
+    from .rules import schema_info
+    return schema_info()
 
 
 def _read_json(p: Path) -> dict:
