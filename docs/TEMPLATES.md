@@ -35,7 +35,7 @@ Templates live in the **`templates` folder in Spyhop's own folder** (Settings �
 
 | Folder | What it holds |
 |---|---|
-| `templates/current/` | **The current template**: the lists (`species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv`, `effort.csv`, `visibility.csv`, `weather.csv`, `reticles.csv`), `shortcuts.csv`, `rules.csv` and `spyhop-config.json`. It is a template, unzipped: everything you change in Settings → Dropdowns, Shortcuts, Rules, General and Inputs, and in Tools → Reports, is saved here. |
+| `templates/current/` | **The current template**: the lists (`species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv`, `cues.csv`, `effort.csv`, `visibility.csv`, `weather.csv`, `reticles.csv`), `shortcuts.csv`, `rules.csv` and `spyhop-config.json`. It is a template, unzipped: everything you change in Settings → Dropdowns, Shortcuts, Rules, General and Inputs, and in Tools → Reports, is saved here. |
 | `templates/saved/` | Your templates, `<name>.spyhop-template.zip`, and copies of the ones you got from the web. |
 | `templates/backups/` | The current template as it was before each other template was used. |
 
@@ -65,7 +65,7 @@ A template is a zip file (or, on GitHub, a repository or a folder in one) contai
 | File | What it is |
 |---|---|
 | `spyhop-config.json` | Everything that isn't a table (see below). |
-| `species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv`, `effort.csv`, `visibility.csv`, `weather.csv`, `reticles.csv` | The drop-down lists (the data part). |
+| `species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv`, `cues.csv`, `effort.csv`, `visibility.csv`, `weather.csv`, `reticles.csv` | The drop-down lists (the data part). |
 | `shortcuts.csv` | Keyboard shortcuts. |
 | `rules.csv` | The rules checked by the Error check (Settings → Rules; preferences since 0.56, so they can change during a survey). Columns: `on` (yes/no), `table` (sightings, effort or events), `level` (error, warning or info), `if` and `then` (conditions joined by ` AND `, e.g. `EventType is CTD cast`, `Count >= [Calves]`), `message` and `resights` (include or skip). |
 | `waypoints.csv` | Waypoints (optional). |

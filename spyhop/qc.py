@@ -49,14 +49,14 @@ def track_limit_defaults(rec) -> dict:
 
 # columns that may be left blank (everything else visible in the table is required)
 OPTIONAL = {
-    "sightings": {"Behaviors", "Bearing", "BrgRef", "Distance", "DistUnit", "Altitude", "ResightOf", "FieldID", "Notes"},
+    "sightings": {"Behaviors", "Cue", "Bearing", "BrgRef", "Distance", "DistUnit", "Altitude", "ResightOf", "FieldID", "Notes"},
     "effort": {"Notes", "GlareStart", "GlareEnd", "GlareRef"},
     "events": {"ID", "Notes"},
 }
 # survey details that may be blank
 META_OPTIONAL = {"survey_notes", "platform_lat", "platform_lon"}   # station: Stationary only, optional
 # Start and End rows need only their time and position
-OTHER_LISTS = {"species": "Species", "event_types": "Events", "behaviors": "Behaviors", "observers": "Observers",
+OTHER_LISTS = {"species": "Species", "event_types": "Events", "behaviors": "Behaviors", "cues": "Cues", "observers": "Observers",
                "effort": "Effort", "visibility": "Visibility", "weather": "Weather", "distunit": "Reticles"}
 EFFORT_START_END_REQUIRED = {"DateTime", "Lat", "Lon", "Effort"}
 NOT_DATA = {"RowID", "Map", "VesHdg"}          # internal / display columns

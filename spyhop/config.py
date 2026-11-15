@@ -118,6 +118,15 @@ DEFAULT_LISTS: dict[str, tuple[list[str], list[list[str]]]] = {
     "visibility": (["name"], [["<0.5 nm"], ["0.5-1 nm"], ["1-2 nm"], ["2-5 nm"], ["5-10 nm"], [">10 nm"], ["Other"]]),
     "weather": (["name"], [["Clear"], ["Partly cloudy"], ["Overcast"], ["Haze"], ["Fog"], ["Mist"],
                            ["Drizzle"], ["Rain"], ["Showers"], ["Snow"], ["Other"]]),
+    # 0.59: the cue that first drew the observer's eye to the animals (the Cue column in Sightings)
+    "cues": (["name", "definition"], [
+        ["Blow", "The blow (spout) was seen first."],
+        ["Body at surface", "Part of the body (back, head, fin, flukes) seen at the surface."],
+        ["Body subsurface", "The body seen under the water."],
+        ["Water disturbance", "Splashes, white water or a slick, before any animal was seen."],
+        ["Breach", "The animal leaping clear of the water, or most of the way."],
+        ["Other", "A cue not in this list: fill in the right one after the survey."],
+    ]),
     # how reticle distances are worked out (reticle.py): Unit = reticles-<name> on a sighting.
     # binoculars: magnification (a key of reticle.PRESETS, a suggestion) and degrees per division;
     # marks: evenly spaced calibrated marks, degrees between marks; inclinometer: the reading is the angle itself.
@@ -187,11 +196,12 @@ LIST_COLUMNS = {
     "effort": {"name": "Name", "status": "Status", "definition": "Definition", "color": "Color"},
     "visibility": {"name": "Visibility"},
     "weather": {"name": "Weather"},
+    "cues": {"name": "Cue", "definition": "Definition"},
     "reticles": {"name": "Name", "method": "How readings are taken", "magnification": "Magnification",
                  "deg_per_division": "Degrees per division"},
 }
 # lists that define what recorded values mean: none can change during an active survey
-LOCKED_LISTS = ("species", "event_types", "observers", "behaviors", "effort", "visibility", "weather", "reticles")
+LOCKED_LISTS = ("species", "event_types", "observers", "behaviors", "cues", "effort", "visibility", "weather", "reticles")
 # settings that change recorded or calculated data: locked during an active survey too
 # (0.45: the trackline-break settings are gone: the trackline breaks only at ERROR rows in the Effort table)
 LOCKED_SETTINGS = {"mag_variation": "Magnetic variation", "tracking_interval": "Track point every (s)"}

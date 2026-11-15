@@ -2956,7 +2956,7 @@ class App {
   }
 
   // ---------------------------------------------------------------- Settings → Dropdowns: the drop-down lists
-  dropdownLists() { return [['species', 'Species'], ['event_types', 'Events'], ['behaviors', 'Behaviors'], ['observers', 'Observers'],
+  dropdownLists() { return [['species', 'Species'], ['event_types', 'Events'], ['behaviors', 'Behaviors'], ['cues', 'Cues'], ['observers', 'Observers'],
     ['effort', 'Effort'], ['visibility', 'Visibility'], ['weather', 'Weather'], ['reticles', 'Reticles']]; }
 
   renderDropdowns() {
@@ -3045,6 +3045,7 @@ class App {
     const what = { species: 'The Species drop-down in Sightings. The code labels sightings on the map and is used by reports; the color is the marker color when “color by species” is on.',
       event_types: 'The Event drop-down in Events. The code labels events on the map and is used by reports.',
       behaviors: 'The Behaviors drop-down in Sightings (several can be chosen).',
+      cues: 'The Cue drop-down in Sightings: what first drew the observer’s eye to the animals. Each cue’s definition is shown in the drop-down.',
       observers: 'The observer drop-downs (Obs in Sightings; Port, Recorder and Stbd in Effort). The initials are what’s recorded; NA means nobody in that position.',
       visibility: 'The Vis drop-down in Effort. The Error check reads distances from the names (e.g. “1-2 nm” is at most 2 nm, “<0.5 nm” at most 0.5; km, m and mi are understood) to flag sightings beyond the visibility.',
       weather: 'The Weather drop-down in Effort.',

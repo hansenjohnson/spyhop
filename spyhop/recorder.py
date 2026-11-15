@@ -1897,7 +1897,7 @@ class Recorder:
 
     # columns of the merged CSV, in order
     MERGED_EFFORT = ["Effort", "Segment", "Visibility", "SeaState", "Weather", "Glare", "GlareStart", "GlareEnd", "GlareRef", "Port", "Recorder", "Starboard"]
-    MERGED_SIGHTING = ["SightNo", "ResightOf", "Species", "Count", "Calves", "NumConf", "IDrel", "Behaviors", "Observer",
+    MERGED_SIGHTING = ["SightNo", "ResightOf", "Species", "Count", "Calves", "NumConf", "IDrel", "Behaviors", "Cue", "Observer",
                        "Bearing", "BrgRef", "Distance", "DistUnit", "Altitude", "SigLat", "SigLon", "VesHdg", "Images", "FieldID"]
     MERGED_EVENT = ["EventNo", "EventType", "EventID"]
 

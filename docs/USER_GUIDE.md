@@ -63,7 +63,7 @@ The lists, shortcuts and settings Spyhop records with are the **current template
 
 To change the template yourself:
 
-- **Settings → Dropdowns:** the Species, Events, Behaviors, Observers, Effort, Visibility, Weather and Reticles lists. Edit, add, reorder or remove entries, then press **Save**.
+- **Settings → Dropdowns:** the Species, Events, Behaviors, Cues, Observers, Effort, Visibility, Weather and Reticles lists. Edit, add, reorder or remove entries, then press **Save**.
 - **Settings → Shortcuts:** the keyboard shortcuts, including ones that start a sighting of a given species.
 - **Settings → Rules:** your team's own checks, such as "every CTD cast has an ID" (see [Rules](#rules)).
 - **Settings → General** and **Tools → Reports:** shared settings, the map display and saved reports, which are part of the template too.
@@ -216,7 +216,7 @@ The tables work like a spreadsheet:
 
 ### Sightings
 
-- New rows get the time, vessel position and the next **SigNo** (the CSV column is SightNo). **FieldID** is free text for your own ID (photo-ID, catalog number…); it becomes the sighting's map label, and the cursor skips it on a new row so you go straight to Species. **Calves** takes a number, or **NA** where calves don't apply (dead birds, fishing gear, vessels…).
+- New rows get the time, vessel position and the next **SigNo** (the CSV column is SightNo). **FieldID** is free text for your own ID (photo-ID, catalog number…); it becomes the sighting's map label, and the cursor skips it on a new row so you go straight to Species. **Calves** takes a number, or **NA** where calves don't apply (dead birds, fishing gear, vessels…). **Cue** is the sighting cue, what first drew the observer's eye to the animals (Blow, Body at surface, Body subsurface, Water disturbance, Breach or Other unless your template's Cues list says otherwise); the drop-down shows each cue's definition.
 - Enter **Bearing** and **Distance**, and the animals' position (**SigLat/SigLon**) is worked out. Bearings can be negative and count back from 360 (−10 is stored as 350), which is handy for relative bearings to port. Without a bearing and distance, SigLat/SigLon are the vessel position. A position picked on the map gets its bearing and distance worked out backwards.
 - Each row stores its own bearing reference (**Ref**: M magnetic, T true, R relative to the bow, **C clock**) and distance **Unit**, so changing the defaults in Settings never changes old rows. The vessel heading is saved in the CSV (`VesHdg`, not shown) so relative bearings can be converted. Magnetic bearings use the World Magnetic Model.
 - **Clock bearings (Ref C):** the Bearing cell offers 1 to 12 o'clock. Each hour is 30° from the bow: 12 dead ahead, 3 the starboard beam, 6 astern, 9 the port beam. Choose C as the **Default bearing reference** in Settings → General to have it on every new sighting.
@@ -425,7 +425,7 @@ Settings → Sharing lists who is watching. **Disconnect all viewers** closes th
 It checks:
 
 - **Survey details:** every field filled in (the station position and altitude only when needed), and a valid email.
-- **Required fields:** Sightings: everything except Behaviors, Bearing, Ref, Dist, Unit, Alt, ResNo, FieldID and Notes. Effort: everything except Notes (Start and End rows need only the time and position). Events: everything except ID and Notes.
+- **Required fields:** Sightings: everything except Behaviors, Cue, Bearing, Ref, Dist, Unit, Alt, ResNo, FieldID and Notes. Effort: everything except Notes (Start and End rows need only the time and position). Events: everything except ID and Notes.
 - **Valid values:** choices are in their lists; numbers, positions and times can be read; no time is in the future; nothing is before Start or after End; rows are in time order; no SigNo or EventNo is used twice; the survey starts with Start and has an End.
 - **Plausible values:** Num a whole number of at least 1 (flagged over 500); Calves a whole number (or NA), with a warning when every animal is a calf; Bearing 0–360° and Dist not negative, given together and with their Ref and Unit; relative bearings have a heading; animals within 10 nm of the vessel and no further than the visibility; vessel positions within 0.5 nm of the trackline; positions not on land (by the bundled coastline, ignoring the first 0.5 km); glare bearings given when there's glare.
 - **Trackline:** a jump faster than **50 kn** (shipboard, and when the platform type isn't set), **30 kn** (stationary) or **200 kn** (aerial and other), or a gap with no position for over **120 s** (or 3 track intervals, if longer). The limits are fixed, so every check of every survey uses the same ones. Each jump or gap has a **Fix** button that adds an **ERROR** row to the Effort table one second after the last good track point, plus a row at its end that puts the effort and conditions back. The trackline is broken there (see *Trackline breaks* in [Map](#map)), and ERROR counts as off effort.
@@ -589,16 +589,16 @@ Every computer has a **current template**: the one in use, kept unzipped in `tem
 
 ### Drop-down lists
 
-**Settings → Dropdowns** edits the lists of the current template: **Species**, **Events**, **Behaviors**, **Observers**, **Effort**, **Visibility**, **Weather** and **Reticles**.
+**Settings → Dropdowns** edits the lists of the current template: **Species**, **Events**, **Behaviors**, **Cues**, **Observers**, **Effort**, **Visibility**, **Weather** and **Reticles**.
 
-- Each entry has a name (initials, for observers), a code, and for species and events a color (typed as a name like `red`, or picked). Behaviors have a **definition**, shown in the Behaviors checklist; effort entries have a status, a definition and a color.
+- Each entry has a name (initials, for observers), a code, and for species and events a color (typed as a name like `red`, or picked). Behaviors and cues have a **definition**, shown in the Behaviors checklist and the Cue drop-down; effort entries have a status, a definition and a color.
 - **↑ ↓** set the order of the drop-down, **✕** removes an entry, **Add entry** and **Sort A–Z** do what they say, and **Save** keeps the changes.
 - Names and codes must be unique. Spyhop shows what's wrong and saves nothing until it's fixed.
 - Renaming or removing an entry doesn't change rows already recorded; the Error check flags values that are no longer in the list.
 - **Start**, **End** and **ERROR** in the effort list can't be renamed or removed, and at least one effort entry must be on effort.
 - **Every list has Other**, the placeholder for anything missing from it (the reticles have **reticles-Other**, which keeps the reading but works out no distance). Record such a row as Other, with a note, and after the survey add the right entry and replace Other; the Error check lists every row that uses it. Other can't be renamed or removed.
 - **While a survey is under way only the colors can be changed.** End the survey to edit the lists.
-- **Many changes at once:** each list is a CSV file in the current template (`species.csv`, `observers.csv`, `event_types.csv`, `behaviors.csv`, `effort.csv`, `visibility.csv`, `weather.csv`, `reticles.csv`). **Open** opens it in your spreadsheet program; edit it, keep the header row as it is, save it, and press **Reload from the file**.
+- **Many changes at once:** each list is a CSV file in the current template (`species.csv`, `observers.csv`, `event_types.csv`, `behaviors.csv`, `cues.csv`, `effort.csv`, `visibility.csv`, `weather.csv`, `reticles.csv`). **Open** opens it in your spreadsheet program; edit it, keep the header row as it is, save it, and press **Reload from the file**.
 
 ### Editing the shortcuts
 
@@ -646,7 +646,7 @@ Spyhop's folder, the survey data folder, the program folder and the diagnostic l
 Spyhop/                                   (Spyhop's own folder)
   templates/
     current/   the current template (unzipped): species.csv, observers.csv, event_types.csv,
-               behaviors.csv, effort.csv, visibility.csv, weather.csv, reticles.csv,
+               behaviors.csv, cues.csv, effort.csv, visibility.csv, weather.csv, reticles.csv,
                shortcuts.csv, and spyhop-config.json (settings, inputs, map display,
                map feeds, saved reports, record of changes)
     saved/     <name>.spyhop-template.zip   your templates

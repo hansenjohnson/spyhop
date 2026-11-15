@@ -88,6 +88,8 @@ TABS = {
             col("IDrel", "choice", "IDrel", list="idrel", width=80, help="Confidence in the species identification."),
             col("Behaviors", "multi", "Behaviors", list="behaviors", width=160,
                 help="Behaviors seen. Press Enter or double-click, then ↑/↓ and Space to tick several (each one’s definition is shown). List: behaviors.csv."),
+            col("Cue", "choice", "Cue", list="cues", width=110,
+                help="The sighting cue: what first drew the observer’s eye to the animals (blow, body at surface, breach…). List: Settings → Dropdowns → Cues."),
             col("Observer", "choice", "Obs", list="observers", width=60, help="Who made the sighting. List: observers.csv."),
             col("Bearing", "float", "Bearing", width=65,
                 help="Bearing from the vessel to the animals, 0–360°; negative counts back from 360 (−10 = 350, e.g. 10° to port for a relative bearing). With Ref C, a clock bearing 1–12 (picked from a list; 3 = 90° to starboard, 12 = dead ahead). Its reference is in Ref."),

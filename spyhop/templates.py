@@ -66,6 +66,7 @@ TABLES = {
     "behaviors.csv": ["name"],
     "visibility.csv": ["name"],
     "weather.csv": ["name"],
+    "cues.csv": ["name"],
     "effort.csv": ["name", "status"],
     "reticles.csv": ["name", "method"],
     "shortcuts.csv": ["combo", "action"],

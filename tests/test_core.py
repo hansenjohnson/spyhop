@@ -1862,7 +1862,7 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
         names = set(z.namelist())
         doc = json.loads(z.read("spyhop-config.json"))
     assert names == {"spyhop-config.json", "species.csv", "event_types.csv", "observers.csv", "behaviors.csv", "shortcuts.csv",
-                     "visibility.csv", "weather.csv", "reticles.csv", "effort.csv", "rules.csv",
+                     "visibility.csv", "weather.csv", "cues.csv", "reticles.csv", "effort.csv", "rules.csv",
                      "waypoints.csv", "routes/Line 1.gpx", "overlays/zones.geojson"}      # no feed data, no display.csv
     assert doc["min_spyhop"] == "0.28.0" and doc["includes"] == ["waypoints", "routes", "overlays"] and doc["made_with"] == __version__
     # 0.41: serial inputs are in templates too, named; which are in use stays with each computer
@@ -3546,3 +3546,28 @@ def test_navigation_average_back_to_10s_after_057(tmp_path):
     assert json.loads(c2.config_path.read_text())["settings"]["nav_average_s"] == 10
     c2.save_settings({"nav_average_s": 60, "last_version": "0.58.0"})          # chosen in 0.58: kept
     assert Config(tmp_path / "s").settings["nav_average_s"] == 60
+
+
+def test_sighting_cue_column_and_list(tmp_path):
+    """0.59: a Cue column in Sightings (optional), from the template's Cues list (data part: locked during a
+    survey), with Other as the placeholder; in the merged CSV; values outside the list are flagged."""
+    from spyhop import qc, templates
+    from spyhop.server import App
+    a = App(tmp_path / "a")
+    cfg = a.rec.cfg
+    assert [r["name"] for r in cfg.lists["cues"]] == ["Blow", "Body at surface", "Body subsurface", "Water disturbance", "Breach", "Other"]
+    assert (cfg.current_dir / "cues.csv").exists() and templates.part_of("cues.csv") == "data"
+    keys = [c["key"] for c in schema.TABS["sightings"]["columns"]]
+    assert keys.index("Cue") == keys.index("Behaviors") + 1 and "Cue" in qc.OPTIONAL["sightings"]
+    a.rec.start_survey("C", meta={"platform_type": "Shipboard"})
+    r = a.rec.new_row("sightings", prefill={"Species": "Humpback whale", "Count": "2", "Cue": "Blow"})
+    assert r["row"]["Cue"] == "Blow"
+    a.rec.new_row("sightings", prefill={"Species": "Humpback whale", "Count": "1", "Cue": "Fluke"})
+    a.rec.new_row("sightings", prefill={"Species": "Humpback whale", "Count": "1", "Cue": "Other"})
+    issues = qc.run_qc(a.rec)["issues"]
+    assert any(i["column"] == "Cue" and "Fluke" in i["message"] for i in issues)
+    assert any(i["check"] == "Other placeholders" and i["column"] == "Cue" for i in issues)
+    assert "Cue" in a.rec.merged_rows()[0]
+    # locked during the survey like the other lists
+    with pytest.raises(ValueErrorMsg):
+        _run(a.save_list(_Req({"name": "cues", "rows": [{"name": "Blow"}]})))

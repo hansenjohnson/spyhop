@@ -168,6 +168,7 @@ export class Grid {
         .map((r) => ({ name: r.name, extra: `${r.status === 'on' ? 'on' : 'off'} effort${r.definition ? ': ' + r.definition : ''}`, color: r.color }));
     }
     if (S.schema.fixed_lists[name]) return S.schema.fixed_lists[name].map((n) => ({ name: n, color: name === 'colors' ? n : undefined }));
+    if (name === 'cues') return (S.config.lists.cues || []).map((r) => ({ name: r.name, extra: r.definition || '' }));   // 0.59
     return (S.config.lists[name] || []).map((r) => ({
       name: r.name, code: r.species_code || r.behavior_code || r.event_code || '', extra: r.full_name || '', color: r.color, definition: r.definition || '' }));
   }

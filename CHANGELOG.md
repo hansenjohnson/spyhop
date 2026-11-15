@@ -6,6 +6,10 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.59.0 — 2026-11-15
+
+- **Cue column in Sightings:** the sighting cue, what first drew the observer's eye to the animals. It's a drop-down from a new **Cues** list in Settings → Dropdowns (part of the template's data part, so fixed during a survey like the other lists), with a definition for each cue shown in the drop-down. Defaults: Blow, Body at surface, Body subsurface, Water disturbance, Breach, and Other as the placeholder to fix after the survey. Cue sits after Behaviors and can be left blank; the Error check flags cues not in the list and Other. It's in the merged CSV export and can be used in rules and reports.
+
 ## 0.58.0 — 2026-11-15
 
 - Navigation: VMG is now averaged over **10 s** unless changed (it was 60 s, which was slow to follow changes). Settings saved with 0.57's 60 s are changed to 10 s once.
