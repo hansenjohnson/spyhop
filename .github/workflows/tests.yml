@@ -1,0 +1,63 @@
+# Spyhop's tests (pytest) on Mac, Windows and Linux with every Python version it supports.
+#  - "Tested versions" installs the exact packages in requirements.lock, as the start files do.
+#  - "Newest libraries" installs the newest release of every library, ignoring the upper limits in
+#    requirements.txt, so a library release that would break Spyhop shows up here first (it is allowed to
+#    fail; then update requirements.txt / requirements.lock on purpose, see docs/DEVELOPERS.md).
+# Runs on every push and pull request, every Monday, and by hand (Actions → Tests → Run workflow).
+# The supported Python versions must match pyproject.toml, spyhop/__init__.py and the start files (a test checks).
+name: Tests
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tested:
+    name: Tested versions · ${{ matrix.os }} · Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          allow-prereleases: true
+      - name: Install the pinned packages (requirements.lock)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip install pytest
+      - name: Run the tests
+        run: python -m pytest -q
+
+  newest:
+    name: Newest libraries · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Install the newest release of every library (no upper limits)
+        run: |
+          python -m pip install --upgrade pip
+          python -c "import re; open('newest.txt', 'w').write(re.sub(r',?<[^;#\s]*', '', open('requirements.txt').read()))"
+          python -m pip install --upgrade -r newest.txt pytest
+          python -m pip list
+      - name: Run the tests
+        run: python -m pytest -q

@@ -1,0 +1,9 @@
+# Keep the GitHub Actions used by .github/workflows/tests.yml up to date (a pull request when there's a new one).
+# Python packages are updated by hand from requirements.txt into requirements.lock (docs/DEVELOPERS.md); the
+# workflow's "Newest libraries" job shows when a new release would break Spyhop.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
