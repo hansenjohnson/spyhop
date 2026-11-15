@@ -375,7 +375,6 @@ class App {
     let hideBtn = null, showBtn = null;
     const shift = (d) => {                        // ← / →: the selection one place left or right
       if (!sel.size) return;
-      const rest = order.filter((c) => !sel.has(c.key));
       const first = order.findIndex((c) => sel.has(c.key));
       const before = order.slice(0, first).filter((c) => !sel.has(c.key)).length;
       moveTo(before + d);
@@ -1222,7 +1221,6 @@ class App {
   async openSurvey(sv) {
     let resume = false;
     const cur = this.S.survey;
-    const closing = cur && !cur.current ? '' : '';
     const note = cur ? el('p', { class: 'hint' }, `“${cur.prefix}” will be closed first (its data is saved${cur.active ? ' and it stays active' : ''}).`) : null;
     if (sv.active) {
       // 0.45: an active survey records its trackline whenever it's open
@@ -2550,7 +2548,6 @@ class App {
   }
 
   async backupTemplate() {
-    const tp = (this.tpl ||= {});
     try {
       const r = await api('/api/templates/backup', {});
       toast(`Backup saved: ${r.path}`);

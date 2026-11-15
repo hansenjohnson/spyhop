@@ -885,10 +885,8 @@ def test_track_break_fix(rec):
     tr2 = [x for x in r["issues"] if x["check"] == "Trackline plausible"]
     assert len(tr2) == 1 and "No track points" in tr2[0]["message"]
     # 0.45: the limits are the Error check's own (120 s; 50 kn since 0.47, 200 kn for aerial)
-    from spyhop.qc import run_qc, track_limit_defaults
+    from spyhop.qc import track_limit_defaults
     assert r["track_limits"]["gap_s"] == 120 and r["track_limits"]["speed_kn"] == 50      # 0.47: shipboard (and unset) 50 kn
-    with pytest.raises(TypeError):                 # 0.46: the limits are fixed (no override)
-        run_qc(rec, {"gap_s": 600})
     rec.set_meta({"platform_type": "Aerial"})
     assert track_limit_defaults(rec)["speed_kn"] == 200
     assert "track_break_kn" not in rec.cfg.settings and "track_break_kn" not in __import__("spyhop.config", fromlist=["x"]).LOCKED_SETTINGS
@@ -2110,48 +2108,6 @@ def test_reinstall_replaces_program_keeps_data(tmp_path, monkeypatch):
     assert not list(tmp_path.glob(".spyhop-reinstall-*"))
 
 
-def test_old_layout_moved_once(tmp_path):
-    """0.28: a 0.27 Spyhop folder (lists at the top, settings/, reports/, templates in the data folder) is moved
-    into templates/current, templates/saved, templates/backups and spyhop-local.json, and the old files go."""
-    from spyhop.config import Config
-    root = tmp_path / "Spyhop"
-    (root / "settings").mkdir(parents=True)
-    (root / "reports").mkdir()
-    (root / "data" / "templates" / "backups").mkdir(parents=True)
-    (root / "species.csv").write_text("name,color,species_code\nTest whale,red,TEWH\n")
-    (root / "shortcuts.csv").write_text("combo,action,prefill\nMod+Shift+T,add:sightings,Species=Test whale\n")
-    (root / "display.csv").write_text("key,value\nmarker_radius,11\n")
-    (root / "settings" / "settings.json").write_text(json.dumps({
-        "timezone": "UTC", "follow_vessel": False, "last_meta": {"organization": "NEAq"},
-        "nmea_sources": [{"type": "serial", "port": "COM4"}, {"type": "udp", "port": 2000}],
-        "online_feeds": [{"id": "abc12345", "name": "SMAs", "url": "https://example.org/x", "color": "#ff0000", "refresh_min": 60}],
-        "template_current": {"name": "Team.spyhop-template.zip", "how": "saved"}}))
-    (root / "settings" / "template_history.json").write_text(json.dumps([{"date": "2026-11-01", "by": "H", "changed": "all", "notes": "v1"}]))
-    (root / "settings" / "current_survey.txt").write_text(json.dumps({"prefix": "S1", "data_dir": str(root / "data")}))
-    for marker in ("list_rows_added.txt", "reports_started.txt"):
-        (root / "settings" / marker).write_text("x")
-    (root / "reports" / "mine.json").write_text(json.dumps({"name": "Mine", "table": "events", "columns": ["time"]}))
-    (root / "data" / "templates" / "Team.spyhop-template.zip").write_bytes(b"PK")
-    (root / "data" / "templates" / "backups" / "spyhop-backup-1.spyhop-template.zip").write_bytes(b"PK")
-    (root / "data" / "S1_effort.csv").write_text("x\n")
-
-    cfg = Config(root)
-    assert any("new layout" in n for n in cfg.notices)
-    assert sorted(p.name for p in root.iterdir()) == ["charts", "data", "overlays", "routes", "spyhop-local.json", "templates"]
-    assert [r["name"] for r in cfg.lists["species"]] == ["Test whale", "Other"] and cfg.shortcuts[0]["combo"] == "Mod+Shift+T"
-    assert cfg.display["marker_radius"] == "11" and sorted(cfg.reports) == ["mine.json"]
-    assert cfg.settings["timezone"] == "UTC" and cfg.settings["follow_vessel"] is False
-    assert [(x["name"], x["enabled"], x["role"] == "primary") for x in cfg.settings["nmea_sources"]] == [
-        ("Serial COM4 @ 4800", True, True), ("UDP port 2000", True, False)]
-    assert cfg.settings["online_feeds"][0]["name"] == "SMAs" and cfg.history[0]["notes"] == "v1"
-    assert cfg.current_survey()["prefix"] == "S1"
-    assert (cfg.saved_dir / "Team.spyhop-template.zip").is_file() and (cfg.backups_dir / "spyhop-backup-1.spyhop-template.zip").is_file()
-    assert sorted(p.name for p in (root / "data").iterdir()) == ["S1"] and (root / "data" / "S1" / "S1_effort.csv").is_file()   # 0.36: a folder per survey
-    # a second start changes nothing
-    again = Config(root)
-    assert not again.notices and again.settings["timezone"] == "UTC"
-
-
 def test_survey_records_template_and_version(tmp_path):
     """0.28: a survey's details silently record the Spyhop version and the template the setup came from,
     and whether the setup still matched it."""
@@ -2284,26 +2240,6 @@ def test_uninstall_reinstall_git_checkout(tmp_path, monkeypatch):
     log = _wait_helper(r["helper_log"])
     assert "git reset" in log and not (prog / ".venv").exists() and (prog / ".git").is_dir()
     assert (prog / "spyhop" / "__init__.py").read_text() == '__version__ = "0.1"\n'
-
-
-def test_templates_left_in_data_folder_are_tidied(tmp_path):
-    """0.29: a templates folder left in the data folder (e.g. kept by a .DS_Store) is emptied into
-    templates/saved and backups, and removed; files Spyhop doesn't know are left, with a notice."""
-    from spyhop.config import Config
-    Config(tmp_path / "S")                                         # a 0.28 folder
-    d = tmp_path / "S" / "data" / "templates"
-    (d / "backups").mkdir(parents=True)
-    (d / ".DS_Store").write_bytes(b"x")
-    (d / "Old.spyhop-template.zip").write_bytes(b"PK1")
-    (d / "backups" / "b1.spyhop-template.zip").write_bytes(b"PK2")
-    cfg = Config(tmp_path / "S")
-    assert not d.exists()
-    assert (cfg.saved_dir / "Old.spyhop-template.zip").read_bytes() == b"PK1"
-    assert (cfg.backups_dir / "b1.spyhop-template.zip").is_file()
-    d.mkdir()
-    (d / "notes.txt").write_text("mine")
-    cfg = Config(tmp_path / "S")
-    assert (d / "notes.txt").exists() and any("doesn't know" in n for n in cfg.notices)
 
 
 def test_resights(tmp_path):
@@ -2531,38 +2467,6 @@ def test_one_folder_per_survey_with_its_template(tmp_path):
     assert not d.exists() and rec.list_surveys() == []
     rec.close_survey()
     assert rec.cfg.export_dir == rec.cfg.data_dir / "exports"
-
-
-def test_old_survey_files_moved_into_folders(tmp_path):
-    """0.36: survey files at the top of the data folder (and their logs and exports) move into a folder each, once."""
-    data = tmp_path / "data"
-    (data / "nmea_logs").mkdir(parents=True)
-    (data / "exports").mkdir()
-    hdr = "RowID,DateTime,Effort\n"
-    for f in ("A_sightings.csv", "A_metadata.csv", "A_B_track.csv", "A_effort.csv.bak-20261101"):
-        (data / f).write_text("x\n")
-    (data / "A_effort.csv").write_text(hdr + "r1,2026-11-01T10:00:00-05:00,Start\n")
-    (data / "A_B_effort.csv").write_text(hdr + "r2,2026-11-02T10:00:00-05:00,Start\n")
-    (data / "waypoints.csv").write_text("RowID,Name\n")
-    for f in ("A_nmea_20261101-1000.nmea", "A_B_nmea_20261102-1000.nmea", "no-survey_nmea_1.nmea"):
-        (data / "nmea_logs" / f).write_text("$GPRMC\n")
-    for f in ("A_export_20261101.zip", "A_B_summary_20261102.html", "plan_1.gpx"):
-        (data / "exports" / f).write_text("x")
-    (data / "Orphan_metadata.csv").write_text("x")              # no tables: not a survey, left alone
-    rec = Recorder(tmp_path)
-    assert sorted((data / "A").iterdir()) == sorted(data / "A" / n for n in
-                                                    ("A_sightings.csv", "A_metadata.csv", "A_effort.csv", "A_effort.csv.bak-20261101", "nmea_logs", "exports"))
-    assert (data / "A" / "nmea_logs" / "A_nmea_20261101-1000.nmea").is_file() and (data / "A" / "exports" / "A_export_20261101.zip").is_file()
-    assert (data / "A_B" / "A_B_effort.csv").is_file() and (data / "A_B" / "nmea_logs" / "A_B_nmea_20261102-1000.nmea").is_file()
-    assert (data / "A_B" / "exports" / "A_B_summary_20261102.html").is_file()
-    assert [p.name for p in (data / "nmea_logs").iterdir()] == ["no-survey_nmea_1.nmea"]
-    assert [p.name for p in (data / "exports").iterdir()] == ["plan_1.gpx"]
-    assert (data / "waypoints.csv").is_file() and (data / "Orphan_metadata.csv").is_file()
-    assert sorted(s["prefix"] for s in rec.list_surveys()) == ["A", "A_B"]
-    assert any("folder of its own" in n for n in rec.notices)
-    Recorder(tmp_path)                                           # nothing left to move the second time
-    rec.open_survey("A")
-    assert rec.tables["effort"].rows[0]["Effort"] == "Start" and not rec.template_status()["saved"]
 
 
 def test_survey_package_save_and_open(tmp_path):
@@ -2867,11 +2771,10 @@ def test_reports_are_data_and_wait_for_the_end(tmp_path):
 
 def test_named_inputs_primary_secondary_and_nmea_csv(rec, tmp_path):
     """0.41: named inputs; the primary gives the position, secondaries keep their own; failover;
-    <survey>_nmea.csv has every input's readings with lat/lon; _instruments.csv is renamed."""
+    <survey>_nmea.csv has every input's readings with lat/lon."""
     import time as _t
     from spyhop.nmea import with_checksum as w
     from spyhop.config import clean_inputs, merge_inputs
-    from spyhop.layout import rename_instrument_files
     d = rec.decoder
     d.primary, d.failover = "Tablet GPS", False
     d.priority = {"Tablet GPS": 0, "External GPS": 1}
@@ -2896,34 +2799,26 @@ def test_named_inputs_primary_secondary_and_nmea_csv(rec, tmp_path):
     assert d.state.source == "External GPS" and d.state.lat == 42.0
     d.primary = None                                                       # don't leak into other tests
     # names, one primary; a template's inputs keep this computer's choices by name
-    c = clean_inputs([{"type": "udp", "port": 1}, {"type": "udp", "port": 1, "name": "UDP port 1"}, {"type": "serial", "port": "COM3", "enabled": False, "primary": True}])
+    c = clean_inputs([{"type": "udp", "port": 1}, {"type": "udp", "port": 1, "name": "UDP port 1"}, {"type": "serial", "port": "COM3", "enabled": False, "role": "primary"}])
     assert [x["name"] for x in c] == ["UDP port 1", "UDP port 1 (2)", "Serial COM3 @ 4800"]
     assert [x["role"] for x in c] == ["primary", "secondary", "secondary"]
     mine = [{"name": "Tablet GPS", "type": "serial", "port": "COM3", "enabled": False},
-            {"name": "External GPS", "type": "serial", "port": "COM5", "enabled": True, "primary": True, "show_on_map": False},
+            {"name": "External GPS", "type": "serial", "port": "COM5", "enabled": True, "role": "primary", "show_on_map": False},
             {"type": "sim"}]
     tpl = [{"name": "Tablet GPS", "type": "serial", "port": "COM3"}, {"name": "External GPS", "type": "serial", "port": "COM9"},
            {"name": "Ship", "type": "udp", "port": 10110}]
     m = merge_inputs(mine, tpl)
     assert [(x["name"], x.get("port"), x["enabled"], x["role"] == "primary") for x in m] == [
         ("Tablet GPS", "COM3", False, False), ("External GPS", "COM9", True, True), ("Ship", 10110, False, False), ("Simulator", None, True, False)]
-    # the 0.36–0.40 file is renamed and converted
-    sd = tmp_path / "old" / "S"
-    sd.mkdir(parents=True)
-    (sd / "S_instruments.csv").write_text("DateTime,Key,Label,Unit,Value\n2026-11-01T12:00:00+00:00,depth,Depth,m,40\n")
-    assert rename_instrument_files(tmp_path / "old") == 1
-    assert (sd / "S_nmea.csv").read_text().splitlines()[1] == "2026-11-01T12:00:00+00:00,,primary,depth,Depth,m,40"
-    assert not (sd / "S_instruments.csv").exists()
 
 
 
 def test_external_inputs_and_failover_notice(rec, tmp_path):
     """0.42: roles primary / secondary / external; externals never give the platform's position, readings
-    or failover; failover_state while a secondary stands in; a 0.41 _nmea.csv gets the Role column."""
+    or failover; failover_state while a secondary stands in."""
     import time as _t
     from spyhop.nmea import with_checksum as w
     from spyhop.config import clean_inputs, input_definition, merge_inputs
-    from spyhop.layout import rename_instrument_files
     d = rec.decoder
     d.primary, d.failover, d.externals = "Ship GPS", True, {"Drone"}
     d.priority = {"Ship GPS": 0, "Backup GPS": 1, "Drone": 2}
@@ -2948,11 +2843,6 @@ def test_external_inputs_and_failover_notice(rec, tmp_path):
     m = merge_inputs([{"name": "Ship", "type": "udp", "port": 2, "role": "primary"}],
                      [{"name": "Ship", "type": "udp", "port": 2}, {"name": "Drone", "type": "udp", "port": 9, "role": "other"}])
     assert [(x["name"], x["enabled"], x["role"]) for x in m] == [("Ship", True, "primary"), ("Drone", False, "other")]
-    sd = tmp_path / "v041" / "S"
-    sd.mkdir(parents=True)
-    (sd / "S_nmea.csv").write_text("DateTime,Source,Primary,Key,Label,Unit,Value\nt,A,yes,lat,Latitude,°,41\nt,B,no,lat,Latitude,°,42\n")
-    assert rename_instrument_files(tmp_path / "v041") == 1
-    assert (sd / "S_nmea.csv").read_text().splitlines()[1:] == ["t,A,primary,lat,Latitude,°,41", "t,B,secondary,lat,Latitude,°,42"]
 
 
 def test_external_tracks_recorded_and_styled(rec):
@@ -2967,7 +2857,7 @@ def test_external_tracks_recorded_and_styled(rec):
                            {"name": "Buoy", "type": "udp", "port": 3, "role": "other", "record": False, "label": False}])
     drone, buoy = inputs[1], inputs[2]
     assert (drone["color"], drone["line"], drone["width"], drone["trail"], drone["label"], drone["record"]) == ("#e07000", "solid", 2.0, 30, True, True)
-    assert clean_inputs([{"type": "udp", "port": 9, "role": "external"}])[0]["role"] == "other"   # 0.43's name
+    assert clean_inputs([{"type": "udp", "port": 9, "role": "nonsense"}])[0]["role"] == "primary"   # unknown role: a platform input
     assert buoy["color"] == "#0097a7" and buoy["record"] is False and buoy["label"] is False
     assert input_definition(drone)["color"] == "#e07000" and "color" not in inputs[0]        # styles travel in templates
     for i, (lat, lon) in enumerate([(4200.0, 7000.0), (4200.5, 7000.5)]):
@@ -3533,19 +3423,6 @@ def test_navigation_vmg_eta_and_arrival(tmp_path):
     assert n.target is not None
     _run(a.nav_stop(_Req({})))
     assert n.target is None and n.tick({"lat": lat0, "lon": lon0}) is None
-
-
-def test_navigation_average_back_to_10s_after_057(tmp_path):
-    """0.58: 0.57 saved its 60 s averaging default in the template; it becomes 10 s once (delete before 1.0)."""
-    import json
-    from spyhop.config import Config
-    c = Config(tmp_path / "s")
-    c.save_settings({"nav_average_s": 60, "last_version": "0.57.0"})
-    c2 = Config(tmp_path / "s")
-    assert c2.settings["nav_average_s"] == 10
-    assert json.loads(c2.config_path.read_text())["settings"]["nav_average_s"] == 10
-    c2.save_settings({"nav_average_s": 60, "last_version": "0.58.0"})          # chosen in 0.58: kept
-    assert Config(tmp_path / "s").settings["nav_average_s"] == 60
 
 
 def test_sighting_cue_column_and_list(tmp_path):

@@ -104,8 +104,8 @@ class Recorder:
         for fn in list(self.listeners):
             try:
                 fn(msg)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 — a broken listener mustn't stop the edit; it's logged
+                log.exception("sending a %s message failed", msg.get("type"))
 
     def emit_tab(self, tab: str):
         t = self.tables[tab]
@@ -627,8 +627,6 @@ class Recorder:
         finally:
             if tmp.exists():
                 shutil.rmtree(tmp, ignore_errors=True)
-        from .layout import rename_instrument_files        # a 0.36–0.40 package (removed before 1.0)
-        rename_instrument_files(self.cfg.survey_dir(new))
         self.open_survey(new)
         return {"opened": new, "renamed_from": old if new != old else "", "manifest": man,
                 "template": self.template_status(new)}

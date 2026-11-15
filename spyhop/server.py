@@ -17,7 +17,7 @@ from pathlib import Path
 from aiohttp import web, WSMsgType
 
 from .recorder import Recorder, ValueErrorMsg
-from . import awake, __version__, diag, feeds, reports, reticle, routes, schema, templates, uninstall, updater
+from . import awake, __version__, diag, feeds, reports, routes, schema, templates, uninstall, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports, clean_path
 from .store import safe_name
@@ -226,6 +226,15 @@ def clean_column_layout(v) -> dict:
             out[tab] = {"order": list(dict.fromkeys(order)), "widths": widths, **({"hidden": hidden} if hidden else {})}
     return out
 
+def plain_file(folder: Path, name: str) -> Path | None:
+    """0.61: folder/name if name is just a file name (no folders, not . or .., not hidden) of a file that's there."""
+    name = str(name or "")
+    if not name or name != Path(name).name or name.startswith(".") or "\\" in name or "/" in name:
+        return None
+    p = Path(folder) / name
+    return p if p.is_file() else None
+
+
 class App:
     def __init__(self, data_dir: Path, extra_sources: list[dict] | None = None):
         self.rec = Recorder(data_dir)
@@ -236,6 +245,7 @@ class App:
         self.tiles = TileService(self.rec.cfg)
         self.tiles.on_charts_changed = lambda: self._broadcast_soon({"type": "charts", "mbtiles": self.tiles.mbtiles_info()})
         self.clients: set[web.WebSocketResponse] = set()
+        self._tasks: set[asyncio.Task] = set()          # background tasks, kept until done (0.61)
         self.extra_sources = extra_sources or []
         self.rec.listeners.append(self._broadcast_soon)
         self._loop_task = None
@@ -260,9 +270,25 @@ class App:
                 continue
             if ws in viewers:
                 if vdata is not None:
-                    asyncio.ensure_future(ws.send_str(vdata))
+                    self.spawn(ws.send_str(vdata))
             else:
-                asyncio.ensure_future(ws.send_str(data))
+                self.spawn(ws.send_str(data))
+
+    def spawn(self, coro) -> asyncio.Task:
+        """Run a coroutine in the background (0.61). asyncio keeps only a weak reference to a task, so one nobody
+        holds can be garbage-collected before it finishes; this keeps it until it's done, and logs an error in it
+        (a window that closed mid-send is normal and not logged)."""
+        t = asyncio.ensure_future(coro)
+        self._tasks.add(t)
+
+        def done(t):
+            self._tasks.discard(t)
+            if not t.cancelled():
+                e = t.exception()
+                if e is not None and not isinstance(e, (ConnectionError, RuntimeError, asyncio.CancelledError)):
+                    log.warning("background task failed: %r", e)
+        t.add_done_callback(done)
+        return t
 
     async def ws_handler(self, request):
         ws = web.WebSocketResponse(heartbeat=20)
@@ -364,7 +390,7 @@ class App:
     # -- navigation (0.57) ------------------------------------------------------------
     def _nav_reply(self):
         self._broadcast_soon({"type": "settings", "settings": self.rec.cfg.settings})
-        return json_ok(nav=self.nav.tick(self.rec.vessel()), target=self.nav.target)
+        return json_ok(nav=self.nav.tick(self.rec.vessel(), record=False), target=self.nav.target)
 
     async def nav_start(self, request):
         """{kind: waypoint|route, name, points: [{name, lat, lon}], index (a number, or "ahead": the waypoint ahead)}"""
@@ -410,9 +436,9 @@ class App:
                                                     exc_info=(type(exc), exc, exc.__traceback__) if exc else None)
         loop.set_exception_handler(on_loop_error)
         if self.rec.cfg.settings.get("check_updates_on_start", True) and not os.environ.get("SPYHOP_NO_UPDATE_CHECK"):
-            asyncio.create_task(self._startup_update_check())
+            self.spawn(self._startup_update_check())
         self.sync_awake()
-        asyncio.create_task(self.sharing.sync())        # 0.53: the viewer port, when sharing is on
+        self.spawn(self.sharing.sync())        # 0.53: the viewer port, when sharing is on
 
     async def _startup_update_check(self):
         """0.45: on by default; a quick look (gives up after a few seconds, silently, when offline). A newer
@@ -469,8 +495,8 @@ class App:
 
     async def diagnostics_file(self, request):
         name = request.match_info["name"]
-        p = diag.log_dir(self.rec.cfg.root) / name
-        if "/" in name or "\\" in name or not p.is_file():
+        p = plain_file(diag.log_dir(self.rec.cfg.root), name)
+        if p is None:
             raise web.HTTPNotFound()
         return web.FileResponse(p, headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
 
@@ -599,11 +625,12 @@ class App:
         return json_ok(done=self.rec.redo(request.match_info["tab"]))
 
     async def qc(self, request):
-        from .qc import run_qc
+        from .qc import run_qc, snapshot
         loop = asyncio.get_running_loop()
         if self.rec.survey is None:
             raise ValueErrorMsg("Open a survey to check it.")
-        return json_ok(report=await loop.run_in_executor(None, run_qc, self.rec))
+        data = snapshot(self.rec)              # 0.61: copies, so edits during the check can't disturb it
+        return json_ok(report=await loop.run_in_executor(None, run_qc, self.rec, data))
 
     async def toggle_effort(self, request):
         return json_ok(self.rec.toggle_effort())
@@ -730,8 +757,8 @@ class App:
 
     async def download(self, request):
         name = request.match_info["name"]
-        p = self.rec.cfg.export_dir / name
-        if "/" in name or "\\" in name or not p.exists():
+        p = plain_file(self.rec.cfg.export_dir, name)
+        if p is None:
             raise web.HTTPNotFound()
         ascii_name = name.encode("ascii", "replace").decode().replace("?", "_").replace('"', "_")
         return web.FileResponse(p, headers={"Content-Disposition":
@@ -905,7 +932,9 @@ class App:
                 raise ValueErrorMsg("No reports have been saved yet.")
             p = self.last_reports_dir
         elif what.startswith("export:"):
-            p = cfg.export_dir / Path(what.split(":", 1)[1]).name
+            p = plain_file(cfg.export_dir, what.split(":", 1)[1])
+            if p is None:
+                raise ValueErrorMsg("That export isn't there any more.")
         else:
             raise ValueErrorMsg("Unknown target")
         try:
@@ -987,13 +1016,12 @@ class App:
         saved = [dict(x) for x in self.rec.cfg.settings.get("nmea_sources") or []]
         extra = [{**x, "session": True} for x in self.extra_sources]
         on = [x for x in extra if x.get("enabled", True) is not False and x.get("role") != "other"]
-        chosen = [x for x in on if x.get("role") == "primary" or x.get("primary")]
-        if on and (chosen or not any("role" in x or "primary" in x for x in self.extra_sources)):
+        chosen = [x for x in on if x.get("role") == "primary"]
+        if on and (chosen or not any("role" in x for x in self.extra_sources)):
             # an input from the command line (e.g. --sim) is the primary for this session, until another is chosen
             for x in saved + extra:
                 if x.get("role") != "other":
                     x["role"] = "secondary"
-                x.pop("primary", None)
             (chosen or on)[0]["role"] = "primary"
         return clean_inputs(saved + extra)
 
@@ -1157,9 +1185,8 @@ class App:
 
     # -- overlays ---------------------------------------------------------------------
     async def overlay_get(self, request):
-        name = Path(request.match_info["name"]).name
-        p = self.rec.cfg.overlays_dir / name
-        if not p.exists():
+        p = plain_file(self.rec.cfg.overlays_dir, request.match_info["name"])
+        if p is None:
             raise web.HTTPNotFound()
         return web.FileResponse(p)
 
@@ -1168,8 +1195,8 @@ class App:
         saved = []
         async for part in reader:
             if part.filename:
-                name = Path(part.filename).name
-                if Path(name).suffix.lower() not in (".geojson", ".json", ".gpx", ".kml"):
+                name = Path(part.filename.replace("\\", "/")).name
+                if not name or name.startswith(".") or Path(name).suffix.lower() not in (".geojson", ".json", ".gpx", ".kml"):
                     raise ValueErrorMsg("Overlays must be GeoJSON, GPX or KML files.")
                 data = await part.read(decode=False)
                 (self.rec.cfg.overlays_dir / name).write_bytes(data)
@@ -1717,7 +1744,7 @@ class App:
             if self.rec.rawlog:
                 self.rec.rawlog.close()
             updater.restart()
-        asyncio.create_task(later())
+        self.spawn(later())
         return json_ok(restarting=True)
 
     # ---- uninstall / reinstall (Settings → About; uninstall.py)
@@ -1753,7 +1780,7 @@ class App:
             if self.rec.rawlog:
                 self.rec.rawlog.close()
             asyncio.get_running_loop().call_soon(_exit)
-        asyncio.create_task(later())
+        self.spawn(later())
         return json_ok(result=res)
 
     async def qc_fix(self, request):
@@ -1777,9 +1804,8 @@ class App:
         return json_ok(name=name, features=len(gj["features"]))
 
     async def overlay_delete(self, request):
-        name = Path(request.match_info["name"]).name
-        p = self.rec.cfg.overlays_dir / name
-        if p.exists():
+        p = plain_file(self.rec.cfg.overlays_dir, request.match_info["name"])
+        if p is not None:
             p.unlink()
         self._broadcast_soon({"type": "overlays"})
         return json_ok()

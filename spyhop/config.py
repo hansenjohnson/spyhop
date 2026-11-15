@@ -419,7 +419,7 @@ SHARED_SETTINGS = {
 TEMPLATE_INPUTS = ("serial", "udp", "tcp", "gpsd", "spot", "inreach")     # 0.55: + satellite trackers (no passwords)
 PRIVATE_INPUT_KEYS = ("password",)       # this computer's only: never in a template
 INPUT_ROLES = ("primary", "secondary", "other")
-INPUT_FLAGS = ("enabled", "role", "show_on_map", "primary")
+INPUT_FLAGS = ("enabled", "role", "show_on_map")
 
 
 # 0.43: how an "other" source is drawn and kept: its color, line (solid/dashed/dotted/dashdot) and width, how
@@ -480,16 +480,13 @@ def clean_inputs(sources) -> list[dict]:
         x["name"] = name
         x["enabled"] = x.get("enabled", True) is not False
         role = x.get("role")
-        if role == "external":            # 0.42–0.43's name for "other"; delete before 1.0
-            role = "other"
         if role not in INPUT_ROLES:
-            role = "primary" if x.get("primary") else "secondary"     # 0.41's primary flag
+            role = "secondary"
         from .trackers import is_tracker, clean_tracker
         if is_tracker(x):                 # 0.55: SPOT / inReach feeds are always "other"
             clean_tracker(x)
             role = "other"
         x["role"] = role
-        x.pop("primary", None)
         x["show_on_map"] = bool(x.get("show_on_map", role == "other"))
         if role == "other":
             _clean_external(x, sum(1 for y in out if y["role"] == "other"))
@@ -593,17 +590,11 @@ class Config:
         self.tile_cache_dir = self.root / "tile_cache"
         self.notices: list[str] = []
         self.root.mkdir(parents=True, exist_ok=True)
-        from .layout import move_old_layout             # the 0.27 layout, moved once (removed before 1.0)
-        move_old_layout(self)
         for d in (self.current_dir, self.saved_dir, self.backups_dir, self.charts_dir, self.overlays_dir, self.routes_dir):
             d.mkdir(parents=True, exist_ok=True)
         self.ensure_defaults()
         self.load()
         self._resolve_data_dir()
-        from .layout import tidy_data_folder, move_surveys_into_folders, rename_instrument_files
-        tidy_data_folder(self)
-        move_surveys_into_folders(self)        # the pre-0.36 layout, moved once (removed before 1.0)
-        rename_instrument_files(self.data_dir)  # _instruments.csv → _nmea.csv (0.41; removed before 1.0)
         self.reload()
 
     # -- paths -----------------------------------------------------------------
@@ -638,10 +629,10 @@ class Config:
         self.data_dir = p
 
     # One folder per survey (0.36): <data folder>/<survey>/ holds <survey>_sightings.csv … _track.csv,
-    # _metadata.csv, _instruments.csv, the copy of the template it was started with (<survey>_template.zip),
+    # _metadata.csv, _nmea.csv, the copy of the template it was started with (<survey>_template.zip),
     # its raw NMEA logs (nmea_logs/) and its exports (exports/). Waypoints, and NMEA logs and exports made
     # with no survey open, stay at the top of the data folder.
-    RESERVED_NAMES = {"exports", "nmea_logs", "templates", "config_packs"}
+    RESERVED_NAMES = {"exports", "nmea_logs"}
 
     def survey_dir(self, prefix: str) -> Path:
         return self.data_dir / prefix
@@ -727,8 +718,6 @@ class Config:
                 have = [h.strip() for h in next(csv.reader(fh), []) if h.strip()]
         except OSError:
             have = []
-        if name == "reticles":         # 0.37's calibrated-marks table column: marks are evenly spaced since 0.38
-            have = [h for h in have if h != "marks"]
         return known + [h for h in have if h not in known]
 
     def colors_only_change(self, name: str, rows: list[dict]) -> bool:
@@ -915,11 +904,6 @@ class Config:
         self.doc = doc
         shared = doc.get("settings") if isinstance(doc.get("settings"), dict) else {}
         s.update({k: v for k, v in shared.items() if k in SHARED_SETTINGS})
-        if shared.get("nav_average_s") == 60 and str(loc.get("last_version", "")).startswith("0.57."):
-            s["nav_average_s"] = 10          # 0.58: 0.57's default (60 s) was too long; delete before 1.0
-            reset_nav = True
-        else:
-            reset_nav = False
         if isinstance(doc.get("map_feeds"), list):
             s["online_feeds"] = [f for f in doc["map_feeds"] if isinstance(f, dict)]
         if isinstance(doc.get("online_overlays"), dict):
@@ -935,8 +919,6 @@ class Config:
         self.display = display
         self.reports = {str(k): v for k, v in doc["reports"].items()} if isinstance(doc.get("reports"), dict) else {}
         self.history = [e for e in doc.get("history") or [] if isinstance(e, dict)]
-        if reset_nav:
-            self.save()
 
     def _config_doc(self) -> dict:
         """templates/current/spyhop-config.json as it should be now."""

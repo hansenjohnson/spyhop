@@ -147,6 +147,6 @@ Each backup is itself a template. The latest backups are listed under **Backups*
 
 Backups always hold the computer's waypoints, routes, overlays, settings and saved reports (even when there are none, so restoring removes reports a template added). Restoring the backup made just before a template was used also **removes the map feeds, waypoints, routes and overlays that template added** (the list shows them as *Will be removed*), and puts the settings back.
 
-## Before Spyhop 0.28
+## Changes between versions
 
-Until 0.27 the lists, shortcuts and settings were at the top of Spyhop's folder (with `settings/` and `reports/` folders), and templates were in the survey data folder. Spyhop 0.28 moves them into the `templates` folder the first time it runs. Templates saved by Spyhop 0.24–0.27 still work; *config packs* from 0.23 and before can't be read any more. Until Spyhop 1.0, templates and settings may change between versions without being converted.
+Until Spyhop 1.0, templates, settings and Spyhop's folders may change between versions without being converted.

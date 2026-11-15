@@ -30,7 +30,6 @@ spyhop/
   store.py        CSV tables with atomic writes and undo/redo; the track file
   schema.py       the columns of each table, and the fixed lists
   config.py       Spyhop's folder; the current template (templates/current) and this computer's settings (spyhop-local.json)
-  layout.py       one-time moves from older folder layouts: 0.27 → 0.28, and survey files into a folder each (0.36); remove before 1.0
   nmea.py         NMEA 0183 parser, vessel state, instrument readings, raw log
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
   nav.py          navigation to a waypoint or along a route (0.57): the target (setting nav_active), VMG/ETA every second, arrival
@@ -83,7 +82,7 @@ CHANGELOG.md     changes in each version (shown in Settings → About)
 - **Data files** are plain CSV with ISO 8601 times carrying their UTC offset.
   - The working files have a hidden `RowID` column; exports leave it out.
   - Column changes migrate existing files automatically (by column name, keeping a `.bak-<time>` copy).
-- **Backwards compatibility:** until 1.0.0, don't keep code that reads or converts the files of older versions (old columns, old list entries, old template formats). A change of layout gets at most a one-time move, like `layout.py`, removed before 1.0.
+- **Backwards compatibility:** until 1.0.0, don't keep code that reads or converts the files of older versions (old columns, old list entries, old template formats, old setting names). 0.61 removed all of it. The one general mechanism kept is the by-name column migration in `store.Table.load` (a table file with other columns is rewritten in the current layout, with a `.bak-<time>` copy), because columns change during development too.
 - **Settings** are one dict in memory (`Config.settings`); `Config.save()` writes the shared ones (`SHARED_SETTINGS`, the network inputs, map feeds, online overlays) with the map display, saved reports and record of changes to `templates/current/spyhop-config.json`, and the rest to `spyhop-local.json`. A new setting belongs in `DEFAULT_SETTINGS`; add it to `SHARED_SETTINGS` if a team should share it.
 - **Validation** happens on the server (`recorder.py`), never only in the browser.
 - **State in the window:** settings panes redraw on every settings broadcast. Keep half-typed values in JS, not only in the DOM.

@@ -6,6 +6,27 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.61.0 — 2026-11-15
+
+A code review. Nothing new to see; some things are safer, and code for older versions is gone.
+
+- **Removed: everything that moved or converted the files of older Spyhop versions** (Spyhop isn't widely used yet, so nobody needs it):
+  - the move from the 0.27 folder layout, and templates left in the data folder
+  - the move of pre-0.36 surveys into a folder each
+  - the rename of `_instruments.csv` (0.36–0.40) to `_nmea.csv`, also when opening an old survey package
+  - inputs saved with 0.41's "primary" flag or 0.42–0.43's "external" role
+  - a reticles list with 0.37's marks column
+  - 0.57's one-time change of the navigation averaging to 10 s
+  - Reports' memory of the old Filter tool
+
+  A survey folder, survey package or setting from those versions now needs setting up again by hand. Tables whose columns changed are still converted (with a backup), as before.
+- **Background work is kept until it finishes:** Spyhop's messages to its windows and its start-up tasks could, rarely, be dropped by Python before they finished; now they're held until done, and an error in one is logged.
+- **The Error check reads a copy of the data:** it runs in the background, and editing a row while it ran could, rarely, make it fail or read a half-changed row.
+- **File names in requests are checked more strictly** (downloads, diagnostics, overlays, opening an export): only a plain file name in its own folder.
+- An error while sending an update to the windows is now logged instead of ignored.
+- Navigation's status after Start, Next or Stop no longer counts the vessel's position twice in the VMG average.
+- Unused code removed.
+
 ## 0.60.0 — 2026-11-15
 
 - **Tested package versions:** Spyhop now installs the exact versions of its Python packages it was tested with, from a new `requirements.lock` (with checksums), instead of whatever is newest. A new release of a library can no longer break an install or an update by surprise. `requirements.txt` keeps the range of versions Spyhop is meant to work with, each with an upper limit.

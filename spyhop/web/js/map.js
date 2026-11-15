@@ -1087,8 +1087,7 @@ export class MapView {
     if (tab === 'sightings') { this.layers.lines.clearLayers(); this.layers.fidlines.clearLayers(); this.layers.relines.clearLayers(); this.layers.resights.clearLayers(); }
     const byFid = {};
     const disp = this.app.S.config.display;
-    const rad = +disp.marker_radius || 8, lsize = +disp.label_size || 12;
-    const shape = disp[`${tab}_marker_shape`] || 'Diamond';
+    const lsize = +disp.label_size || 12;
     this.markerIndex = this.markerIndex || {};
     const rs = tab === 'sightings' ? new Resights(this.app.S.tables.sightings?.rows) : null;
     for (const r of this.app.S.tables[tab]?.rows || []) {

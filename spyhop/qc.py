@@ -223,7 +223,15 @@ def visibility_nm(v) -> float | None:
 
 
 # ----------------------------------------------------------------- the checks
-def run_qc(rec) -> dict:
+def snapshot(rec) -> tuple:
+    """Copies of the rows and track points the check reads (take them on the server's event loop)."""
+    return ([dict(r) for r in rec.tables["sightings"].rows], [dict(r) for r in rec.tables["effort"].rows],
+            [dict(r) for r in rec.tables["events"].rows], list(rec.track.points) if rec.track else [])
+
+
+def run_qc(rec, data: tuple | None = None) -> dict:
+    """data: (sightings, effort, events, track points), copies taken by the caller (0.61: the server runs the
+    check in a worker thread, so it hands over copies rather than the live rows, which edits change meanwhile)."""
     if rec.survey is None:
         raise ValueError("Open a survey to check it.")
     L = LIMITS
@@ -232,10 +240,9 @@ def run_qc(rec) -> dict:
     cfg = rec.cfg
     used_limits = {}
     now = datetime.now(timezone.utc)
-    S = rec.tables["sightings"].rows
-    E = rec.tables["effort"].rows
-    V = rec.tables["events"].rows
-    T = rec.track.points if rec.track else []
+    if data is None:
+        data = snapshot(rec)
+    S, E, V, T = data
 
     def lab(tab, r, i):
         if tab == "sightings":

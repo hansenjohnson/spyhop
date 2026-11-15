@@ -59,21 +59,19 @@ function clipLand(gj, box) {
 const noScriptClose = (txt) => txt.replace(/<\/script/gi, '<\\/script');
 
 export async function buildSummaryHtml(app, { pdf = false } = {}) {
-  const S = app.S, sv = S.survey, disp = S.config.display, fmt = S.config.settings.latlon_format;
+  const S = app.S, sv = S.survey, disp = S.config.display;
   const [leafletCss, leafletJs, appCss, topo] = await Promise.all([
     fetch('/static/vendor/leaflet/leaflet.css').then((r) => r.text()),
     fetch('/static/vendor/leaflet/leaflet.js').then((r) => r.text()),
     fetch('/static/css/app.css').then((r) => r.text()),
     fetch('/static/vendor/land-10m.json').then((r) => r.json()),
   ]);
-  const when = (iso) => { const t = iso && timeParts(iso, app.clock()); return t ? `${t.date} ${t.time} ${t.abbr}` : ''; };
 
   // ---- map data
   const popup = (tab, r) => {        // the same essentials as the app's popups (no live distance here)
     const rows = app.map.popupFields(tab, r).filter(([, v]) => v).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('');
     return `<b>${esc(app.map.popupHeading(tab, r))}</b><table class="pop">${rows}</table>`;
   };
-  const rad = +disp.marker_radius || 8;
   const rs = new Resights(S.tables.sightings?.rows);
   const items = (tab) => (S.tables[tab]?.rows || []).filter((r) => r.Map !== '0').map((r) => {
     const pos = app.map.rowPos(tab, r);

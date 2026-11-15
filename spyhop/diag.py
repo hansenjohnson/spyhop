@@ -14,7 +14,6 @@ folders and system details for a bug report: see make_bundle().
 from __future__ import annotations
 
 import faulthandler
-import io
 import json
 import logging
 import logging.handlers

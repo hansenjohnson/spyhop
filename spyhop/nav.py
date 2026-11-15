@@ -129,11 +129,12 @@ class Navigator:
                 "auto": bool(s.get("nav_auto_advance", True)),
                 "fixed": s.get("nav_eta_mode") == "fixed", "speed_kn": num("nav_eta_speed_kn", 10, 0.1, 100)}
 
-    def tick(self, v: dict, now: float | None = None) -> dict | None:
-        """The navigation numbers for this second (None when not navigating)."""
+    def tick(self, v: dict, now: float | None = None, record: bool = True) -> dict | None:
+        """The navigation numbers for this second (None when not navigating). record=False: only look (an API
+        reply between the server's once-a-second ticks), without adding the position to the speed history."""
         now = time.time() if now is None else now
         lat, lon = v.get("lat"), v.get("lon")
-        if lat is not None and lon is not None and v.get("has_fix", True):
+        if record and lat is not None and lon is not None and v.get("has_fix", True):
             self.hist.append((now, lat, lon, v.get("sog")))
         cfg = self.settings()
         while self.hist and now - self.hist[0][0] > cfg["average_s"]:
@@ -200,9 +201,7 @@ class Navigator:
     def tick_after_advance(self, v, now, i):
         t = self.target
         self._save({**t, "index": i, "arrived": False})
-        if self.hist:
-            self.hist.pop()                # tick() adds this second's position again
-        return self.tick(v, now)
+        return self.tick(v, now, record=False)
 
     def take_events(self) -> list[dict]:
         e, self.events = self.events, []

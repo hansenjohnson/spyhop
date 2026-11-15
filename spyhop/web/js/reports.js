@@ -24,7 +24,7 @@ export class ReportsTool {
     this.counts = [];
     this.seq = 0;
     try {
-      const saved = JSON.parse(localStorage.getItem('wsr.report') || localStorage.getItem('wsr.filter') || 'null');
+      const saved = JSON.parse(localStorage.getItem('wsr.report') || 'null');
       if (saved?.spec?.table) { this.spec = saved.spec; this.file = saved.file || null; }
     } catch {}
     if (!this.spec) { this.spec = null; this.file = null; }

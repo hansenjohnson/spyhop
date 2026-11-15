@@ -25,7 +25,6 @@ from __future__ import annotations
 import csv
 import html as _html
 import io
-import json
 import re
 from datetime import datetime
 from pathlib import Path
