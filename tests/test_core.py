@@ -3571,3 +3571,37 @@ def test_sighting_cue_column_and_list(tmp_path):
     # locked during the survey like the other lists
     with pytest.raises(ValueErrorMsg):
         _run(a.save_list(_Req({"name": "cues", "rows": [{"name": "Blow"}]})))
+
+
+def test_python_versions_and_pinned_requirements():
+    """0.60: the tested Python range is the same everywhere, pre-releases don't count, and requirements.lock pins
+    every requirement of requirements.txt to one version with checksums."""
+    import sys
+    from spyhop import PYTHON_TESTED, python_supported
+    from spyhop.__main__ import python_warning
+    root = Path(__file__).resolve().parent.parent
+    lo, hi = PYTHON_TESTED
+    for ver, ok in (((3, 9), False), (lo, True), ((3, 13), True), (hi, True), ((hi[0], hi[1] + 1), False)):
+        info = type("VI", (tuple,), {"releaselevel": "final"})((*ver, 0))
+        assert python_supported(info) is ok, ver
+    beta = type("VI", (tuple,), {"releaselevel": "beta"})((3, 13, 0))
+    assert not python_supported(beta)
+    assert (python_warning() is None) == python_supported(sys.version_info)
+    want = f"(3, {lo[1]}) <= v[:2] <= (3, {hi[1]}) and v.releaselevel =="
+    for f in ("Start Spyhop (Mac).command", "start-spyhop.sh", "Start Spyhop (Windows).bat"):
+        text = (root / f).read_text()
+        assert want in text and "requirements.lock" in text and "-r requirements.txt" not in text, f
+    assert f'requires-python = ">=3.{lo[1]},<3.{hi[1] + 1}"' in (root / "pyproject.toml").read_text()
+    wf = (root / ".github" / "workflows" / "tests.yml").read_text()
+    for m in range(lo[1], hi[1] + 1):
+        assert f'"3.{m}"' in wf, m
+    # every direct requirement has an upper limit, and the lock pins it with checksums
+    direct = [ln.split("#")[0].strip() for ln in (root / "requirements.txt").read_text().splitlines()]
+    direct = [d for d in direct if d and not d.startswith("tzdata")]
+    assert direct and all("<" in d for d in direct), direct
+    lock = (root / "requirements.lock").read_text()
+    for d in direct:
+        name = re.split(r"[<>=;\s]", d)[0]
+        m = re.search(rf"^{re.escape(name)}==([\w.]+)", lock, re.M | re.I)
+        assert m, name
+    assert lock.count("--hash=sha256:") > 20

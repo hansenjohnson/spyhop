@@ -57,6 +57,18 @@ def port_free(host, port) -> bool:
             return True
 
 
+def python_warning() -> str | None:
+    """0.60: a line for the Terminal (and the log) when this Python isn't one Spyhop is tested with."""
+    from . import python_supported, PYTHON_TESTED
+    if python_supported():
+        return None
+    v = sys.version_info
+    lo, hi = (".".join(map(str, x)) for x in PYTHON_TESTED)
+    pre = "" if v.releaselevel == "final" else f" ({v.releaselevel}, not a release)"
+    return (f"Warning: Spyhop is tested with Python {lo} to {hi}, and this is Python {v.major}.{v.minor}.{v.micro}{pre}. "
+            "It may still work. If it misbehaves, install Python 3.13, delete the .venv folder in Spyhop's folder and start Spyhop again.")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="spyhop", description="Spyhop")
     ap.add_argument("--data-dir", type=Path, default=None, help="where data and config live")
@@ -84,6 +96,10 @@ def main(argv=None):
 
     data_dir = args.data_dir or default_data_dir()
     log_folder = diag.setup(data_dir, args.verbose)
+    warn = python_warning()
+    if warn:
+        print(warn, flush=True)
+        logging.getLogger("spyhop").warning(warn)
     extra = [parse_nmea_arg(s) for s in args.nmea]
     if args.sim:
         extra.append({"type": "sim", "heading": args.sim_heading})

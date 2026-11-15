@@ -6,6 +6,12 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.60.0 — 2026-11-15
+
+- **Tested package versions:** Spyhop now installs the exact versions of its Python packages it was tested with, from a new `requirements.lock` (with checksums), instead of whatever is newest. A new release of a library can no longer break an install or an update by surprise. `requirements.txt` keeps the range of versions Spyhop is meant to work with, each with an upper limit.
+- **Python versions:** Spyhop is tested with Python 3.10 to 3.15. The start files now pick the newest released Python in that range on the computer, skip pre-releases and versions that are too new, and say clearly what to install if none is found (Python 3.13 is a good choice). A setup made earlier with an untested Python gets a warning when Spyhop starts.
+- **Automatic tests on GitHub** (`.github/workflows/tests.yml`): the tests run on macOS, Windows and Linux with every supported Python, on every push, every Monday and by hand. A second set tries the newest release of every library, as an early warning before updating `requirements.lock`.
+
 ## 0.59.0 — 2026-11-15
 
 - **Cue column in Sightings:** the sighting cue, what first drew the observer's eye to the animals. It's a drop-down from a new **Cues** list in Settings → Dropdowns (part of the template's data part, so fixed during a survey like the other lists), with a definition for each cue shown in the drop-down. Defaults: Blow, Body at surface, Body subsurface, Water disturbance, Breach, and Other as the placeholder to fix after the survey. Cue sits after Behaviors and can be left blank; the Error check flags cues not in the list and Other. It's in the merged CSV export and can be used in rules and reports.

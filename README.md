@@ -61,7 +61,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
 ## System requirements
 
 - **Operating system:** macOS 12 (Monterey) or newer, on Apple silicon or Intel; or Windows 10 or 11 (64-bit). Linux works too.
-- **Python:** 3.10 or newer (3.12 or 3.13 recommended). See [Installation](#installation) below.
+- **Python:** 3.10 to 3.15 (3.13 recommended). A newer Python than Spyhop has been tested with isn't used. See [Installation](#installation) below.
 - **Browser:** Google Chrome or Microsoft Edge are recommended. Spyhop opens in a Chrome/Edge "app" window, and they're needed for saving reports as PDF. Without either, Spyhop opens in your default browser.
 - **Internet:** once, the first time Spyhop starts (and after an update that adds packages), to install its Python packages. It's not needed after that.
 - **Disk:** roughly 100 MB with its Python packages, plus your data and any offline charts.
@@ -73,14 +73,14 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
 
 Pick your operating system below. Each section covers installing Python, then Spyhop.
 
-Spyhop is written in Python, so the computer needs Python 3.10 or newer. You install Python once. Spyhop then makes its own private copy of the packages it needs, in a `.venv` folder inside the Spyhop folder, so it won't interfere with other Python programs on the computer, and they won't interfere with it.
+Spyhop is written in Python, so the computer needs Python 3.10 to 3.15 (3.13 is a good choice). You install Python once. If the computer has several, the start file picks the newest of those versions. Spyhop then makes its own private copy of the packages it needs, in a `.venv` folder inside the Spyhop folder, so it won't interfere with other Python programs on the computer, and they won't interfere with it.
 
 ### Mac
 
 #### Python
 
-1. **Check whether it's already installed:** open **Terminal** (Applications → Utilities), type `python3 --version` and press Return. If it shows `Python 3.10` or higher (e.g. `Python 3.13.1`), skip to [Spyhop](#spyhop-1). If it shows an older version, an error, or a prompt to install developer tools, carry on.
-2. Go to [python.org/downloads/macos](https://www.python.org/downloads/macos/) and download the **macOS 64-bit universal2 installer** of the latest Python 3 release (it works on Apple silicon and Intel Macs).
+1. **Check whether it's already installed:** open **Terminal** (Applications → Utilities), type `python3 --version` and press Return. If it shows `Python 3.10` to `3.15` (e.g. `Python 3.13.1`), skip to [Spyhop](#spyhop-1). If it shows an older version, an error, or a prompt to install developer tools, carry on.
+2. Go to [python.org/downloads/macos](https://www.python.org/downloads/macos/) and download the **macOS 64-bit universal2 installer** of Python 3.13 (it works on Apple silicon and Intel Macs). If the newest Python there is beyond 3.15, Spyhop hasn't been tested with it yet: scroll down to a 3.13 release.
 3. Open the downloaded `.pkg` file and follow the steps (Continue, Agree, Install). It asks for your Mac password.
 4. When it finishes, a Finder window opens on the new **Python 3.x** folder in Applications. Double-click **Install Certificates.command** in it. This lets Python make secure internet connections, which Spyhop uses to check for updates and load online maps. Without it these can fail with a "certificate verify failed" error.
 5. Open a **new** Terminal window and type `python3 --version` to check that it shows the new version.
@@ -104,8 +104,8 @@ See [Starting, quitting and updating](#starting-quitting-and-updating) and, if a
 
 #### Python
 
-1. **Check whether it's already installed:** open **Command Prompt** (search for *cmd* in the Start menu), type `py --version` and press Enter. If it shows `Python 3.10` or higher (e.g. `Python 3.13.1`), skip to [Spyhop](#spyhop-2). If it shows an older version or an error, carry on.
-2. Go to [python.org/downloads/windows](https://www.python.org/downloads/windows/) and download the **Windows installer (64-bit)** of the latest Python 3 release.
+1. **Check whether it's already installed:** open **Command Prompt** (search for *cmd* in the Start menu), type `py --version` and press Enter. If it shows `Python 3.10` to `3.15` (e.g. `Python 3.13.1`), skip to [Spyhop](#spyhop-2). If it shows an older version or an error, carry on.
+2. Go to [python.org/downloads/windows](https://www.python.org/downloads/windows/) and download the **Windows installer (64-bit)** of Python 3.13 (or any release from 3.10 to 3.15).
 3. Run it. On its first screen, **tick "Add python.exe to PATH"** at the bottom, then click **Install Now**. (Leave "Use admin privileges when installing py.exe" ticked if it's offered.)
 4. If it offers **Disable path length limit** at the end, click it (it needs administrator rights, and avoids problems with long folder names).
 5. Open a **new** Command Prompt and type `py --version` to check.
@@ -128,7 +128,7 @@ See [Starting, quitting and updating](#starting-quitting-and-updating) and, if a
 
 #### Python
 
-Most distributions include Python 3.10 or newer. Check with `python3 --version`. On Debian and Ubuntu, also install the venv module: `sudo apt install python3-venv`.
+Most distributions include a Python from 3.10 to 3.15. Check with `python3 --version`. On Debian and Ubuntu, also install the venv module: `sudo apt install python3-venv`.
 
 #### Spyhop
 
@@ -138,7 +138,7 @@ See [Starting, quitting and updating](#starting-quitting-and-updating) and, if a
 
 ### Troubleshooting
 
-- **"Python 3.10 or newer is needed"** when Spyhop starts: Python isn't installed, or the computer can't find it. Install it as above, then open a new Terminal or Command Prompt (or restart the computer) and try again.
+- **"Spyhop needs Python 3.10 to 3.15"** when Spyhop starts: no suitable Python is installed (or only a newer or pre-release one), or the computer can't find it. Install it as above, then open a new Terminal or Command Prompt (or restart the computer) and try again.
 - **The first start stops with an error while installing packages:** check the internet connection, then delete the `.venv` folder inside the Spyhop folder and start Spyhop again. It sets everything up from the beginning.
 - **After installing a newer Python**, delete the `.venv` folder too, so Spyhop rebuilds it with the new Python.
 - **Behind a firewall or proxy** (e.g. a university or agency network), the package install may be blocked. Try another network for the first start, or ask IT to allow `pypi.org` and `files.pythonhosted.org`.

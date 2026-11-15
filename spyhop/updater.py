@@ -223,8 +223,11 @@ def install(cfg, info: dict | None = None) -> dict:
 
 
 def _install_packages() -> str:
-    """Install the Python packages the new version lists, and tell the launcher they're done."""
-    req = PROGRAM_DIR / "requirements.txt"
+    """Install the Python packages the new version lists (0.60: the exact versions in requirements.lock),
+    and tell the launcher they're done."""
+    req = PROGRAM_DIR / "requirements.lock"
+    if not req.exists():
+        req = PROGRAM_DIR / "requirements.txt"
     if not req.exists():
         return "none needed"
     try:

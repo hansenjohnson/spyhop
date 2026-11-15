@@ -1,12 +1,12 @@
 # Spyhop for developers
 
-Spyhop is a small local web server (Python 3.10+, `aiohttp`) with the interface in a browser window. The browser code is plain ES modules with no build step and no framework. Leaflet and the coastline are bundled in `spyhop/web/vendor/`, so everything works offline.
+Spyhop is a small local web server (Python 3.10–3.15, `aiohttp`) with the interface in a browser window. The browser code is plain ES modules with no build step and no framework. Leaflet and the coastline are bundled in `spyhop/web/vendor/`, so everything works offline.
 
 ## Running from source
 
 ```
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt        # Windows: .venv\Scripts\pip install -r requirements.txt
+.venv/bin/pip install -r requirements.lock       # Windows: .venv\Scripts\pip install -r requirements.lock
 .venv/bin/python -m spyhop --sim                 # add the GPS simulator
 .venv/bin/pip install pytest && .venv/bin/python -m pytest tests
 ```
@@ -89,7 +89,7 @@ CHANGELOG.md     changes in each version (shown in Settings → About)
 - **State in the window:** settings panes redraw on every settings broadcast. Keep half-typed values in JS, not only in the DOM.
 - **Map markers:** never set CSS `position` on a marker's icon class; it breaks Leaflet's placement.
 - **Reports:** a group's report is a saved JSON spec (table, codes, columns, conditions), made in the app, not code. Keep `reports.py` independent of the rest; it reads the open survey through `rec.tables`, `rec.cfg` and `rec.tz()`.
-- **Launchers** (`Start Spyhop (Mac).command`, `Start Spyhop (Windows).bat`, `start-spyhop.sh`) make `.venv` on first run. They reinstall `requirements.txt` when it changes, so a new dependency reaches existing installs.
+- **Launchers** (`Start Spyhop (Mac).command`, `Start Spyhop (Windows).bat`, `start-spyhop.sh`) make `.venv` on first run with the newest *released* Python from 3.10 to 3.15 they find (`PY_OK`), and install `requirements.lock`. They reinstall it when it changes, so a new dependency or version reaches existing installs. A `.venv` made with an untested Python gets a warning (also printed by `spyhop/__main__.py`).
 
 ## Publishing an update
 
@@ -107,10 +107,25 @@ Installing:
 - downloads the zip and checks that it contains Spyhop and is newer
 - backs up the current program files to `<Spyhop folder>/updates/`
 - copies the new files over the program folder, skipping `.venv`, `.git` and caches, and removes package files the new version dropped
-- runs `pip install -r requirements.txt`
+- runs `pip install -r requirements.lock`
 - On macOS and Linux it can then restart in place (`os.execv`, same Terminal window and port; the window reloads when it sees the new version). On Windows the user restarts Spyhop.
 
 A git checkout is updated with `git pull --ff-only` instead. `SPYHOP_UPDATE_API` points the updater at another API address; the tests use a local stand-in for GitHub.
+
+## Dependencies and Python versions
+
+- **`requirements.txt`** lists what Spyhop needs, each with the range of versions it's meant to work with (an upper limit at the next major version). **`requirements.lock`** pins every package, including the ones those need, to one tested version with checksums, for every platform and Python version. The start files, the updater and the tests install the lock.
+- **Updating the lock** (on purpose, after the "Newest libraries" tests pass): `uv pip compile requirements.txt --universal --python-version 3.10 --generate-hashes --no-header -o requirements.lock`, keeping the two comment lines at its top. Then run the tests, and commit both files. A new major version of a library means changing its upper limit in `requirements.txt` (and `pyproject.toml`) first.
+- **A new Python version:** when it's released and the tests pass on it, raise the upper limit everywhere it appears: `PYTHON_TESTED` in `spyhop/__init__.py`, `requires-python` in `pyproject.toml`, `PY_OK` and the version lists in the three start files, the README, and the matrix in `.github/workflows/tests.yml`. `test_python_versions_and_pinned_requirements` fails if they disagree.
+
+## Automatic tests on GitHub
+
+`.github/workflows/tests.yml` runs pytest on every push and pull request, every Monday and by hand (Actions → Tests → Run workflow):
+
+- **Tested versions:** macOS, Windows and Ubuntu × Python 3.10 to 3.15 (pre-releases too, as an early warning), installing `requirements.lock`.
+- **Newest libraries:** the newest release of every library, ignoring the upper limits, on the newest Python. It may fail without failing the run: it's the early warning that a library release would break Spyhop.
+
+`.github/dependabot.yml` keeps the workflow's GitHub Actions up to date. The Playwright walkthroughs aren't run there.
 
 ## Tests
 

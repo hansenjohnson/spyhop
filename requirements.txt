@@ -1,5 +1,7 @@
-aiohttp>=3.9
-pyserial>=3.5
-pygeomag>=1.1          # World Magnetic Model, for "auto" magnetic variation
+# What Spyhop needs, with the range of versions it is meant to work with.
+# The start files install the exact, tested versions in requirements.lock (made from this file; see docs/DEVELOPERS.md).
+aiohttp>=3.9,<4
+pyserial>=3.5,<4
+pygeomag>=1.1,<2       # World Magnetic Model, for "auto" magnetic variation
 tzdata; sys_platform == "win32"
-tzfpy>=0.15            # offline time-zone map, for Settings → Clock → "From the platform's position"
+tzfpy>=0.15,<3         # offline time-zone map, for Settings - Clock - From the platform position
