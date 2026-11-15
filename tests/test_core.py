@@ -728,6 +728,11 @@ def test_qc_finds_problems(rec):
     rec.new_row("sightings", {"Species": "Fin whale"})                                  # most fields blank
     rec.edit("sightings", s["RowID"], {"Lat": "42.5"})                               # typo, far from the track
     rec.new_row("events", {"EventType": "Mooring deployed"})
+    # a track point after the rows, so the trackline covers their time however slowly the test ran
+    # (0.61.3: on a slow machine the rows fell after the only track point, the one at Start, and weren't checked)
+    from datetime import timedelta
+    p0 = rec.track.points[0]
+    rec.track.append({**p0, "DateTime": (rec.now() + timedelta(seconds=2)).isoformat(timespec="seconds")})
     r = _qc(rec)
     got = {(x["check"], x["column"]) for x in r["issues"]}
     msgs = " | ".join(x["message"] for x in r["issues"])

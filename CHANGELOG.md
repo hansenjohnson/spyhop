@@ -6,6 +6,11 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.61.3 — 2026-11-15
+
+- A test of the Error check's "Positions match the trackline" failed on GitHub's Windows machine, which ran the tests about twice as slowly: its rows were made a second after the only track point (the one at Start), so there was no trackline to check them against. The test now records a track point after its rows. Spyhop itself was fine: it records a track point every second.
+- No more warnings about `datetime.utcnow()`, which a future Python will remove (the magnetic variation's date).
+
 ## 0.61.2 — 2026-11-15
 
 - **Windows** (found by the first Windows test runs on GitHub):

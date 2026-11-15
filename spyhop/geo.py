@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 EARTH_RADIUS_M = 6371008.8
 
@@ -65,7 +65,7 @@ def magnetic_variation(lat: float, lon: float, when: datetime | None = None) -> 
         if _geomag is None:
             from pygeomag import GeoMag  # type: ignore
             _geomag = GeoMag()
-        when = when or datetime.utcnow()
+        when = when or datetime.now(timezone.utc)        # only the date is used
         year = when.year + (when.timetuple().tm_yday - 1) / 365.25
         return float(_geomag.calculate(glat=lat, glon=lon, alt=0, time=year).d)
     except Exception:
