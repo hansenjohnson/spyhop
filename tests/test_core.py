@@ -3487,6 +3487,8 @@ def test_navigation_vmg_eta_and_arrival(tmp_path):
     assert nav.start_index(route["points"], *v0) == 1
     t = n.start(route, *v0)
     assert t["index"] == 1 and a.rec.cfg.settings["nav_active"]["name"] == "Leg test"
+    assert a.rec.cfg.settings["nav_average_s"] == 10                    # 0.58 (60 in 0.57)
+    a.rec.cfg.save_settings({"nav_average_s": 60})
     # steaming north at 10 kn, one fix a second
     t0 = 1_800_000_000.0
     out = None
@@ -3506,18 +3508,20 @@ def test_navigation_vmg_eta_and_arrival(tmp_path):
     # within the arrival distance of B: on to C
     near = geo.destination(p1[0], p1[1], 180, 100)
     out = n.tick({"lat": near[0], "lon": near[1], "sog": 10, "cog": 0}, now=t0 + 200)
-    assert out["target"] == "C" and n.take_events() == [{"arrived": "B", "last": False, "kind": "route"}]
-    # passing C abeam 0.5 nm off (beyond the arrival distance) still counts
+    assert out["target"] == "C" and n.take_events() == [{"arrived": "B", "last": False, "kind": "route", "index": 1, "count": 4}]
+    # 0.58: passing C abeam 0.5 nm off doesn't count (only the arrival distance does)
     wide = geo.destination(*geo.destination(p2[0], p2[1], 0, 50), 270, 0.5 * 1852)
     out = n.tick({"lat": wide[0], "lon": wide[1], "sog": 10, "cog": 0}, now=t0 + 400)
+    assert out["target"] == "C" and not n.take_events()
+    near = geo.destination(p2[0], p2[1], 90, 100)
+    out = n.tick({"lat": near[0], "lon": near[1], "sog": 10, "cog": 0}, now=t0 + 450)
     assert out["target"] == "D" and n.take_events()[0]["arrived"] == "C"
-    a.rec.cfg.save_settings({"nav_pass_abeam": False})
     # without going on by itself, Next/Previous step through; the last waypoint ends navigation
     a.rec.cfg.save_settings({"nav_auto_advance": False})
     assert n.step(-1)["index"] == 2 and n.step(1)["index"] == 3
     end = geo.destination(p3[0], p3[1], 0, 50)
     out = n.tick({"lat": end[0], "lon": end[1], "sog": 10, "cog": 90}, now=t0 + 900)
-    assert out["finished"] and n.target is None and n.take_events()[0] == {"arrived": "D", "last": True, "kind": "route"}
+    assert out["finished"] and n.target is None and n.take_events()[0] == {"arrived": "D", "last": True, "kind": "route", "index": 3, "count": 4}
     # one waypoint, through the API; no VMG while stopped → no ETA
     r = _run(a.nav_start(_Req({"kind": "waypoint", "name": "Buoy", "points": [{"name": "Buoy", "lat": p2[0], "lon": p2[1]}]})))
     assert r["target"]["kind"] == "waypoint"
@@ -3529,3 +3533,16 @@ def test_navigation_vmg_eta_and_arrival(tmp_path):
     assert n.target is not None
     _run(a.nav_stop(_Req({})))
     assert n.target is None and n.tick({"lat": lat0, "lon": lon0}) is None
+
+
+def test_navigation_average_back_to_10s_after_057(tmp_path):
+    """0.58: 0.57 saved its 60 s averaging default in the template; it becomes 10 s once (delete before 1.0)."""
+    import json
+    from spyhop.config import Config
+    c = Config(tmp_path / "s")
+    c.save_settings({"nav_average_s": 60, "last_version": "0.57.0"})
+    c2 = Config(tmp_path / "s")
+    assert c2.settings["nav_average_s"] == 10
+    assert json.loads(c2.config_path.read_text())["settings"]["nav_average_s"] == 10
+    c2.save_settings({"nav_average_s": 60, "last_version": "0.58.0"})          # chosen in 0.58: kept
+    assert Config(tmp_path / "s").settings["nav_average_s"] == 60

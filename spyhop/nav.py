@@ -10,8 +10,8 @@ restart, and every window and view-only device sees the same numbers: the server
   cos(COG − bearing).
 - ETA at the waypoint = distance / VMG. ETA at the end of a route adds the remaining legs at the average speed over
   ground (the same window), or at a fixed speed (`nav_eta_mode` "fixed", `nav_eta_speed_kn`) for every leg.
-- A waypoint is reached within `nav_arrival_nm`, or (route legs, `nav_pass_abeam`) once the vessel is past the line
-  square to the leg through it. Then the next waypoint becomes the target (`nav_auto_advance`), or it waits for Next.
+- A waypoint is reached within `nav_arrival_nm` (0.58: no "passed abeam" any more: it misfired). Then the next
+  waypoint becomes the target (`nav_auto_advance`), or it waits for Next.
 """
 from __future__ import annotations
 
@@ -22,10 +22,10 @@ from collections import deque
 from . import geo
 
 NM = 1852.0
-MIN_HISTORY_S = 10          # VMG from the position history once it covers this much time
+MIN_HISTORY_S = 5           # VMG from the position history once it covers this much time (or 80 % of the window)
 MIN_VMG_KN = 0.2            # slower than this: no ETA
 MAX_POINTS = 500
-NAV_SETTINGS = ("nav_arrival_nm", "nav_pass_abeam", "nav_auto_advance", "nav_average_s", "nav_eta_mode",
+NAV_SETTINGS = ("nav_arrival_nm", "nav_auto_advance", "nav_average_s", "nav_eta_mode",
                 "nav_eta_speed_kn", "nav_show_box")
 
 
@@ -42,7 +42,7 @@ def clean_target(b: dict) -> dict:
             raise ValueError(f"Waypoint {i + 1} has no position.") from None
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
             raise ValueError(f"Waypoint {i + 1}'s position is out of range.")
-        pts.append({"name": str(p.get("name") or f"WP{i + 1}")[:60], "lat": round(lat, 7), "lon": round(lon, 7)})
+        pts.append({"name": str(p.get("name") or (str(i + 1) if kind == "route" else "Waypoint"))[:60], "lat": round(lat, 7), "lon": round(lon, 7)})
     if not pts or (kind == "waypoint" and len(pts) != 1) or (kind == "route" and len(pts) < 2):
         raise ValueError("A waypoint needs one position, a route at least two.")
     try:
@@ -80,10 +80,6 @@ def _dist_to_leg(lat, lon, a, b) -> float:
     L2 = bx * bx + by * by
     t = 0.0 if L2 == 0 else max(0.0, min(1.0, (px * bx + py * by) / L2))
     return math.hypot(px - t * bx, py - t * by)
-
-
-def _angle_diff(a: float, b: float) -> float:
-    return abs((a - b + 180) % 360 - 180)
 
 
 class Navigator:
@@ -129,8 +125,8 @@ class Navigator:
                 return min(max(float(s.get(k, d)), lo), hi)
             except (TypeError, ValueError):
                 return d
-        return {"arrival_nm": num("nav_arrival_nm", 0.1, 0.001, 10), "average_s": num("nav_average_s", 60, 5, 1800),
-                "pass_abeam": bool(s.get("nav_pass_abeam", True)), "auto": bool(s.get("nav_auto_advance", True)),
+        return {"arrival_nm": num("nav_arrival_nm", 0.1, 0.001, 10), "average_s": num("nav_average_s", 10, 5, 1800),
+                "auto": bool(s.get("nav_auto_advance", True)),
                 "fixed": s.get("nav_eta_mode") == "fixed", "speed_kn": num("nav_eta_speed_kn", 10, 0.1, 100)}
 
     def tick(self, v: dict, now: float | None = None) -> dict | None:
@@ -159,13 +155,9 @@ class Navigator:
 
         # arrival
         reached = dist <= cfg["arrival_nm"] * NM
-        if not reached and cfg["pass_abeam"] and t["kind"] == "route" and i > 0:
-            a = pts[i - 1]
-            leg = geo.initial_bearing(a["lat"], a["lon"], wp["lat"], wp["lon"])
-            reached = dist > 1 and _angle_diff(geo.initial_bearing(wp["lat"], wp["lon"], lat, lon), leg) < 90
         if reached and not t.get("arrived"):
             last = i == len(pts) - 1
-            self.events.append({"arrived": wp["name"], "last": last, "kind": t["kind"]})
+            self.events.append({"arrived": wp["name"], "last": last, "kind": t["kind"], "index": i, "count": len(pts)})
             if last:
                 self._save(None)
                 out.update(arrived=True, finished=True)
@@ -180,7 +172,7 @@ class Navigator:
         span = h[-1][0] - h[0][0] if len(h) > 1 else 0
         sogs = [x[3] for x in h if x[3] is not None]
         sog_avg = sum(sogs) / len(sogs) if sogs else v.get("sog")
-        if span >= MIN_HISTORY_S:
+        if span >= min(MIN_HISTORY_S, 0.8 * cfg["average_s"]):
             d0 = geo.haversine_m(h[0][1], h[0][2], wp["lat"], wp["lon"])
             vmg = (d0 - dist) / NM / (span / 3600)
             moved = sum(geo.haversine_m(h[k - 1][1], h[k - 1][2], h[k][1], h[k][2]) for k in range(1, len(h)))

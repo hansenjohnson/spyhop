@@ -274,59 +274,24 @@ export class Planner {
     const p = r[i];
     if (!p) return 'Waypoint removed';
     const app = this.app, fmt = app.S.config.settings.latlon_format;
-    const num = p.fixed ? '' : `${i + (r[0]?.fixed ? 0 : 1)}. `;
     const rows = [['Position', fmtPos(p.ll[0], p.ll[1], fmt)]];
     const legs = this.legs(r);
     if (i > 0 && legs[i - 1]) rows.push(['From the previous', `${(legs[i - 1].m / M_PER_NM).toFixed(2)} nm, ${Math.round(legs[i - 1].course).toString().padStart(3, '0')}°T`]);
     if (i > 0 && legs[i - 1]) rows.push(['Along the route', `${(legs[i - 1].total / M_PER_NM).toFixed(2)} nm`]);
-    const wrap = el('div', { html: `<b>${esc(`${num}${p.name}`)}</b> <span class="hint">· ${esc(this.state.name)}</span>`
+    // 0.58: known by its number ("Waypoint 2"); a designed route's own name for it (Turn 3, L2 end…) in brackets
+    const n = i + (r[0]?.fixed ? 0 : 1);
+    const title = p.fixed ? p.name : `Waypoint ${n}${p.name && p.name !== `WP${n}` ? ` (${p.name})` : ''}`;
+    const wrap = el('div', { html: `<b>${esc(title)}</b> <span class="hint">· ${esc(this.state.name)}</span>`
       + `<table class="pop">${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</table>` });
     const v = this.vesselLL();
     if (v) wrap.append(el('div', { class: 'pop-rel' }, `Now ${fmtDist(distM(v, p.ll), app.unit())} from the vessel, bearing ${fmtBrg(bearing(v, p.ll))}T`));
-    const eta = this.etaAlongRoute(r, i);
-    if (eta) {
-      if (eta.passed) wrap.append(el('div', { class: 'pop-rel' }, 'ETA: passed (the vessel is beyond this waypoint on the route)'));
-      else {
-        const t = timeParts(new Date(Date.now() + eta.seconds * 1000), app.clock());
-        wrap.append(el('div', { class: 'pop-rel pop-eta' }, el('b', {}, `ETA ${t.time.slice(0, 5)} ${t.abbr}`),
-          ` · in ${fmtDuration(eta.seconds)} · ${(eta.meters / M_PER_NM).toFixed(1)} nm along the route at ${this.state.speed} kn`));
-      }
-    }
+    // 0.58: no ETA line here any more (navigation along the route gives the times)
     wrap.append(el('div', { class: 'pop-btns' }, el('a', { href: '#', onclick: (e) => {
       e.preventDefault(); app.map.map.closePopup(); app.showTab('route');
     } }, 'View the route'), app.viewer ? null : el('a', { href: '#', class: 'nav-from-here', onclick: (e) => {
       e.preventDefault(); app.map.map.closePopup(); app.nav.alongRoute(this.state.name, r, i);
     } }, 'Navigate from here')));
     return wrap;
-  }
-
-  // Time for the vessel to reach waypoint i following the route at the survey speed. The vessel
-  // is placed on the nearest leg (or before the start, if it hasn't reached the route yet), then
-  // goes along the rest of that leg and the following ones. {passed} if the waypoint is behind it.
-  etaAlongRoute(r, i) {
-    const v = this.vesselLL(), kn = +this.state.speed;
-    if (!v || !(kn > 0) || r.length < 2 || !r[i]) return null;
-    const cos = Math.cos(v[0] * Math.PI / 180);
-    const xy = (ll) => [(ll[1] - v[1]) * cos, ll[0] - v[0]];      // local plane around the vessel (degrees)
-    let best = { k: 0, d: Infinity, t: 0 };
-    for (let k = 0; k < r.length - 1; k++) {
-      const [ax, ay] = xy(r[k].ll), [bx, by] = xy(r[k + 1].ll);
-      const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
-      const t = len2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2)) : 0;
-      const d = Math.hypot(ax + t * dx, ay + t * dy);
-      if (d < best.d - 1e-12) best = { k, d, t };
-    }
-    const leg = (j) => distM(r[j].ll, r[j + 1].ll);
-    let meters;
-    if (best.k === 0 && best.t === 0) {                  // not on the route yet: go to its start first
-      meters = distM(v, r[0].ll);
-      for (let j = 0; j < i; j++) meters += leg(j);
-    } else {
-      if (i <= best.k) return { passed: true };
-      meters = distM(v, r[best.k + 1].ll);
-      for (let j = best.k + 1; j < i; j++) meters += leg(j);
-    }
-    return { meters, seconds: meters / (kn * M_PER_NM / 3600) };
   }
 
   // the vessel moved: refresh an open waypoint popup; redraw a draft that starts at the vessel

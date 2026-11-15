@@ -739,7 +739,8 @@ body.viewer .view-locked { cursor: not-allowed; }
 /* 0.57: navigation box on the map (nav.js) */
 .nav-box { background: rgba(255,255,255,0.95); padding: 6px 8px; font-size: 12px; min-width: 210px; max-width: 280px; }
 .nav-box[hidden] { display: none; }
-.nav-head { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
+.nav-head { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; cursor: pointer; user-select: none; }
+.nav-head .nav-fold { width: 1em; color: #333; }
 .nav-head b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-head button { border: none; background: none; padding: 0 4px; font-size: 13px; cursor: pointer; color: #333; }
 .nav-table { border-collapse: collapse; width: 100%; }

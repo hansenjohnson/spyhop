@@ -335,9 +335,8 @@ DEFAULT_SETTINGS = {
     "qc_auto_minutes": 0,           # 0.52: run the Error check every N minutes (1–30) during a survey; 0: off
     # 0.57: navigation to a waypoint or along a route (nav.py; Settings → General → Navigation)
     "nav_arrival_nm": 0.1,          # a waypoint is reached within this distance (nm)
-    "nav_pass_abeam": True,         # … or (route legs) once the vessel is past the line square to the leg through it
     "nav_auto_advance": True,       # then go on to the next waypoint (else wait for Next)
-    "nav_average_s": 60,            # VMG and the average speed over this many seconds
+    "nav_average_s": 10,            # VMG and the average speed over this many seconds (60 in 0.57)
     "nav_eta_mode": "measured",     # ETAs from the measured VMG / average speed, or "fixed": at nav_eta_speed_kn
     "nav_eta_speed_kn": 10,
     "nav_show_box": True,           # the navigation box on the map
@@ -395,7 +394,6 @@ SHARED_SETTINGS = {
     "qc_auto_minutes": "Error check automatically (min)",
     "tracker_stale_min": "Trackers greyed out after (min)",
     "nav_arrival_nm": "Navigation: arrival distance (nm)",
-    "nav_pass_abeam": "Navigation: reached when passed abeam",
     "nav_auto_advance": "Navigation: go on to the next waypoint",
     "nav_average_s": "Navigation: average speeds over (s)",
     "nav_eta_mode": "Navigation: ETAs from",
@@ -907,6 +905,11 @@ class Config:
         self.doc = doc
         shared = doc.get("settings") if isinstance(doc.get("settings"), dict) else {}
         s.update({k: v for k, v in shared.items() if k in SHARED_SETTINGS})
+        if shared.get("nav_average_s") == 60 and str(loc.get("last_version", "")).startswith("0.57."):
+            s["nav_average_s"] = 10          # 0.58: 0.57's default (60 s) was too long; delete before 1.0
+            reset_nav = True
+        else:
+            reset_nav = False
         if isinstance(doc.get("map_feeds"), list):
             s["online_feeds"] = [f for f in doc["map_feeds"] if isinstance(f, dict)]
         if isinstance(doc.get("online_overlays"), dict):
@@ -922,6 +925,8 @@ class Config:
         self.display = display
         self.reports = {str(k): v for k, v in doc["reports"].items()} if isinstance(doc.get("reports"), dict) else {}
         self.history = [e for e in doc.get("history") or [] if isinstance(e, dict)]
+        if reset_nav:
+            self.save()
 
     def _config_doc(self) -> dict:
         """templates/current/spyhop-config.json as it should be now."""
@@ -986,7 +991,7 @@ class Config:
                 updates = {**updates, k: int(f) if k == "nav_average_s" else f}
         if updates and "nav_eta_mode" in updates and updates["nav_eta_mode"] not in ("measured", "fixed"):
             raise ValueError("ETAs come from the measured speed or a fixed speed.")
-        for k in ("nav_pass_abeam", "nav_auto_advance", "nav_show_box"):
+        for k in ("nav_auto_advance", "nav_show_box"):
             if updates and k in updates and not isinstance(updates[k], bool):
                 raise ValueError("That navigation setting is on or off.")
         if updates and "qc_auto_minutes" in updates:

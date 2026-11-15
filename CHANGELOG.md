@@ -6,6 +6,16 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.58.0 — 2026-11-15
+
+- Navigation: VMG is now averaged over **10 s** unless changed (it was 60 s, which was slow to follow changes). Settings saved with 0.57's 60 s are changed to 10 s once.
+- Navigation: click anywhere on the navigation box's title to fold or unfold it (it was only the small arrow).
+- Navigation: a waypoint is reached only within the arrival distance. The "passed abeam" option is gone: it misfired.
+- Navigation: SOG is no longer in the navigation box. Its averaging made it differ from the SOG shown elsewhere.
+- Navigation: navigating to a single point (a waypoint or a map point), the line from the vessel to it is drawn like the leg ahead on a route.
+- A route's waypoints are known by their number: *Next waypoint 2 of 5* in the navigation box, *Reached waypoint 2 of 5*, and *Waypoint 2* (with a designed route's own name for it, such as *Turn 3*) in an active route's popups.
+- An active route waypoint's popup no longer shows an ETA along the route (navigating along the route gives the times).
+
 ## 0.57.0 — 2026-11-15
 
 - **Navigate to a waypoint or along a route,** to see how long a transit will take (not for steering: no cross-track error). Start from a waypoint's popup or the Waypoints tab (**Navigate to**), the map's right-click menu (**Navigate here**), or Tools → Routes (**Navigate along this route**, **Navigate** in Saved Routes, **Navigate from here** in a route waypoint's popup). A route starts at the waypoint ahead of the vessel.
