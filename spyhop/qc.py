@@ -110,7 +110,7 @@ def _land():
         return _LAND
     p = Path(__file__).parent / "web" / "vendor" / "land-10m.json"
     try:
-        topo = json.loads(p.read_text())
+        topo = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         _LAND = []
         return _LAND

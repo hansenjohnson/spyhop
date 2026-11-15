@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.61.2 — 2026-11-15
+
+- **Windows** (found by the first Windows test runs on GitHub):
+  - Time zones now show their short name on Windows too (EST, UTC, or the offset such as UTC+01:00) in reports and the clock information, instead of "Eastern Standard Time" or "Coordinated Universal Time".
+  - Starting Spyhop again while it's running now opens a window onto the running one on Windows too: the running Spyhop's port is kept in `spyhop-running.json` beside the lock, which Windows wouldn't let a second Spyhop read.
+  - A few files Spyhop writes for its icon and charts folder are now always UTF-8, so folder names with accents work on Windows.
+  - The tests read and write their files as UTF-8, and no longer assume the computer's clock ticks finer than Windows' (about 15 ms).
+- docs/DEVELOPERS.md: how to read the GitHub test results, how to handle Dependabot's pull requests, and writing code that works on Windows.
+
 ## 0.61.1 — 2026-11-15
 
 - **The tests on GitHub failed** because the tests' sample satellite-tracker feeds (`tests/data/`) weren't in the repository: `.gitignore` left out every folder called `data`, meant only for a survey data folder at the top. It now only leaves out the top-level `data`, `exports`, `nmea_logs` and `logs` folders.

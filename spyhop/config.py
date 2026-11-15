@@ -681,7 +681,7 @@ class Config:
                 "\"Refresh\" in that section, or a restart). Copy a file to another computer's charts\n"
                 "folder to use it there.\n\n"
                 "Free NOAA nautical charts for US waters (updated weekly):\n"
-                "  https://distribution.charts.noaa.gov/ncds/  -> click a region -> download the MBTiles file.\n")
+                "  https://distribution.charts.noaa.gov/ncds/  -> click a region -> download the MBTiles file.\n", encoding="utf-8")
 
     # -- what can't change during an active survey (0.37) ------------------------------
     def locked_snapshot(self) -> dict:

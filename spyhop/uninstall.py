@@ -76,7 +76,7 @@ def shortcut_paths() -> list[Path]:
             app = d / "Spyhop.app"
             if app.exists() and shortcut._is_ours(app):
                 try:
-                    mine = (app / "Contents" / "Resources" / "folder.txt").read_text().strip() == root
+                    mine = (app / "Contents" / "Resources" / "folder.txt").read_text(encoding="utf-8").strip() == root
                 except OSError:
                     mine = False
                 if mine:

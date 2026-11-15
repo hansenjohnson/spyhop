@@ -76,7 +76,7 @@ def install_mac(apps_dir: Path | None = None, desktop: Path | None = None) -> li
     (app / "Contents" / "MacOS").mkdir(parents=True)
     (app / "Contents" / "Resources").mkdir(parents=True)
     shutil.copy2(IMG / "spyhop.icns", app / "Contents" / "Resources" / "Spyhop.icns")
-    (app / "Contents" / "Resources" / "folder.txt").write_text(str(ROOT))
+    (app / "Contents" / "Resources" / "folder.txt").write_text(str(ROOT), encoding="utf-8")
     with open(app / "Contents" / "Info.plist", "wb") as f:
         plistlib.dump({
             "CFBundleName": "Spyhop",
@@ -101,7 +101,7 @@ fi
 open -a Terminal "$CMD"
 """
     exe = app / "Contents" / "MacOS" / "Spyhop"
-    exe.write_text(script)
+    exe.write_text(script, encoding="utf-8")
     exe.chmod(0o755)
     made = [app]
     if desktop and desktop.is_dir():
@@ -160,7 +160,7 @@ Categories=Science;Education;
     for d in (apps_dir, desktop):
         if d and d.is_dir():
             p = d / "spyhop.desktop"
-            p.write_text(entry)
+            p.write_text(entry, encoding="utf-8")
             p.chmod(0o755)
             made.append(p)
     return made
@@ -169,9 +169,9 @@ Categories=Science;Education;
 def installed() -> bool:
     """True if a shortcut for this folder has already been made."""
     try:
-        if MARKER.read_text().strip() != str(ROOT):
+        if MARKER.read_text(encoding="utf-8").strip() != str(ROOT):
             return False
-    except OSError:
+    except (OSError, ValueError):        # missing, or not UTF-8: make the shortcut again
         return False
     if sys.platform == "darwin":
         return any((d / "Spyhop.app").exists() for d in _mac_app_dirs())
@@ -186,7 +186,7 @@ def install() -> list[Path]:
     else:
         made = install_linux()
     try:
-        MARKER.write_text(str(ROOT))
+        MARKER.write_text(str(ROOT), encoding="utf-8")
     except OSError:
         pass
     return made

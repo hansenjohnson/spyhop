@@ -124,7 +124,29 @@ A git checkout is updated with `git pull --ff-only` instead. `SPYHOP_UPDATE_API`
 - **Tested versions:** macOS, Windows and Ubuntu × Python 3.10 to 3.15 (pre-releases too, as an early warning), installing `requirements.lock`.
 - **Newest libraries:** the newest release of every library, ignoring the upper limits, on the newest Python. It may fail without failing the run: it's the early warning that a library release would break Spyhop.
 
-`.github/dependabot.yml` keeps the workflow's GitHub Actions up to date. The Playwright walkthroughs aren't run there.
+The Playwright walkthroughs aren't run there.
+
+**Reading the results:** each push shows a ✓ or ✗ beside the commit, and the **Actions** tab lists the runs. Open a run and a failed job (red ✗), then its **Run the tests** step; the end of that log names each failing test and why. A failure in only one system or Python version usually means a difference in that system (see *Writing code that works on Windows* below). A failure in a "Newest libraries" job doesn't fail the run: it warns that a newer library would break Spyhop, before anyone installs it.
+
+### Dependabot
+
+`.github/dependabot.yml` asks GitHub's Dependabot to check, once a month, for newer versions of the GitHub Actions the workflow uses (`actions/checkout`, `actions/setup-python`). For each one it opens a pull request that changes only the version in `.github/workflows/tests.yml`, e.g. *Bump actions/setup-python from 5 to 6*. These affect only the tests on GitHub, never Spyhop itself or what users install. Python packages aren't watched: they're updated by hand through `requirements.lock` (above).
+
+What to do with one:
+
+1. **Open the pull request and look at its checks.** GitHub runs the whole test workflow with the new version.
+2. **All green: merge it** (*Merge pull request*). The release notes are listed in the pull request; for these actions there's rarely anything to do.
+3. **Red:** if `main` fails the same way, the update isn't the cause: fix `main` first, then comment `@dependabot rebase` on the pull request to run it again. If only the pull request fails, the new version broke something: look at the log, or close the pull request (Dependabot won't offer that version again).
+4. **Afterwards, `git pull`** in your own copy, so it has the merged `tests.yml`. When updates are copied in by hand from elsewhere (a zip), don't copy an older `.github/` over a merged one: that would quietly put the old versions back. Only copy `.github/` when an update says it changed it.
+
+### Writing code that works on Windows
+
+The first Windows test runs (0.61.1) found these; keep them in mind for new code and tests:
+
+- **Always give an encoding** when reading or writing text: `read_text(encoding="utf-8")`, `write_text(…, encoding="utf-8")`, `open(…, encoding="utf-8")`. Without it, Windows uses its own code page, and `°`, `→` or accented names come out garbled. A quick check on Linux or macOS: `LC_ALL=C LANG=C PYTHONUTF8=0 python -X utf8=0 -m pytest` (a plain-ASCII locale, stricter than Windows).
+- **Time-zone names:** Windows calls zones "Eastern Standard Time", "Coordinated Universal Time"; use `clock.zone_abbr(dt)` for the short form, not `dt.tzname()`.
+- **The clock is coarse:** `time.time()` can return the same value for calls about 15 ms apart, so don't let a test rely on two quick events getting different times; set them apart explicitly.
+- **Locked files can't be read:** a file locked with `msvcrt.locking` can't be read by other programs, which is why `instance.py` keeps the running Spyhop's details in `spyhop-running.json`, beside `spyhop.lock`.
 
 ## Tests
 

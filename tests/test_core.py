@@ -199,7 +199,7 @@ def test_schema_mismatch_backs_up(tmp_path):
     r = Recorder(tmp_path)
     r.start_survey("S")
     p = r.tables["sightings"].path
-    p.write_text("Old,Columns\n1,2\n")
+    p.write_text("Old,Columns\n1,2\n", encoding="utf-8")
     r2 = Recorder(tmp_path)
     assert r2.tables["sightings"].rows == []
     assert any(x.name.startswith(p.name + ".bak-") for x in p.parent.iterdir())
@@ -285,14 +285,14 @@ def test_config_files_created(tmp_path):
     cur = tmp_path / "templates" / "current"
     for n in ("species", "event_types", "observers", "behaviors", "shortcuts"):
         assert (cur / f"{n}.csv").exists() and not (tmp_path / f"{n}.csv").exists()
-    doc = json.loads((cur / "spyhop-config.json").read_text())
+    doc = json.loads((cur / "spyhop-config.json").read_text(encoding="utf-8"))
     assert sorted(doc["reports"]) == ["blue_whales.json", "dead_birds.json", "gear.json", "right_whales.json"]
     assert (tmp_path / "templates" / "saved").is_dir() and (tmp_path / "templates" / "backups").is_dir()
     for gone in ("settings", "reports", "display.csv"):
         assert not (tmp_path / gone).exists()
     rec.cfg.save_settings({"latlon_format": "DD", "follow_vessel": False})
-    assert json.loads((cur / "spyhop-config.json").read_text())["settings"]["latlon_format"] == "DD"
-    loc = json.loads((tmp_path / "spyhop-local.json").read_text())
+    assert json.loads((cur / "spyhop-config.json").read_text(encoding="utf-8"))["settings"]["latlon_format"] == "DD"
+    loc = json.loads((tmp_path / "spyhop-local.json").read_text(encoding="utf-8"))
     assert loc["settings"]["follow_vessel"] is False and "latlon_format" not in loc["settings"]
     names = [s["name"] for s in rec.cfg.tile_sources]
     assert names[:2] == ["Seascape depths (feet)", "Esri Ocean"] and rec.cfg.tile_sources[0]["kind"] == "style"
@@ -379,7 +379,7 @@ def test_old_columns_migrated_with_backup(tmp_path):
     p = r.tables["sightings"].path
     # a file from the previous version: no FieldID, VesHdg visible
     old_hdr = [h for h in schema.headers("sightings") if h != "FieldID"] + ["SurfStuff"]
-    with open(p, "w", newline="") as fh:
+    with open(p, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(old_hdr)
         w.writerow(["abc123" if h == "RowID" else "7" if h == "SightNo" else "Fin whale" if h == "Species"
@@ -391,7 +391,7 @@ def test_old_columns_migrated_with_backup(tmp_path):
     assert read_csv(p)[0]["Species"] == "Fin whale"                     # rewritten in the new layout
     assert list(read_csv(p)[0].keys()) == schema.headers("sightings")
     baks = [x for x in p.parent.iterdir() if x.name.startswith(p.name + ".bak-")]
-    assert len(baks) == 1 and "SurfStuff" in baks[0].read_text()
+    assert len(baks) == 1 and "SurfStuff" in baks[0].read_text(encoding="utf-8")
     assert any("SurfStuff" in n and "backup" in n for n in r2.notices)
 
 
@@ -434,7 +434,7 @@ def test_reordered_columns_migrate(tmp_path):
     r.start_survey("S")
     p = r.tables["events"].path
     old = ["RowID", "EventNo", "DateTime", "Lat", "Lon", "EventType", "ID", "Observer", "Notes", "Map"]
-    with open(p, "w", newline="") as fh:
+    with open(p, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(old)
         w.writerow(["e1", "1", "2026-11-04T10:00:00-05:00", "41.9", "-70.3", "CTD cast", "C-1", "OBS1", "n", "1"])
@@ -627,9 +627,9 @@ def test_export_choices(rec):
     rec.new_row("sightings", {"Species": "Fin whale", "Count": "2"})
     rec.new_row("events", {"EventType": "CTD cast", "ID": "C-1"})
     one = rec.export(["gpx"])                                       # one format: the file itself
-    assert one.suffix == ".gpx" and one.exists() and one.read_text().startswith("<?xml")
+    assert one.suffix == ".gpx" and one.exists() and one.read_text(encoding="utf-8").startswith("<?xml")
     gj = rec.export(["geojson"])
-    assert gj.suffix == ".geojson" and json.loads(gj.read_text())["type"] == "FeatureCollection"
+    assert gj.suffix == ".geojson" and json.loads(gj.read_text(encoding="utf-8"))["type"] == "FeatureCollection"
     merged = rec.export(["merged"])
     assert merged.name.startswith("Test_merged_") and merged.suffix == ".csv"
     rows = read_csv(merged)
@@ -784,7 +784,7 @@ def test_instrument_history(rec):
     assert rec.instrument_history("gps_quality")["points"] == []
     # saved with the survey and read back when it's opened again
     p = rec._inst_path()
-    assert p.exists() and "depth" in p.read_text()
+    assert p.exists() and "depth" in p.read_text(encoding="utf-8")
     prefix = rec.survey["prefix"]
     rec.close_survey()
     rec.open_survey(prefix)
@@ -1008,15 +1008,15 @@ def test_update_check_and_install(tmp_path, monkeypatch, rec):
         prog = tmp_path / "prog"
         shutil.copytree(updater.PROGRAM_DIR, prog, ignore=shutil.ignore_patterns(".venv", ".git", "__pycache__", ".pytest_cache"))
         (prog / ".venv").mkdir()
-        (prog / ".venv" / "keep.txt").write_text("mine")
+        (prog / ".venv" / "keep.txt").write_text("mine", encoding="utf-8")
         monkeypatch.setattr(updater, "PROGRAM_DIR", prog)
         monkeypatch.setattr(updater, "_install_packages", lambda: "stubbed")
         res = updater.install(rec.cfg, info)
         assert res["installed"] == "9.9.0" and Path(res["backup"]).exists()
-        assert '__version__ = "9.9.0"' in (prog / "spyhop" / "__init__.py").read_text()
-        assert (prog / "NEWFILE.md").read_text() == "new"
+        assert '__version__ = "9.9.0"' in (prog / "spyhop" / "__init__.py").read_text(encoding="utf-8")
+        assert (prog / "NEWFILE.md").read_text(encoding="utf-8") == "new"
         assert not (prog / "spyhop" / "geo.py").exists()                 # dropped by the new version
-        assert (prog / ".venv" / "keep.txt").read_text() == "mine"         # the environment is left alone
+        assert (prog / ".venv" / "keep.txt").read_text(encoding="utf-8") == "mine"         # the environment is left alone
         assert os.access(prog / "Start Spyhop (Mac).command", os.X_OK)
         with zipfile.ZipFile(res["backup"]) as z:
             assert "spyhop/spyhop/geo.py" in z.namelist()                  # the old version is in the backup
@@ -1441,7 +1441,7 @@ def test_reports_presets_run_and_export(rec):
     rec.set_meta({"chief_scientist_email": "chief@example.org"})
     assert 'href="mailto:chief@example.org"' in filters.to_html(rec, filters.run(rec, spec))
     tf = filters.run(rec, {**spec, "rules": [], "columns": ["time_fmt"]})
-    assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d [A-Z+\-0-9]+", tf["rows"][0][0]), tf["rows"][0][0]
+    assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d [A-Z+\-0-9:]+", tf["rows"][0][0]), tf["rows"][0][0]   # 0.61.1: short on Windows too
     csv_text = filters.to_csv(filters.run(rec, spec))
     assert csv_text.startswith("﻿Species code,Num\r\n")
     # save, rename (replace), delete
@@ -1491,8 +1491,8 @@ def test_saved_routes_folder(tmp_path):
     assert r2["file"] == "Renamed_plan.gpx" and [x["file"] for x in routes.list_routes(cfg)] == ["Renamed_plan.gpx"]
     # a GPX copied into the folder from elsewhere, and one that isn't GPX
     (cfg.routes_dir / "other.gpx").write_text('<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1">'
-                                              '<wpt lat="41" lon="-70"/><wpt lat="41.1" lon="-70"/></gpx>')
-    (cfg.routes_dir / "broken.gpx").write_text("nope")
+                                              '<wpt lat="41" lon="-70"/><wpt lat="41.1" lon="-70"/></gpx>', encoding="utf-8")
+    (cfg.routes_dir / "broken.gpx").write_text("nope", encoding="utf-8")
     by = {x["file"]: x for x in routes.list_routes(cfg)}
     assert by["other.gpx"]["mode"] == "imported" and by["other.gpx"]["points"] == 2 and not by["other.gpx"]["spyhop"]
     assert by["broken.gpx"]["error"]
@@ -1666,7 +1666,7 @@ def test_template_check_use_backup(tmp_path):
         assert empty["reports"] == {}
         templates.apply(cfg2, t)
         assert "team_gear.json" in cfg2.reports
-        assert "team_gear.json" in json.loads(cfg2.config_path.read_text())["reports"]
+        assert "team_gear.json" in json.loads(cfg2.config_path.read_text(encoding="utf-8"))["reports"]
         templates.apply(cfg2, empty)
         assert not cfg2.reports
 
@@ -1681,10 +1681,10 @@ def test_template_check_use_backup(tmp_path):
         badt = templates.read_template(templates.fetch(base + "/bad.zip")[0])
         assert any("species.csv needs the column name" in p for p in badt["problems"])
         assert any("spyhop-config.json isn't valid JSON" in p for p in badt["problems"])
-        before = (cur / "species.csv").read_text()
+        before = (cur / "species.csv").read_text(encoding="utf-8")
         with pytest.raises(templates.TemplateError):
             templates.apply(cfg, badt)
-        assert (cur / "species.csv").read_text() == before              # nothing changed
+        assert (cur / "species.csv").read_text(encoding="utf-8") == before              # nothing changed
 
         for path, words in (("/page", "web page"), ("/private", "refused"), ("/missing.zip", "404")):
             with pytest.raises(templates.TemplateError, match=words):
@@ -1821,7 +1821,7 @@ def test_reports_travel_in_templates(tmp_path):
     assert plan["Saved report: Rough"] == "new" and plan["Saved report: Gear"] == "removed"
     templates.apply(cfg, t)
     assert sorted(f["name"] for f in reports.load(cfg)[0]) == ["Blue whales", "Dead birds", "Right whales", "Rough"]
-    assert sorted(_json.loads(cfg.config_path.read_text())["reports"]) == ["blue_whales.json", "dead_birds.json",
+    assert sorted(_json.loads(cfg.config_path.read_text(encoding="utf-8"))["reports"]) == ["blue_whales.json", "dead_birds.json",
                                                                          "right_whales.json", "sea_state.json"]
     # a template without reports leaves the saved reports alone
     no_reps = {k: v for k, v in files.items() if k != "spyhop-config.json"}
@@ -1845,9 +1845,9 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
     feeds.save_cache(ca, "abc12345", [{"type": "Feature", "properties": {"big": "x" * 1000}, "geometry": None}])
     for n, lat in (("Buoy A", "41.5"), ("Harbor", "41.9")):
         a.rec.tables["marks"].add({"Name": n, "Lat": lat, "Lon": "-70.1", "Shape": "Circle", "Color": "red"})
-    (ca.routes_dir / "Line 1.gpx").write_text('<?xml version="1.0"?><gpx><rte><rtept lat="41" lon="-70"/></rte></gpx>')
-    (ca.overlays_dir / "zones.geojson").write_text('{"type":"FeatureCollection","features":[]}')
-    (ca.overlays_dir / "Survey - old.geojson").write_text('{"type":"FeatureCollection","features":[]}')
+    (ca.routes_dir / "Line 1.gpx").write_text('<?xml version="1.0"?><gpx><rte><rtept lat="41" lon="-70"/></rte></gpx>', encoding="utf-8")
+    (ca.overlays_dir / "zones.geojson").write_text('{"type":"FeatureCollection","features":[]}', encoding="utf-8")
+    (ca.overlays_dir / "Survey - old.geojson").write_text('{"type":"FeatureCollection","features":[]}', encoding="utf-8")
 
     info = _run(a.templates_changes(_Req()))
     assert (info["waypoints"], info["routes"], info["overlays"]) == (2, 1, 1) and info["min_default"] == "0.28.0"
@@ -1878,7 +1878,7 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
     # computer B: its own serial port, a waypoint called Harbor somewhere else, its own route of the same name
     cb.save_settings({"nmea_sources": [{"type": "serial", "port": "/dev/ttyUSB0"}, {"type": "udp", "port": 10110}]})
     b.rec.tables["marks"].add({"Name": "Harbor", "Lat": "42.0", "Lon": "-70.5"})
-    (cb.routes_dir / "Line 1.gpx").write_text('<?xml version="1.0"?><gpx><rte/></gpx>')
+    (cb.routes_dir / "Line 1.gpx").write_text('<?xml version="1.0"?><gpx><rte/></gpx>', encoding="utf-8")
     chk = _run(b.templates_check(_Req({"url": str(tf)})))
     st = {f["file"]: f for f in chk["files"]}
     assert st["waypoints.csv"]["status"] == "new" and st["waypoints.csv"]["add"] == 1 and "kept" in st["waypoints.csv"]["detail"]
@@ -1894,7 +1894,7 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
     assert cb.settings["online_feeds"][0]["name"] == "SMAs" and not feeds.cache_path(cb, "abc12345").exists()
     assert cb.settings["online_display"]["stamp"] and cb.settings["online_display"]["ais"] is True
     assert {(m["Name"], m["Lat"]) for m in b.rec.tables["marks"].rows} == {("Harbor", "42.0"), ("Buoy A", "41.5")}
-    assert "<rte/>" in (cb.routes_dir / "Line 1.gpx").read_text() and (cb.overlays_dir / "zones.geojson").is_file()
+    assert "<rte/>" in (cb.routes_dir / "Line 1.gpx").read_text(encoding="utf-8") and (cb.overlays_dir / "zones.geojson").is_file()
     chk2 = _run(b.templates_check(_Req({"template": r["name"]})))
     assert all(f["status"] in ("same", "kept") for f in chk2["files"])
     # restoring the backup takes away what the template added, and the settings go back
@@ -1921,8 +1921,8 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
 
     # the inputs are part of the setup in use: in templates/current/spyhop-config.json (without this
     # computer's choices), and in spyhop-local.json with them
-    cur = json.loads(cb.config_path.read_text())
-    loc = json.loads(cb.local_path.read_text())
+    cur = json.loads(cb.config_path.read_text(encoding="utf-8"))
+    loc = json.loads(cb.local_path.read_text(encoding="utf-8"))
     assert cur["nmea_inputs"] == [{"type": "serial", "port": "/dev/ttyUSB0", "name": "Serial /dev/ttyUSB0 @ 4800"},
                                   {"type": "udp", "port": 10110, "name": "UDP port 10110"}]
     assert loc["settings"]["nmea_sources"][0]["role"] == "primary"
@@ -1970,8 +1970,8 @@ def test_file_replay_reads_spyhop_logs_and_plain_nmea(tmp_path):
             ln = with_checksum(",".join(body))
             stamped.append(f"2026-07-01T12:00:{k:02d}.000Z\tGPS 1\t{ln}")
             plain.append(ln)
-    (tmp_path / "a.nmea").write_text("\n".join(stamped) + "\n")
-    (tmp_path / "b.nmea").write_text("\r\n".join(plain) + "\r\n")
+    (tmp_path / "a.nmea").write_text("\n".join(stamped) + "\n", encoding="utf-8")
+    (tmp_path / "b.nmea").write_text("\r\n".join(plain) + "\r\n", encoding="utf-8")
     assert clean_path(f' "{tmp_path / "a.nmea"}" ') == str(tmp_path / "a.nmea")
 
     async def run(name, speed):
@@ -1999,9 +1999,9 @@ def test_diagnostics_bundle_lists_folders_without_data(tmp_path):
     from spyhop import diag
     from spyhop.config import Config
     cfg = Config(tmp_path / "spy")
-    (cfg.routes_dir / "Leg A.gpx").write_text("<gpx/>")
+    (cfg.routes_dir / "Leg A.gpx").write_text("<gpx/>", encoding="utf-8")
     (cfg.data_dir / "SecretSurvey").mkdir()
-    (cfg.data_dir / "SecretSurvey" / "SecretSurvey_sightings.csv").write_text("a,b\n1,2\n")
+    (cfg.data_dir / "SecretSurvey" / "SecretSurvey_sightings.csv").write_text("a,b\n1,2\n", encoding="utf-8")
     (cfg.saved_dir / "Ship.spyhop-template.zip").write_bytes(b"PK")
     cfg.save_settings({"online_feeds": [{"url": "https://x.org/f.json?key=SECRET"}],
                        "last_meta": {"chief_scientist": "Dr Secret"}})
@@ -2022,10 +2022,10 @@ def test_diagnostics_bundle_lists_folders_without_data(tmp_path):
 def _fake_program(tmp_path):
     prog = tmp_path / "prog"
     (prog / "spyhop").mkdir(parents=True)
-    (prog / "spyhop" / "__init__.py").write_text('__version__ = "0.1"\n')
-    (prog / "pyproject.toml").write_text("")
+    (prog / "spyhop" / "__init__.py").write_text('__version__ = "0.1"\n', encoding="utf-8")
+    (prog / "pyproject.toml").write_text("", encoding="utf-8")
     (prog / ".venv" / "bin").mkdir(parents=True)
-    (prog / ".venv" / "bin" / "python").write_text("")
+    (prog / ".venv" / "bin" / "python").write_text("", encoding="utf-8")
     return prog
 
 
@@ -2033,10 +2033,10 @@ def _wait_helper(log_path, secs=20):
     import time as _t
     t0 = _t.time()
     while _t.time() - t0 < secs:
-        if Path(log_path).exists() and "done" in Path(log_path).read_text():
-            return Path(log_path).read_text()
+        if Path(log_path).exists() and "done" in Path(log_path).read_text(encoding="utf-8"):
+            return Path(log_path).read_text(encoding="utf-8")
         _t.sleep(0.2)
-    raise AssertionError("helper didn't finish: " + (Path(log_path).read_text() if Path(log_path).exists() else "no log"))
+    raise AssertionError("helper didn't finish: " + (Path(log_path).read_text(encoding="utf-8") if Path(log_path).exists() else "no log"))
 
 
 def test_uninstall_plan_and_run(tmp_path, monkeypatch):
@@ -2047,7 +2047,7 @@ def test_uninstall_plan_and_run(tmp_path, monkeypatch):
     monkeypatch.setattr(updater, "PROGRAM_DIR", prog)
     monkeypatch.setattr(shortcut, "ROOT", prog)
     cfg = Config(tmp_path / "spy")
-    (cfg.data_dir / "S1_sightings.csv").write_text("x\n")
+    (cfg.data_dir / "S1_sightings.csv").write_text("x\n", encoding="utf-8")
     # nothing is deleted beyond the program unless ticked; a chosen data folder is never deleted
     p = uninstall.plan(cfg, "uninstall")
     assert not p["problems"] and [d["path"] for d in p["delete"]] == [str(prog)]
@@ -2086,11 +2086,11 @@ def test_reinstall_replaces_program_keeps_data(tmp_path, monkeypatch):
     from spyhop import uninstall, updater, shortcut
     from spyhop.config import Config
     prog = _fake_program(tmp_path)
-    (prog / "old_only.txt").write_text("stale")
+    (prog / "old_only.txt").write_text("stale", encoding="utf-8")
     monkeypatch.setattr(updater, "PROGRAM_DIR", prog)
     monkeypatch.setattr(shortcut, "ROOT", prog)
     cfg = Config(tmp_path / "spy")
-    (cfg.data_dir / "S1_sightings.csv").write_text("x\n")
+    (cfg.data_dir / "S1_sightings.csv").write_text("x\n", encoding="utf-8")
     buf = _io.BytesIO()
     with _zf.ZipFile(buf, "w") as z:
         z.writestr("org-spyhop-abc/spyhop/__init__.py", '__version__ = "9.9.9"\n')
@@ -2101,7 +2101,7 @@ def test_reinstall_replaces_program_keeps_data(tmp_path, monkeypatch):
     monkeypatch.setattr(uninstall.os, "getpid", lambda: dead.pid)
     r = uninstall.start(cfg, "reinstall", info={"zip": "x", "latest": "9.9.9"}, launch=False)
     _wait_helper(r["helper_log"])
-    assert '9.9.9' in (prog / "spyhop" / "__init__.py").read_text()
+    assert '9.9.9' in (prog / "spyhop" / "__init__.py").read_text(encoding="utf-8")
     assert not (prog / "old_only.txt").exists() and not (prog / ".venv").exists()
     assert (cfg.data_dir / "S1_sightings.csv").exists() and (cfg.current_dir / "species.csv").exists()
     assert not (cfg.root / "updates").exists()                # no copy of the old program is kept
@@ -2214,7 +2214,7 @@ def test_uninstall_reinstall_git_checkout(tmp_path, monkeypatch):
     remote = tmp_path / "remote.git"
     g("init", "--bare", "-b", "main", str(remote))
     prog = _fake_program(tmp_path)
-    (prog / ".gitignore").write_text(".venv/\n")
+    (prog / ".gitignore").write_text(".venv/\n", encoding="utf-8")
     g("init", "-b", "main", cwd=prog)
     g("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A", cwd=prog)
     g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "v1", cwd=prog)
@@ -2224,7 +2224,7 @@ def test_uninstall_reinstall_git_checkout(tmp_path, monkeypatch):
     monkeypatch.setattr(shortcut, "ROOT", prog)
     cfg = Config(tmp_path / "spy")
     assert uninstall.plan(cfg, "reinstall")["problems"] == []
-    (prog / "spyhop" / "__init__.py").write_text('__version__ = "local edit"\n')
+    (prog / "spyhop" / "__init__.py").write_text('__version__ = "local edit"\n', encoding="utf-8")
     p = uninstall.plan(cfg, "reinstall")
     assert p["problems"] and "uncommitted changes" in p["problems"][0]
     g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-am", "local", cwd=prog)
@@ -2233,13 +2233,13 @@ def test_uninstall_reinstall_git_checkout(tmp_path, monkeypatch):
     # reinstall: reset to the remote's branch, the Python set-up removed, the folder and .git kept
     dead = _sp.Popen([_sys.executable, "-c", "pass"]); dead.wait()
     monkeypatch.setattr(uninstall.os, "getpid", lambda: dead.pid)
-    (prog / "stray.txt").write_text("x")
+    (prog / "stray.txt").write_text("x", encoding="utf-8")
     assert "uncommitted" in uninstall.plan(cfg, "reinstall")["problems"][0]      # untracked files count too
     (prog / "stray.txt").unlink()
     r = uninstall.start(cfg, "reinstall", launch=False)
     log = _wait_helper(r["helper_log"])
     assert "git reset" in log and not (prog / ".venv").exists() and (prog / ".git").is_dir()
-    assert (prog / "spyhop" / "__init__.py").read_text() == '__version__ = "0.1"\n'
+    assert (prog / "spyhop" / "__init__.py").read_text(encoding="utf-8") == '__version__ = "0.1"\n'
 
 
 def test_resights(tmp_path):
@@ -2343,7 +2343,7 @@ def test_survey_notes_and_column_layout(rec):
     assert got == {"sightings": {"order": ["Species", "DateTime"], "widths": {"Notes": 800, "Count": 30}}}
     rec.cfg.save_settings({"column_layout": got})
     import json
-    assert "column_layout" in rec.cfg.local_path.read_text() and "column_layout" not in rec.cfg.config_path.read_text()
+    assert "column_layout" in rec.cfg.local_path.read_text(encoding="utf-8") and "column_layout" not in rec.cfg.config_path.read_text(encoding="utf-8")
 
 
 def test_clock_bearings_and_insert_at_time(rec):
@@ -2392,7 +2392,7 @@ def test_pane_layout_is_kept_on_this_computer(tmp_path):
     assert clean_pane_layout({"max": "data"})["max"] == "data" and clean_pane_layout(None) == {"min": {"map": False, "util": False, "data": False}, "max": None}
     cfg = Config(tmp_path)
     cfg.save_settings({"pane_layout": got})
-    assert "pane_layout" in cfg.local_path.read_text() and "pane_layout" not in cfg.config_path.read_text()
+    assert "pane_layout" in cfg.local_path.read_text(encoding="utf-8") and "pane_layout" not in cfg.config_path.read_text(encoding="utf-8")
 
 
 def test_resight_swim_speed_check_and_default_lists(tmp_path):
@@ -2426,7 +2426,7 @@ def test_smooth_vessel_is_a_setting_of_this_computer(tmp_path):
     assert DEFAULT_SETTINGS["smooth_vessel"] is True and "smooth_vessel" not in SHARED_SETTINGS
     cfg = Config(tmp_path)
     cfg.save_settings({"smooth_vessel": False})
-    assert '"smooth_vessel": false' in cfg.local_path.read_text() and "smooth_vessel" not in cfg.config_path.read_text()
+    assert '"smooth_vessel": false' in cfg.local_path.read_text(encoding="utf-8") and "smooth_vessel" not in cfg.config_path.read_text(encoding="utf-8")
     assert Config(tmp_path).settings["smooth_vessel"] is False
 
 
@@ -2602,7 +2602,7 @@ def test_data_settings_are_locked_during_a_survey(tmp_path):
     cfg = app.rec.cfg
     _run(app.templates_save(_Req({"by": "HJ", "notes": "first", "name": "Team"})))
     cfg.save_list("weather", [{"name": "Sunny"}, {"name": "Murky"}])            # differs from the saved template now
-    other_shortcuts = (cfg.current_dir / "shortcuts.csv").read_text()
+    other_shortcuts = (cfg.current_dir / "shortcuts.csv").read_text(encoding="utf-8")
     _sim_fix(app.rec)
     app.rec.start_survey("L", meta={"platform_type": "Shipboard"})
     for list_name in ("weather", "reticles", "visibility"):
@@ -2614,11 +2614,11 @@ def test_data_settings_are_locked_during_a_survey(tmp_path):
         asyncio.run(app.settings(_Req({"updates": {"tracking_interval": 99}})))
     _run(app.settings(_Req({"updates": {"latlon_format": "DD", "tracking_interval": cfg.settings["tracking_interval"]}})))  # display: fine
     # reading the files again puts a hand-edited locked list back, but takes the shortcuts
-    (cfg.current_dir / "weather.csv").write_text("name\nHail\n")
-    (cfg.current_dir / "shortcuts.csv").write_text(other_shortcuts.replace("Mod+Shift+K", "Mod+Shift+J"))
+    (cfg.current_dir / "weather.csv").write_text("name\nHail\n", encoding="utf-8")
+    (cfg.current_dir / "shortcuts.csv").write_text(other_shortcuts.replace("Mod+Shift+K", "Mod+Shift+J"), encoding="utf-8")
     r = _run(app.reload_config(_Req()))
     assert r["kept"] == ["weather.csv"] and [x["name"] for x in cfg.lists["weather"]] == ["Sunny", "Murky", "Other"]
-    assert "Sunny" in (cfg.current_dir / "weather.csv").read_text()
+    assert "Sunny" in (cfg.current_dir / "weather.csv").read_text(encoding="utf-8")
     assert any(s["combo"] == "Mod+Shift+J" for s in cfg.shortcuts)
     # 0.57: no template can be used or saved during a survey (0.40–0.56 took its preferences)
     chk = _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))
@@ -2786,7 +2786,7 @@ def test_named_inputs_primary_secondary_and_nmea_csv(rec, tmp_path):
     assert d.inst["sog"]["source"] == "Tablet GPS" and d.inst["depth"]["source"] == "External GPS"   # filled in
     assert [o["name"] for o in d.secondaries({"External GPS"})] == ["External GPS"]
     rec.sample_instruments()
-    text = rec._inst_path().read_text()
+    text = rec._inst_path().read_text(encoding="utf-8")
     assert rec._inst_path().name.endswith("_nmea.csv") and text.startswith("DateTime,Source,Role,Key,Label,Unit,Value")
     assert ",Tablet GPS,primary,lat,Latitude,°,41.9" in text and ",External GPS,secondary,lat,Latitude,°,42.0" in text
     assert ",External GPS,secondary,depth," in text and "lat" not in rec.inst_hist
@@ -2833,7 +2833,7 @@ def test_external_inputs_and_failover_notice(rec, tmp_path):
     f = d.failover_state()
     assert d.state.lat == 42.0 and f["from"] == "Backup GPS" and f["primary"] == "Ship GPS" and f["quiet_s"] >= 29
     rec.sample_instruments()
-    assert ",Drone,other,depth," in rec._inst_path().read_text()
+    assert ",Drone,other,depth," in rec._inst_path().read_text(encoding="utf-8")
     d.primary, d.externals = None, set()
     # roles: one primary among platform inputs; externals stay external, also through a template
     c = clean_inputs([{"type": "udp", "port": 1, "role": "other"}, {"type": "udp", "port": 2, "role": "primary"},
@@ -2864,6 +2864,7 @@ def test_external_tracks_recorded_and_styled(rec):
         d.feed(w(f"GPRMC,12000{i},A,{lat:.3f},N,0{lon:.3f},W,8.0,45.0,111126,,"), "Drone 1")
         d.feed(w(f"GPRMC,12000{i},A,4100.000,N,06900.000,W,1.0,0.0,111126,,"), "Buoy")
         d.others["Drone 1"].updated += i             # a new fix each second
+        d.others["Buoy"].updated += i                # (Windows' clock can give both feeds the same time)
         rec.tick_externals(d, inputs)
         rec.tick_externals(d, inputs)                # no new fix: nothing added
     p = rec._ext_path("Drone 1")
@@ -2926,19 +2927,21 @@ def test_clock_check_and_sync_command(monkeypatch):
     monkeypatch.setenv("SPYHOP_TEST_CLOCK_OFFSET", "-37")              # a GPS 37 s behind the computer…
     d = NmeaDecoder(VesselState())
     sim = Simulator()
-    for _ in range(4):
+    # each round a new sentence; its receipt time nudged apart, as Windows' clock can give them all the same time
+    for k in range(4):
         for line in sim.sentences():
             d.feed(line, "Sim")
+        d.state.gps_time_rx += 0.001 * (k + 1)
         w.feed(d.state)
-        d.state.gps_time_rx += 0.001                                     # a new sentence each time
     st = w.status()
     assert st["known"] and abs(st["offset_s"] + 37) < 1.5 and st["ok"] is False and st["limit_s"] == 2
     monkeypatch.setenv("SPYHOP_TEST_CLOCK_OFFSET", "0.4")
     w.reset()
-    for _ in range(4):
+    for k in range(4):
         for line in sim.sentences():
             d.feed(line, "Sim")
-        w.feed(d.state); d.state.gps_time_rx += 0.001
+        d.state.gps_time_rx += 0.001 * (k + 1)
+        w.feed(d.state)
     assert w.status()["ok"] is True
     mac = clock.sync_command(-37, "darwin")
     assert mac[0] == "osascript" and "with administrator privileges" in mac[-1] and "+ (-37)" in mac[-1]
@@ -3042,7 +3045,7 @@ def test_rules_parse_evaluate_and_template(rec, tmp_path):
         {"table": "sightings", "on": "no", "if": "", "then": "Notes is not blank"},
     ])
     assert len(cfg.rules) == 4 and not cfg.rules[3]["on"] and cfg.rules[2]["resights"] == "skip"
-    assert "Weather is Fog" in cfg.rules_path.read_text()
+    assert "Weather is Fog" in cfg.rules_path.read_text(encoding="utf-8")
     with pytest.raises(ValueError):
         cfg.save_rules([{"table": "effort", "if": "Weather is Fog", "then": ""}])
     s = rec.new_row("sightings", {"Species": "Fin whale", "Count": "2", "Calves": "0", "Behaviors": "Mom/calf"})["row"]
@@ -3077,7 +3080,7 @@ def test_rules_api_and_changeable_during_survey(tmp_path):
     assert t["count"] == 1 and t["applies"] == 1 and t["total"] == 2 and t["rows"][0]["column"] == "ID", t
     # 0.56: the rules only change the Error check, so they can change during a survey (and a hand edit is kept)
     assert _run(a.save_rules(_Req({"rules": [rule, {**rule, "then": "ID is not EV"}]})))["ok"] and len(a.rec.cfg.rules) == 2
-    a.rec.cfg.rules_path.write_text("on,table,level,if,then,message,resights\n")
+    a.rec.cfg.rules_path.write_text("on,table,level,if,then,message,resights\n", encoding="utf-8")
     k = _run(a.reload_config(_Req()))
     assert "rules.csv" not in k.get("kept", []) and a.rec.cfg.rules == []
 
@@ -3204,19 +3207,19 @@ def test_tracker_feeds_parse(tmp_path):
     MapShare KML (points only, invalid fixes left out, km/h → kn), from recorded samples."""
     from datetime import datetime, timezone
     from spyhop import trackers as T
-    fixes, n = T.parse_spot((DATA / "spot_message.json").read_text())
+    fixes, n = T.parse_spot((DATA / "spot_message.json").read_text(encoding="utf-8"))
     assert n == 4 and len(fixes) == 3                                  # the hidden one is left out
     assert {f["device"] for f in fixes} == {"Buoy A", "Buoy B"}
     a = next(f for f in fixes if f["id"] == "1872001237")
     assert (a["lat"], a["lon"], a["time"], a["battery"]) == (41.85, -70.25, 1794583200.0, "GOOD")
-    one, _ = T.parse_spot((DATA / "spot_single.json").read_text())
+    one, _ = T.parse_spot((DATA / "spot_single.json").read_text(encoding="utf-8"))
     assert len(one) == 1 and one[0]["device"] == "Buoy A"
-    assert T.parse_spot((DATA / "spot_nomessages.json").read_text()) == ([], 0)
+    assert T.parse_spot((DATA / "spot_nomessages.json").read_text(encoding="utf-8")) == ([], 0)
     with pytest.raises(T.FeedError, match="no such feed"):
-        T.parse_spot((DATA / "spot_notfound.json").read_text())
+        T.parse_spot((DATA / "spot_notfound.json").read_text(encoding="utf-8"))
     with pytest.raises(T.FeedError, match="password"):
         T.parse_spot('{"response":{"errors":{"error":{"code":"E-0161","text":"Invalid password"}}}}')
-    kml = T.parse_inreach((DATA / "inreach.kml").read_text())
+    kml = T.parse_inreach((DATA / "inreach.kml").read_text(encoding="utf-8"))
     assert len(kml) == 2 and kml[0]["device"] == "Tender" and kml[0]["id"] == "901001"
     assert kml[0]["time"] == datetime(2026, 11, 13, 15, 0, tzinfo=timezone.utc).timestamp()
     assert abs(kml[0]["sog"] - 18.5 / 1.852) < 1e-6 and kml[0]["cog"] == 90.0 and kml[1]["lon"] == -70.27
@@ -3243,13 +3246,13 @@ def test_tracker_poller_records_device_fixes(rec):
     from spyhop import trackers as T
     from spyhop.config import clean_inputs, input_definition, merge_inputs
     asked = []
-    pages = {"spot": [(DATA / "spot_message.json").read_text(), (DATA / "spot_single.json").read_text()],
-             "inreach": [(DATA / "inreach.kml").read_text()]}
+    pages = {"spot": [(DATA / "spot_message.json").read_text(encoding="utf-8"), (DATA / "spot_single.json").read_text(encoding="utf-8")],
+             "inreach": [(DATA / "inreach.kml").read_text(encoding="utf-8")]}
 
     async def fake(url, password=""):
         asked.append((url, password, time.monotonic()))
         if "nope" in url:
-            return 200, (DATA / "spot_notfound.json").read_text()
+            return 200, (DATA / "spot_notfound.json").read_text(encoding="utf-8")
         if "offline" in url:
             raise aiohttp.ClientConnectionError("no route")
         kind = "spot" if "findmespot" in url else "inreach"
@@ -3291,7 +3294,7 @@ def test_tracker_poller_records_device_fixes(rec):
     # the same fixes again are skipped; a newer one is added, asking SPOT only for messages since the last
     src = inputs[0]
     asked.clear()
-    assert poller.take(src, T.parse_spot((DATA / "spot_message.json").read_text())[0]) == 0
+    assert poller.take(src, T.parse_spot((DATA / "spot_message.json").read_text(encoding="utf-8"))[0]) == 0
     asyncio.run(poller.poll(src))
     assert "startDate=2026-11-13T15:20:01-0000" in asked[0][0]
     assert len(ET.fromstring(p.read_bytes()).findall(".//g:trkpt", ns)) == 3
@@ -3299,7 +3302,7 @@ def test_tracker_poller_records_device_fixes(rec):
     assert latest["Buoy A"]["lat"] == 41.86 and latest["Tender"]["sog"] and latest["Buoy A"]["age"] > 0
     # a restart: the recorded trail says what's already there
     p2 = T.TrackerPoller(lambda *a: got.append(a), rec.ext_last_time)
-    assert p2.take(src, T.parse_spot((DATA / "spot_message.json").read_text())[0]) == 0
+    assert p2.take(src, T.parse_spot((DATA / "spot_message.json").read_text(encoding="utf-8"))[0]) == 0
     # templates: the feed, never its password; this computer keeps its own password when a template comes in
     d = input_definition(inputs[0])
     assert d["feed_id"] == "0abc" and "password" not in d and d["role"] == "other"
@@ -3466,19 +3469,31 @@ def test_python_versions_and_pinned_requirements():
     assert (python_warning() is None) == python_supported(sys.version_info)
     want = f"(3, {lo[1]}) <= v[:2] <= (3, {hi[1]}) and v.releaselevel =="
     for f in ("Start Spyhop (Mac).command", "start-spyhop.sh", "Start Spyhop (Windows).bat"):
-        text = (root / f).read_text()
+        text = (root / f).read_text(encoding="utf-8")
         assert want in text and "requirements.lock" in text and "-r requirements.txt" not in text, f
-    assert f'requires-python = ">=3.{lo[1]},<3.{hi[1] + 1}"' in (root / "pyproject.toml").read_text()
-    wf = (root / ".github" / "workflows" / "tests.yml").read_text()
+    assert f'requires-python = ">=3.{lo[1]},<3.{hi[1] + 1}"' in (root / "pyproject.toml").read_text(encoding="utf-8")
+    wf = (root / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
     for m in range(lo[1], hi[1] + 1):
         assert f'"3.{m}"' in wf, m
     # every direct requirement has an upper limit, and the lock pins it with checksums
-    direct = [ln.split("#")[0].strip() for ln in (root / "requirements.txt").read_text().splitlines()]
+    direct = [ln.split("#")[0].strip() for ln in (root / "requirements.txt").read_text(encoding="utf-8").splitlines()]
     direct = [d for d in direct if d and not d.startswith("tzdata")]
     assert direct and all("<" in d for d in direct), direct
-    lock = (root / "requirements.lock").read_text()
+    lock = (root / "requirements.lock").read_text(encoding="utf-8")
     for d in direct:
         name = re.split(r"[<>=;\s]", d)[0]
         m = re.search(rf"^{re.escape(name)}==([\w.]+)", lock, re.M | re.I)
         assert m, name
     assert lock.count("--hash=sha256:") > 20
+
+
+def test_short_time_zone_names_on_every_system():
+    """0.61.1: Windows gives zones long names ("Eastern Standard Time"); Spyhop shows the short form everywhere."""
+    from datetime import datetime, timedelta, timezone
+    from spyhop.clock import zone_abbr
+    z = lambda name, m: datetime(2026, 1, 1, tzinfo=timezone(timedelta(minutes=m), name))      # noqa: E731
+    assert zone_abbr(z("Coordinated Universal Time", 0)) == "UTC"
+    assert zone_abbr(z("Eastern Standard Time", -300)) == "EST" and zone_abbr(z("Eastern Daylight Time", -240)) == "EDT"
+    assert zone_abbr(z("W. Europe Standard Time", 60)) == "UTC+01:00"
+    assert zone_abbr(z("India Standard Time", 330)) == "UTC+05:30" and zone_abbr(z("Newfoundland Standard Time", -210)) == "NST"
+    assert zone_abbr(z("EST", -300)) == "EST" and zone_abbr(z("CEST", 120)) == "CEST"

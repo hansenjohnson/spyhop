@@ -20,6 +20,7 @@ from xml.sax.saxutils import escape as xml_escape, unescape as xml_unescape
 from pathlib import Path
 
 from . import __version__, geo, resights, reticle, schema, tzguess
+from .clock import zone_abbr
 from .config import Config
 from .nmea import NmeaDecoder, RawLog, VesselState
 import uuid
@@ -152,7 +153,7 @@ class Recorder:
         v = self.cfg.settings.get("timezone") or "local"
         now = self.now()
         info = {"setting": v, "zone": None, "how": "", "offset_min": int(now.utcoffset().total_seconds() // 60),
-                "abbr": now.tzname() or ""}
+                "abbr": zone_abbr(now)}
         if v == "auto":
             info["zone"] = self.clock_zone()
             info["how"] = self._zone_guess.how if getattr(self, "_zone_guess", None) and self._zone_guess.how else \

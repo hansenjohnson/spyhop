@@ -102,3 +102,35 @@ def sync(offset_s: float) -> tuple[bool, str]:
         return False, ("The clock couldn't be changed (administrator rights are needed; on a computer your IT department "
                        f"manages, ask them). {err[0]}").strip()
     return True, f"The computer's clock was moved {offset_s:+.0f} s to the GPS time."
+
+
+# 0.61.1: Windows names its time zones in full ("Eastern Standard Time", "Coordinated Universal Time") where macOS and
+# Linux give abbreviations (EST, UTC). Spyhop shows the short form everywhere.
+_WINDOWS_ZONES = {
+    "coordinated universal time": "UTC", "utc": "UTC", "greenwich mean time": "GMT", "gmt standard time": "GMT",
+    "gmt daylight time": "BST", "gmt summer time": "BST",
+    "eastern standard time": "EST", "eastern daylight time": "EDT", "eastern summer time": "EDT",
+    "central standard time": "CST", "central daylight time": "CDT", "central summer time": "CDT",
+    "mountain standard time": "MST", "mountain daylight time": "MDT", "mountain summer time": "MDT",
+    "pacific standard time": "PST", "pacific daylight time": "PDT", "pacific summer time": "PDT",
+    "alaskan standard time": "AKST", "alaskan daylight time": "AKDT", "alaskan summer time": "AKDT",
+    "hawaiian standard time": "HST", "atlantic standard time": "AST", "atlantic daylight time": "ADT",
+    "atlantic summer time": "ADT", "newfoundland standard time": "NST", "newfoundland daylight time": "NDT",
+    "newfoundland summer time": "NDT",
+}
+
+
+def zone_abbr(dt) -> str:
+    """A short name for dt's time zone: the system's abbreviation (EST, UTC, CEST…); for a long Windows name, the
+    usual abbreviation for North America, UTC and the UK, else the offset (UTC+01:00)."""
+    name = (dt.tzname() or "").strip()
+    if name and " " not in name and len(name) <= 6:
+        return name
+    known = _WINDOWS_ZONES.get(name.lower())
+    if known:
+        return known
+    off = dt.utcoffset()
+    if off is None:
+        return name
+    m = int(off.total_seconds() // 60)
+    return "UTC" if m == 0 else f"UTC{'+' if m > 0 else '-'}{abs(m) // 60:02d}:{abs(m) % 60:02d}"

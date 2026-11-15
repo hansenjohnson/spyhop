@@ -30,6 +30,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import __version__, geo, resights, schema
+from .clock import zone_abbr
 
 BUILTIN_DIR = Path(__file__).parent / "report_defs"
 TABLES = ("sightings", "events", "effort")
@@ -257,7 +258,7 @@ def run(rec, spec: dict) -> dict:
                 return str(r.get("DateTime", "") or "")
             t = t.astimezone(tz)
             return {"time": t.strftime("%Y-%m-%d %H:%M:%S"), "date": t.strftime("%Y-%m-%d"),
-                    "time_fmt": f"{t.strftime('%Y-%m-%d %H:%M')} {t.tzname() or ''}".strip(),
+                    "time_fmt": f"{t.strftime('%Y-%m-%d %H:%M')} {zone_abbr(t)}".strip(),
                     "clock": t.strftime("%H:%M:%S")}[k]
         if k == "code":
             return row_key(table, r, codes)
@@ -284,7 +285,7 @@ def run(rec, spec: dict) -> dict:
             "columns": [{"key": c["key"], "label": c["label"], "align": "right" if c["numeric"] else "left"} for c in cols],
             "rows": body, "row_ids": [r.get("RowID", "") for r in picked], "totals": totals,
             "count": len(body), "total": total, "survey": (rec.survey or {}).get("prefix"),
-            "zone": datetime.now(tz).tzname() or ""}
+            "zone": zone_abbr(datetime.now(tz))}
 
 
 def describe(spec: dict) -> str:
@@ -383,10 +384,10 @@ def to_html(rec, res: dict) -> str:
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>{e(title)} — {e(res.get('survey') or '')}</title>
 <meta name="generator" content="Spyhop {e(__version__)}"><style>{CSS}</style></head>
-<body><h1>{e(title)}</h1><p class="sub">Spyhop report · made {e(now.strftime('%Y-%m-%d %H:%M ') + (now.tzname() or ''))}</p>
+<body><h1>{e(title)}</h1><p class="sub">Spyhop report · made {e(now.strftime('%Y-%m-%d %H:%M ') + zone_abbr(now))}</p>
 <table class="meta">{''.join(f'<tr><th>{e(k)}</th><td>{cell(v)}</td></tr>' for k, v in info)}</table>
 {table}
-<footer>Made with Spyhop {e(__version__)}. Times are in the survey clock ({e(now.tzname() or '')}).</footer>
+<footer>Made with Spyhop {e(__version__)}. Times are in the survey clock ({e(zone_abbr(now))}).</footer>
 </body></html>"""
 
 

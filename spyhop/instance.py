@@ -4,8 +4,9 @@ A second Spyhop, started from the same or another program folder, on any port, w
 same surveys as the first. So Spyhop takes an exclusive lock on `spyhop.lock` in the standard Spyhop
 folder of this user (the same place whatever --data-dir or --port says) for as long as it runs. The
 operating system releases the lock when the process ends, even after a crash, so a stale file never
-blocks a start. The file also says where the running Spyhop is (pid, port), so a second start can open
-a window onto it instead.
+blocks a start. `spyhop-running.json` beside it says where the running Spyhop is (pid, port), so a second
+start can open a window onto it instead. (0.61.1: a file of its own, because a Windows lock also stops
+other programs reading the locked file.)
 """
 from __future__ import annotations
 
@@ -23,6 +24,10 @@ def lock_path() -> Path:
     return Path(os.environ.get("SPYHOP_LOCK_DIR") or default_data_dir()) / "spyhop.lock"
 
 
+def info_path() -> Path:
+    return lock_path().with_name("spyhop-running.json")
+
+
 def _try_lock(fh) -> bool:
     try:
         if sys.platform == "win32":
@@ -38,9 +43,10 @@ def _try_lock(fh) -> bool:
 
 
 def running() -> dict | None:
-    """What the lock file says about the Spyhop that holds it ({pid, port, ...}), if readable."""
+    """Where the Spyhop that holds the lock is ({pid, port, ...}), if known. Only meaningful while the lock
+    is held by another process (after a crash the file can be stale, but then the lock is free)."""
     try:
-        return json.loads(lock_path().read_text(encoding="utf-8").strip() or "{}") or None
+        return json.loads(info_path().read_text(encoding="utf-8").strip() or "{}") or None
     except (OSError, ValueError):
         return None
 
@@ -61,10 +67,9 @@ def acquire(port: int, wait_s: float = 0.0) -> bool:
     info = json.dumps({"pid": os.getpid(), "port": port, "program": str(Path(__file__).resolve().parent.parent),
                        "started": time.strftime("%Y-%m-%dT%H:%M:%S")})
     try:
-        fh.seek(0)
-        fh.truncate()
-        fh.write(info + "\n")
-        fh.flush()
+        tmp = info_path().with_suffix(".tmp")
+        tmp.write_text(info + "\n", encoding="utf-8")
+        os.replace(tmp, info_path())
     except OSError:
         pass
     _held = fh
