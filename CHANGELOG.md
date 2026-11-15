@@ -6,6 +6,11 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.61.1 — 2026-11-15
+
+- **The tests on GitHub failed** because the tests' sample satellite-tracker feeds (`tests/data/`) weren't in the repository: `.gitignore` left out every folder called `data`, meant only for a survey data folder at the top. It now only leaves out the top-level `data`, `exports`, `nmea_logs` and `logs` folders.
+- No more aiohttp warnings about the server's settings keys (they use typed keys now).
+
 ## 0.61.0 — 2026-11-15
 
 A code review. Nothing new to see; some things are safer, and code for older versions is gone.

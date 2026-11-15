@@ -16,6 +16,10 @@ from pathlib import Path
 
 from aiohttp import web, WSMsgType
 
+# typed keys for values kept on the aiohttp Application (0.61: aiohttp warns about plain string keys)
+VIEWER_KEY = web.AppKey("viewer", bool)
+PERF_KEY = web.AppKey("perf", object)
+
 from .recorder import Recorder, ValueErrorMsg
 from . import awake, __version__, diag, feeds, reports, routes, schema, templates, uninstall, updater
 from .browser import find_chrome, html_to_pdf, PdfError
@@ -56,7 +60,7 @@ async def timing(request, handler):
         raise
     finally:
         ms = (time.perf_counter() - t) * 1000
-        perf = request.app.get("perf")
+        perf = request.app.get(PERF_KEY)
         if perf is not None and request.path != "/ws":
             perf.request(request.path, ms)
         if ms > App.SLOW_REQ_MS and request.path != "/ws":
@@ -293,7 +297,7 @@ class App:
     async def ws_handler(self, request):
         ws = web.WebSocketResponse(heartbeat=20)
         await ws.prepare(request)
-        viewer = bool(request.app.get("viewer"))
+        viewer = bool(request.app.get(VIEWER_KEY))
         if viewer:
             self.sharing.add_viewer(ws, request)
         self.clients.add(ws)
@@ -309,7 +313,7 @@ class App:
 
     @staticmethod
     def is_viewer(request) -> bool:
-        return bool(request.app.get("viewer"))
+        return bool(request.app.get(VIEWER_KEY))
 
     async def ticker(self):
         n = 0
@@ -427,7 +431,7 @@ class App:
         await self.start_inputs()
         self._loop_task = asyncio.create_task(self.ticker())
         self._watch_task = asyncio.create_task(self.stall_watch())
-        app["perf"] = self.perf
+        app[PERF_KEY] = self.perf
         loop = asyncio.get_running_loop()
 
         def on_loop_error(loop, ctx):
@@ -1815,7 +1819,7 @@ class App:
         devices when sharing is on (0.53; same handlers, behind sharing.gate, no start-up or clean-up of its own)."""
         mw = [timing, self.sharing.gate(), errors, no_cache] if viewer else [timing, errors, no_cache]
         app = web.Application(middlewares=mw, client_max_size=(1024 ** 2 if viewer else 1024 ** 3))     # survey packages with raw NMEA logs can be large
-        app["viewer"] = viewer
+        app[VIEWER_KEY] = viewer
         r = app.router
         r.add_get("/", self.index)
         if viewer:
@@ -1926,7 +1930,7 @@ class App:
         r.add_post("/api/overlays/survey", self.overlay_from_survey)
         r.add_static("/static/", WEB)
         if viewer:
-            app["perf"] = self.perf
+            app[PERF_KEY] = self.perf
             return app
         app.on_startup.append(self.on_startup)
         app.on_shutdown.append(self.on_shutdown)

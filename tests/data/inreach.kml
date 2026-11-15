@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>KML Export 11/13/2026 3:30:00 PM</name>
+    <Style id="style_1"><IconStyle><color>ff0000ff</color></IconStyle></Style>
+    <Folder>
+      <name>Jane Observer</name>
+      <Placemark>
+        <name>Jane Observer</name>
+        <visibility>1</visibility>
+        <description></description>
+        <TimeStamp><when>2026-11-13T15:00:00Z</when></TimeStamp>
+        <styleUrl>#style_1</styleUrl>
+        <ExtendedData>
+          <Data name="Id"><value>901001</value></Data>
+          <Data name="Time UTC"><value>11/13/2026 3:00:00 PM</value></Data>
+          <Data name="Time"><value>11/13/2026 10:00:00 AM</value></Data>
+          <Data name="Name"><value>Jane Observer</value></Data>
+          <Data name="Map Display Name"><value>Tender</value></Data>
+          <Data name="Device Type"><value>inReach Mini 2</value></Data>
+          <Data name="IMEI"><value>300434060000001</value></Data>
+          <Data name="Incident Id"><value></value></Data>
+          <Data name="Latitude"><value>41.905</value></Data>
+          <Data name="Longitude"><value>-70.310</value></Data>
+          <Data name="Elevation"><value>2.00 m from MSL</value></Data>
+          <Data name="Velocity"><value>18.5 km/h</value></Data>
+          <Data name="Course"><value>90.00 ° True</value></Data>
+          <Data name="Valid GPS Fix"><value>True</value></Data>
+          <Data name="In Emergency"><value>False</value></Data>
+          <Data name="Text"><value></value></Data>
+          <Data name="Event"><value>Tracking message received.</value></Data>
+        </ExtendedData>
+        <Point><extrude>false</extrude><altitudeMode>absolute</altitudeMode><coordinates>-70.310,41.905,2</coordinates></Point>
+      </Placemark>
+      <Placemark>
+        <name>Jane Observer</name>
+        <TimeStamp><when>2026-11-13T15:10:00Z</when></TimeStamp>
+        <ExtendedData>
+          <Data name="Id"><value>901002</value></Data>
+          <Data name="Map Display Name"><value>Tender</value></Data>
+          <Data name="IMEI"><value>300434060000001</value></Data>
+          <Data name="Latitude"><value>41.905</value></Data>
+          <Data name="Longitude"><value>-70.270</value></Data>
+          <Data name="Velocity"><value>18.5 km/h</value></Data>
+          <Data name="Course"><value>90.00 ° True</value></Data>
+          <Data name="Valid GPS Fix"><value>True</value></Data>
+        </ExtendedData>
+        <Point><coordinates>-70.270,41.905,2</coordinates></Point>
+      </Placemark>
+      <Placemark>
+        <name>Jane Observer</name>
+        <TimeStamp><when>2026-11-13T15:12:00Z</when></TimeStamp>
+        <ExtendedData>
+          <Data name="Id"><value>901003</value></Data>
+          <Data name="Map Display Name"><value>Tender</value></Data>
+          <Data name="Valid GPS Fix"><value>False</value></Data>
+        </ExtendedData>
+        <Point><coordinates>0,0,0</coordinates></Point>
+      </Placemark>
+      <Placemark>
+        <name>Jane Observer</name>
+        <LineString><tessellate>true</tessellate><coordinates>-70.310,41.905,2 -70.270,41.905,2</coordinates></LineString>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>
