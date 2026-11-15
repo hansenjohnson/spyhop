@@ -33,6 +33,7 @@ spyhop/
   layout.py       one-time moves from older folder layouts: 0.27 → 0.28, and survey files into a folder each (0.36); remove before 1.0
   nmea.py         NMEA 0183 parser, vessel state, instrument readings, raw log
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
+  nav.py          navigation to a waypoint or along a route (0.57): the target (setting nav_active), VMG/ETA every second, arrival
   ais.py          AIS from the NMEA inputs (!AIVDM, given to it by nmea.py): 6-bit payloads, multi-part messages, targets by MMSI, /api/ais/local
   trackers.py     satellite trackers (SPOT feeds, inReach MapShare): parse the feeds, poll them in the background, hand device fixes to the "other" path
   qc.py           the error check (thresholds in LIMITS); run_rules() checks the rules
@@ -59,7 +60,8 @@ spyhop/
     js/map.js            the Leaflet map, markers, track, tools
     js/depth.js          the water depth at the cursor, read from Seascape's depth tiles
     js/planning.js       Tools → Routes: the route editor, activation, and the saved routes (/api/routes*)
-    js/online.js         online overlays: AIS (/api/ais), radar (NEXRAD tiles, /api/radar/rainviewer), map feeds (/api/feeds*)
+    js/nav.js            navigation (0.57): the navigated route drawn, the arrival circle, the box on the map (/api/nav/*)
+    js/online.js         online overlays: AIS (/api/ais; and AIS from the NMEA inputs, /api/ais/local), radar (NEXRAD tiles, /api/radar/rainviewer), map feeds (/api/feeds*)
     js/reports.js        Tools → Reports and Run Reports (runs reports on the server, /api/reports*)
     js/plot.js           instrument time-series plots
     js/summary_html.js   the self-contained Summary page (HTML export)

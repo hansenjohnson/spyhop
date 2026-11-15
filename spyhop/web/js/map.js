@@ -1196,7 +1196,8 @@ export class MapView {
     }
     const what = { sightings: 'Sightings', events: 'Events', marks: 'Waypoints' }[tab];
     wrap.append(el('div', { class: 'pop-btns' },
-      el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.map.closePopup(); this.app.selectRow(tab, id); } }, `Show in the ${what} table`)));
+      el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.map.closePopup(); this.app.selectRow(tab, id); } }, `Show in the ${what} table`),
+      tab === 'marks' && pos && !this.app.viewer ? el('a', { href: '#', class: 'nav-to-mark', onclick: (e) => { e.preventDefault(); this.map.closePopup(); this.app.navToMark(id); } }, 'Navigate to') : null));
     return wrap;
   }
 
@@ -1284,7 +1285,8 @@ export class MapView {
       ...(this.app.viewer ? [] : [                // 0.53: a viewer only looks
         item('Add sighting here', () => this.app.addRow('sightings', {}, ll)),
         item('Add event here', () => this.app.addRow('events', {}, ll)),
-        item('Add waypoint here', () => this.app.addRow('marks', {}, ll))]),
+        item('Add waypoint here', () => this.app.addRow('marks', {}, ll)),
+        item('Navigate here', () => this.app.nav.toWaypoint('Map point', ll.lat, ll.lng))]),     // 0.57
       item('Measure from here', () => this.startMeasure(ll)),
       item('Center map here', () => this.map.panTo(ll)),
       item('Copy position', () => navigator.clipboard?.writeText(fmtPos(ll.lat, ll.lng, fmt)).then(() => toast('Position copied'))));

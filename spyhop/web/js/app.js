@@ -9,6 +9,7 @@ import { MapView, SHAPES, EXTERNAL_ICONS } from './map.js';
 import { buildSummaryHtml } from './summary_html.js';
 import { openInstrumentPlot } from './plot.js';
 import { Planner } from './planning.js';
+import { Navigation } from './nav.js';
 import { ReportsTool } from './reports.js';
 import { OnlineOverlays } from './online.js';
 import { setupViewer, applyViewerPrefs, viewerRefuses, connectionBanner } from './viewer.js';
@@ -36,6 +37,7 @@ class App {
     this.reportsTool = new ReportsTool(this);
     this.resightTool = new ResightTool(this);
     this.online = new OnlineOverlays(this);
+    this.nav = new Navigation(this);                // 0.57
     this.applyDisplay();
     this.renderAll();
     this.applyLayout();
@@ -316,12 +318,24 @@ class App {
       // 0.51: only while some columns are hidden (Columns…); they're still in the data
       el('button', { id: `showcols-${tab}`, class: 'showcols-btn hidden', onclick: () => this.showHiddenColumns(tab),
         title: 'Show the columns hidden with Columns… (they are kept in the data either way)' }, 'Show hidden columns'));
+    if (tab === 'marks') {        // 0.57: navigate to the selected waypoint
+      bar.insertBefore(el('button', { id: 'btn-nav-mark', onclick: () => this.navToMark(this.grids.marks?.sel?.id),
+        title: 'Navigate to the selected waypoint: distance, bearing, VMG and ETA in a box on the map' }, 'Navigate to'), bar.children[3]);
+    }
     if (tab === 'sightings') {
       bar.insertBefore(el('button', { id: 'btn-add-resight', disabled: true, onclick: () => this.addResight(),
         title: `Add a resight of the animals of the selected sighting: a new row linked to their first sighting, with the species, numbers and FieldID filled in${sc('add-resight')}` },
         'Add resight'), bar.children[1]);
     }
     return bar;
+  }
+
+  // 0.57: navigate to a waypoint (a row of the Waypoints table)
+  navToMark(id) {
+    const r = id && this.S.tables.marks.rows.find((x) => x.RowID === id);
+    const lat = r && parseFloat(r.Lat), lon = r && parseFloat(r.Lon);
+    if (!r || !Number.isFinite(lat) || !Number.isFinite(lon)) { toast('Select a waypoint with a position first.', 'warn'); return; }
+    this.nav.toWaypoint(r.Name || 'Waypoint', lat, lon);
   }
 
   // 0.46–0.47: Columns…: the table's columns as chips in order (left to right, wrapping). Click a chip to
@@ -806,6 +820,7 @@ class App {
         if (m.nmea) { this.S.nmea = { ...this.S.nmea, ...m.nmea }; this.updateNmeaStatus(); this.updateRawLog(); }
         if (m.inst) { this.S.inst = m.inst; if (this.shown('nmea')) this.updateInstruments(); }
         this.planner.onVessel();
+        this.nav?.update(m.nav, m.nav_events);
         if (m.prefetch) this.updatePrefetch(m.prefetch);
         break;
       case 'tab':
@@ -831,7 +846,8 @@ class App {
         // 0.47: inputs changed (here, in another window or over the API): bring the map's "other" inputs up to date
         if (JSON.stringify(prev.nmea_sources) !== JSON.stringify(m.settings.nmea_sources)) this.refreshExternals();
         this.refreshFormats();
-        this.online?.syncAisLocal();         // 0.56: the AIS (NMEA) layer follows ais_nmea
+        this.online?.syncAisLocal();
+        this.nav?.update(this.nav.last);   // 0.57: the target or navigation settings may have changed         // 0.56: the AIS (NMEA) layer follows ais_nmea
         for (const g of Object.values(this.grids)) g.refreshColumns?.();
         this.updateStatus();
         if (this.shown('survey') && !document.activeElement?.closest('#pane-survey input[type=text], #pane-survey textarea')) this.renderSurvey();
@@ -1352,7 +1368,9 @@ class App {
       el('p', {}, el('b', {}, 'This survey was recorded with a different template. '),
         `Its data part (the lists and data settings) differs from the current template in: ${t.differs.join(', ')}. The data aren’t changed either way, but the drop-downs and the Error check use the current template, so values that aren’t in its lists are flagged.`),
       el('div', { class: 'btnrow' },
-        el('button', { id: 'btn-use-survey-template', onclick: () => this.useSurveyTemplate(sv) }, 'Compare and use the survey’s template…')));
+        el('button', { id: 'btn-use-survey-template', disabled: !!sv.active, title: sv.active ? 'Templates can’t be changed during a survey: end it first' : '',
+          onclick: () => this.useSurveyTemplate(sv) }, 'Compare and use the survey’s template…'),
+        sv.active ? el('span', { class: 'hint' }, ' (after the survey ends)') : null));
   }
 
   async useSurveyTemplate(sv) {
@@ -2276,9 +2294,9 @@ class App {
     }
     kids.push(el('div', { class: 'btnrow' },
       btn('Save as a new template…', { id: 'tpl-save-new', class: 'primary' }, () => this.saveTemplate(null)),
-      btn('Open the templates folder', {}, () => this.open('templates')),
-      btn('Open the current template', { title: 'templates/current: the lists, shortcuts and spyhop-config.json in use' }, () => this.open('current')),
-      btn('Refresh', {}, () => this.loadTemplates())));
+      btn('Open the templates folder', { class: 'tpl-free' }, () => this.open('templates')),
+      btn('Open the current template', { class: 'tpl-free', title: 'templates/current: the lists, shortcuts and spyhop-config.json in use' }, () => this.open('current')),
+      btn('Refresh', { class: 'tpl-free' }, () => this.loadTemplates())));
 
     // ---- what a template did / would change (from the list, the web or a backup)
     if (tp.done) {
@@ -2318,10 +2336,19 @@ class App {
         el('td', {}, btn('Restore…', {}, () => this.checkTemplate({ backup: b.name }))))))) : null,
       el('div', { class: 'btnrow' },
         btn('Save a backup now', { id: 'btn-tpl-backup' }, () => this.backupTemplate()),
-        btn('Open the backups folder', {}, () => this.open('backups'))),
+        btn('Open the backups folder', { class: 'tpl-free' }, () => this.open('backups'))),
       el('details', { class: 'hint' }, el('summary', {}, 'How to share a template with the team'),
         el('p', {}, 'Save the current template (or Update the team’s saved template with it), giving your name and what you changed: that’s added to the template’s record of changes. Then upload the file in place of the old one, keeping the same link (in Google Drive: Manage versions → Upload new version). Others press Check with that link.'),
         el('p', {}, 'Templates are ordinary zip files named .spyhop-template.zip, so they open in any zip tool: the lists and shortcuts are CSV files, and everything else is in spyhop-config.json. SharePoint and OneDrive links usually need a sign-in, so they don’t work. See docs/TEMPLATES.md.')));
+    // 0.57: during a survey the templates are locked: only looking (Download, Open, Refresh) is left
+    if (S.survey?.active) {
+      kids.unshift(el('p', { class: 'warnbox', id: 'tpl-locked' }, el('b', {}, 'A survey is under way, so templates can’t be used, saved or updated. '),
+        'The survey keeps the template it started with; end it (in Survey) to change templates. The lists’ colors, shortcuts, rules and other preferences can still be changed in their own tabs.'));
+      const s = sec('Templates', ...kids);
+      s.classList.add('tpl-locked');
+      for (const c of s.querySelectorAll('button, input, select, textarea')) if (!c.classList.contains('tpl-free')) c.disabled = true;
+      return s;
+    }
     return sec('Templates', ...kids);
   }
 
@@ -2646,6 +2673,18 @@ class App {
           el('label', { class: 'row' }, 'Clock', sel('timezone', this.clockOptions()), this.clockHint())),
         el('p', { class: 'hint help' }, 'The map distance unit is used for the measuring tool, popups, routes and the Summary’s distances; the Sightings default is the Unit of new sightings. A clock bearing (Ref C) is picked from 1 to 12 o’clock, each hour 30° from the bow (3 = starboard beam). Each sighting row stores its own bearing reference and distance unit, so changing these defaults never changes old rows. The clock setting changes how all times are shown; the files always store the UTC offset with each time.')),
       this.altitudeSection(sec, sel),
+      // 0.57: navigation to a waypoint or along a route (nav.py, nav.js)
+      el('section', { class: 'settings-sec', id: 'nav-settings' }, el('h3', {}, 'Navigation'),
+        el('div', { class: 'grid2' },
+          el('label', { class: 'row' }, 'Arrival distance (nm)', Object.assign(num('nav_arrival_nm', 0.001, 10, 'any'), { id: 'nav-arrival' })),
+          el('label', { class: 'row' }, 'Average VMG and speed over (s)', Object.assign(num('nav_average_s', 5, 1800), { id: 'nav-average' })),
+          el('label', { class: 'row' }, 'ETAs from', Object.assign(sel('nav_eta_mode', [['measured', 'The measured VMG and speed'], ['fixed', 'A fixed speed']]), { id: 'nav-eta-mode' })),
+          el('label', { class: 'row' }, 'Fixed speed (kn)', Object.assign(num('nav_eta_speed_kn', 0.1, 100, 'any'), { id: 'nav-speed', title: 'Used when ETAs come from a fixed speed' }))),
+        el('div', { class: 'grid2 checks' },
+          chk('nav_pass_abeam', 'A route’s waypoint is also reached once the vessel passes abeam of it'),
+          chk('nav_auto_advance', 'Go on to the next waypoint when one is reached'),
+          chk('nav_show_box', 'Show the navigation box on the map')),
+        el('p', { class: 'hint help' }, 'Navigate to a waypoint (its popup, the Waypoints tab’s Navigate to, or right-click the map: Navigate here) or along a route (Tools → Routes: Navigate, or a route waypoint’s Navigate from here). A box on the map shows the distance and bearing to the next waypoint, the VMG (how fast the distance to it is shrinking), the time to go and ETA, and for a route the distance and ETA at its end. It is for planning a transit, not for steering: there is no cross-track error. VMG and the average speed are worked out from the vessel’s positions over the time set here; the rest of a route is timed at the average speed over ground. With a fixed speed, every leg is timed at that speed instead (useful before leaving, or when stopped). A waypoint is reached within the arrival distance, or, on a route, once the vessel is past the line square to the leg through it, so a waypoint passed wide still counts.')),
       sec('Text size',
         el('div', { class: 'grid2' },
           dnum('grid_font_size', 'Table font size', 9, 28), dnum('ui_font_size', 'Interface font size', 9, 24),

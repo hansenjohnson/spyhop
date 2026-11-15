@@ -505,7 +505,27 @@ The last one is the rule Spyhop starts with: there can't be more calves than ani
 - **Tables:** **Legs** (from/to, course, distance, time, running totals and the ETA if you start now), **Totals** and **Waypoints**. Times assume the survey speed and no time for turns.
 - **Appearance:** color, line style, line width and waypoint size, saved with the route.
 - **Active route waypoints:** click one for its position, its distance and bearing from the vessel, and its **ETA** following the route from where the vessel is now (or *passed*), kept up to date as the vessel moves.
+- **Navigate along this route** (and **Navigate** in Saved Routes, or **Navigate from here** in a route waypoint's popup): see [Navigating to a waypoint or along a route](#navigating-to-a-waypoint-or-along-a-route).
 - **Save route** keeps it in the routes folder under its name; **Save as new…** saves a copy under another name. **Export GPX…** downloads it for a chart plotter or other navigation software. A GPX saved by Spyhop holds the whole design, so it opens again exactly.
+
+### Navigating to a waypoint or along a route
+
+Spyhop can navigate to a waypoint or along a route to tell you **how long a transit will take**. It isn't for steering: there's no cross-track error.
+
+- **Start:** a waypoint's popup → **Navigate to**; the Waypoints tab → select a waypoint → **Navigate to**; right-click the map → **Navigate here**; Tools → Routes → **Navigate along this route**, **Navigate** in Saved Routes, or **Navigate from here** in a route waypoint's popup. A route starts at the waypoint ahead of the vessel (the end of the leg it's nearest to). Starting something new while navigating asks first.
+- **On the map:** the route is highlighted, the leg ahead in yellow, the legs already done faint and dashed. The next waypoint has a dashed arrival circle, and a dotted line joins it to the vessel.
+- **The navigation box** (top right of the map): the next waypoint, its **distance** and **bearing** (true, and magnetic), **VMG** (how fast the distance to it is shrinking) and the average speed over ground, the **time to go** and **ETA** there, and for a route the distance and time **to the end** and the **ETA at the end**. **Next ▸** and **◂ Previous** move along the route; ✕ stops; ▾ folds the box. View-only devices see the box too.
+- **Reaching a waypoint:** within the arrival distance, or, on a route, once the vessel is past the line square to the leg through the waypoint (so a waypoint passed wide still counts). Spyhop says so and goes on to the next one; at the last waypoint, navigation stops.
+- Navigation carries on after Spyhop restarts. It doesn't change any survey data.
+
+**Settings → General → Navigation:**
+
+- **Arrival distance (nm):** 0.1 nm unless changed.
+- **Average VMG and speed over (s):** 60 s unless changed. Longer gives steadier numbers that are slower to follow a change of speed or course.
+- **ETAs from:** the measured VMG and speed (the next waypoint at the VMG, the rest of the route at the average speed over ground), or **a fixed speed** for every leg (useful before leaving, or while stopped). With no headway (VMG under 0.2 kn), times show —.
+- **A route's waypoint is also reached once the vessel passes abeam of it**, **Go on to the next waypoint when one is reached** (otherwise press Next) and **Show the navigation box on the map**.
+
+These travel with the template.
 
 ## Overlays and maps
 
@@ -601,11 +621,13 @@ In **Settings → Shortcuts**, click a shortcut's keys and press the new ones, c
 
 ### What can't change during a survey
 
-From Start until End, nothing in the template's data part can change: the drop-down lists (except their colors), the reticles, the saved reports, the track point interval and the magnetic variation. Their controls are greyed out, editing their files by hand is undone when they're read again, and **using a template during a survey takes only its preferences** (and list colors): its data part waits until the survey ends. So the copy of the template kept with each survey is exactly what its data were recorded with.
+From Start until End, nothing in the template's data part can change: the drop-down lists (except their colors), the reticles, the saved reports, the track point interval and the magnetic variation. Their controls are greyed out, and editing their files by hand is undone when they're read again. So the copy of the template kept with each survey is exactly what its data were recorded with.
+
+**Settings → Templates is greyed out during a survey:** no template can be used, saved, updated, got from the web or restored from a backup until the survey ends. You can still download a saved template and open the templates folders. The preferences (shortcuts, rules, map display, the lists' colors and so on) can still be changed in their own tabs.
 
 ### A survey recorded with another template
 
-Each survey keeps a copy of the template it was started with (`<survey>_template.zip`). The Survey tab shows each survey's template, and says when its copy differs from the current template (for example, after the lists were edited, or when a survey from another team is opened). The data aren't changed either way, but the drop-downs, colors and the Error check follow the current template. **Compare and use the survey's template…** opens it in Settings → Templates, where **Use it** makes it the current template (with a backup first).
+Each survey keeps a copy of the template it was started with (`<survey>_template.zip`). The Survey tab shows each survey's template, and says when its copy differs from the current template (for example, after the lists were edited, or when a survey from another team is opened). The data aren't changed either way, but the drop-downs, colors and the Error check follow the current template. **Compare and use the survey's template…** (once the survey has ended) opens it in Settings → Templates, where **Use it** makes it the current template (with a backup first).
 
 ## Your data
 

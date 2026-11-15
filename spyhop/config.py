@@ -333,6 +333,14 @@ DEFAULT_SETTINGS = {
     "segment_column": "show",       # Effort's Seg (effort segment) column: show | hide
     "tracker_stale_min": 30,        # 0.55: a satellite tracker's marker is greyed out when its last fix is older (min)
     "qc_auto_minutes": 0,           # 0.52: run the Error check every N minutes (1–30) during a survey; 0: off
+    # 0.57: navigation to a waypoint or along a route (nav.py; Settings → General → Navigation)
+    "nav_arrival_nm": 0.1,          # a waypoint is reached within this distance (nm)
+    "nav_pass_abeam": True,         # … or (route legs) once the vessel is past the line square to the leg through it
+    "nav_auto_advance": True,       # then go on to the next waypoint (else wait for Next)
+    "nav_average_s": 60,            # VMG and the average speed over this many seconds
+    "nav_eta_mode": "measured",     # ETAs from the measured VMG / average speed, or "fixed": at nav_eta_speed_kn
+    "nav_eta_speed_kn": 10,
+    "nav_show_box": True,           # the navigation box on the map
     "column_layout": {},            # this computer's column order and widths: {tab: {order: [keys], widths: {key: px}}}
     # --- also in spyhop-config.json, under their own keys (see CONFIG_KEYS)
     "online_feeds": [],             # map feeds (Tools → Overlays → Online overlays; feeds.py) → map_feeds
@@ -352,6 +360,7 @@ DEFAULT_SETTINGS = {
     "check_updates_on_start": True,   # look on GitHub for a newer Spyhop when it starts (0.45: on; quick, silent offline; always asks before installing)
     "pane_layout": {},              # this computer's panes: {fx, fy, min: {map, util, data}, max} (app.js)
     "follow_vessel": True,
+    "nav_active": None,             # 0.57: what Spyhop is navigating to: {kind, name, points, index, started, arrived} (nav.py)
     "ais_nmea": True,               # 0.56: decode AIS (!AIVDM) from the NMEA inputs and offer the "AIS targets (NMEA)" map layer
     "smooth_vessel": True,          # glide the vessel icon between fixes on the map (drawing only; map.js)
     "tile_cache_enabled": True,
@@ -385,6 +394,13 @@ SHARED_SETTINGS = {
     "segment_column": "Effort segment column",
     "qc_auto_minutes": "Error check automatically (min)",
     "tracker_stale_min": "Trackers greyed out after (min)",
+    "nav_arrival_nm": "Navigation: arrival distance (nm)",
+    "nav_pass_abeam": "Navigation: reached when passed abeam",
+    "nav_auto_advance": "Navigation: go on to the next waypoint",
+    "nav_average_s": "Navigation: average speeds over (s)",
+    "nav_eta_mode": "Navigation: ETAs from",
+    "nav_eta_speed_kn": "Navigation: fixed speed (kn)",
+    "nav_show_box": "Navigation: box on the map",
 }
 # The GPS / NMEA inputs a template carries (0.41: serial too, named for the device, e.g. "External GPS").
 # Each has a role (0.42): the platform's primary (its position, course, speed and heading), a secondary
@@ -957,6 +973,22 @@ class Config:
             except (TypeError, ValueError):
                 raise ValueError("Trackers greyed out after: a number of minutes.")
             updates = {**updates, "tracker_stale_min": max(1, min(7 * 24 * 60, n))}
+        for k, (lo, hi, what) in {"nav_arrival_nm": (0.001, 10, "The arrival distance is 0.001–10 nm."),
+                                  "nav_average_s": (5, 1800, "Average speeds over 5–1800 s."),
+                                  "nav_eta_speed_kn": (0.1, 100, "The fixed speed is 0.1–100 kn.")}.items():
+            if updates and k in updates:
+                try:
+                    f = float(updates[k])
+                except (TypeError, ValueError):
+                    raise ValueError(what) from None
+                if not lo <= f <= hi:
+                    raise ValueError(what)
+                updates = {**updates, k: int(f) if k == "nav_average_s" else f}
+        if updates and "nav_eta_mode" in updates and updates["nav_eta_mode"] not in ("measured", "fixed"):
+            raise ValueError("ETAs come from the measured speed or a fixed speed.")
+        for k in ("nav_pass_abeam", "nav_auto_advance", "nav_show_box"):
+            if updates and k in updates and not isinstance(updates[k], bool):
+                raise ValueError("That navigation setting is on or off.")
         if updates and "qc_auto_minutes" in updates:
             try:
                 n = int(float(updates["qc_auto_minutes"] or 0))

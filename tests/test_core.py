@@ -2716,19 +2716,16 @@ def test_data_settings_are_locked_during_a_survey(tmp_path):
     assert r["kept"] == ["weather.csv"] and [x["name"] for x in cfg.lists["weather"]] == ["Sunny", "Murky", "Other"]
     assert "Sunny" in (cfg.current_dir / "weather.csv").read_text()
     assert any(s["combo"] == "Mod+Shift+J" for s in cfg.shortcuts)
-    # 0.40: a template used during a survey changes only the preferences: the locked lists stay
+    # 0.57: no template can be used or saved during a survey (0.40–0.56 took its preferences)
     chk = _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))
-    r = _run(app.templates_use(_Req({"token": chk["token"]})))
-    assert r["data_kept"] == ["weather.csv"] and [x["name"] for x in cfg.lists["weather"]] == ["Sunny", "Murky", "Other"]
-    assert not any(s["combo"] == "Mod+Shift+J" for s in cfg.shortcuts)                 # the template's shortcuts
+    with pytest.raises(ValueErrorMsg, match="templates can't be used, saved or updated"):
+        asyncio.run(app.templates_use(_Req({"token": chk["token"]})))
+    with pytest.raises(ValueErrorMsg, match="templates can't be used, saved or updated"):
+        asyncio.run(app.templates_save(_Req({"by": "H", "notes": "x", "name": "During"})))
+    assert [x["name"] for x in cfg.lists["weather"]] == ["Sunny", "Murky", "Other"]
     app.rec.end_survey()
     _run(app.templates_use(_Req({"token": _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))["token"]})))
     assert [x["name"] for x in cfg.lists["weather"]][0] == "Clear"
-    app.rec.start_survey("M", meta={"platform_type": "Shipboard"})
-    cfg.save_shortcuts([{"combo": "Alt+9", "action": "undo", "prefill": ""}])           # an interface part
-    chk = _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))
-    _run(app.templates_use(_Req({"token": chk["token"]})))
-    assert not any(s["combo"] == "Alt+9" for s in cfg.shortcuts) and any(s["combo"] == "Mod+Shift+K" for s in cfg.shortcuts)
 
 
 def test_calves_na_reports_without_resights_and_undo_keys(tmp_path):
@@ -2827,10 +2824,9 @@ def test_template_parts_colors_and_other(tmp_path):
     with pytest.raises(ValueErrorMsg, match="only the colors"):
         asyncio.run(app.save_list(_Req({"list": "species", "rows": rows})))
     assert rec.template_status()["differs"] == []                         # colors don't count
-    # using the template now takes the preferences only
-    r = _run(app.templates_use(_Req({"token": _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))["token"]})))
-    assert r["data_kept"] == ["weather.csv"] and [x["name"] for x in cfg.lists["weather"]] == ["Sunny", "Fog", "Other"]
-    assert not any(s["combo"] == "Alt+9" for s in cfg.shortcuts) and cfg.settings["distance_unit"] != "km"
+    # templates can't be used during a survey (0.57)
+    with pytest.raises(ValueErrorMsg, match="survey is under way"):
+        asyncio.run(app.templates_use(_Req({"token": _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))["token"]})))
     # Other is a placeholder the Error check lists
     rec.new_row("effort", {"Effort": "ON", "Weather": "Other", "Port": "Other", "Starboard": "Other"})
     rec.new_row("sightings", {"Species": "Other", "Count": "1", "Bearing": "10", "BrgRef": "T", "Distance": "3", "DistUnit": "reticles-Other"})
@@ -2859,8 +2855,9 @@ def test_reports_are_data_and_wait_for_the_end(tmp_path):
     plan = templates.compare(cfg, t)
     assert all(r["part"] == "data" for r in plan if r["file"].startswith("Saved report: "))
     assert "Saved report: Mine" in templates.data_differs(cfg, t, plan)
-    r = _run(app.templates_use(_Req({"token": _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))["token"]})))
-    assert "mine.json" in cfg.reports and "Saved report: Mine" in r["data_kept"]          # kept until the end
+    with pytest.raises(ValueErrorMsg, match="survey is under way"):                     # 0.57: not during a survey
+        asyncio.run(app.templates_use(_Req({"token": _run(app.templates_check(_Req({"template": "Team.spyhop-template.zip"})))["token"]})))
+    assert "mine.json" in cfg.reports
     snap = cfg.locked_snapshot()
     cfg.save_reports({})                                                            # a hand edit
     assert "saved reports" in cfg.restore_locked(snap) and "mine.json" in cfg.reports
@@ -3105,9 +3102,9 @@ def test_shortcut_focus_hidden_columns_and_template_units(tmp_path):
     assert lay["sightings"] == {"order": [], "widths": {}, "hidden": ["Images", "FieldID"]} and "hidden" not in lay["effort"]
     every = [c["key"] for c in schema.TABS["events"]["columns"] if not c.get("hidden")]
     assert len(clean_column_layout({"events": {"hidden": every}})["events"]["hidden"]) == len(every) - 1
-    # the template's distance unit takes effect for new rows, whether or not a survey is under way
+    # the template's distance unit takes effect for new rows (templates can only be used between surveys since 0.57)
     b = App(tmp_path / "b")
-    for during in (False, True):
+    for during in (False,):
         cfg.save_settings({"distance_unit": "km" if not during else "reticles-incl"})
         r = _run(a.templates_save(_Req({"by": "H", "notes": "x", "name": f"u{int(during)}"})))
         b.rec.cfg.saved_dir.mkdir(parents=True, exist_ok=True)
@@ -3467,3 +3464,68 @@ def test_ais_from_nmea_inputs(tmp_path):
     assert a.rec.decoder.ais is None and not _run(a.ais_local(_Req()))["on"]
     with pytest.raises(ValueErrorMsg):
         _run(a.settings(_Req({"updates": {"ais_nmea": "yes"}})))
+
+
+def test_navigation_vmg_eta_and_arrival(tmp_path):
+    """0.57: navigating to a waypoint / along a route: VMG from the positions, time to go and ETAs (measured or
+    at a fixed speed), arrival within the distance or passing abeam, going on to the next waypoint, the end."""
+    from spyhop import geo, nav
+    from spyhop.server import App
+    a = App(tmp_path / "a")
+    n = a.nav
+    lat0, lon0 = 42.0, -70.0
+    north = lambda nm: geo.destination(lat0, lon0, 0, nm * 1852)       # noqa: E731
+    p1, p2, p3 = north(1), north(2), geo.destination(*north(2), 90, 1852)
+    route = {"kind": "route", "name": "Leg test", "index": "ahead",
+             "points": [{"name": "A", "lat": lat0, "lon": lon0}, {"name": "B", "lat": p1[0], "lon": p1[1]},
+                        {"name": "C", "lat": p2[0], "lon": p2[1]}, {"name": "D", "lat": p3[0], "lon": p3[1]}]}
+    for bad in ({"kind": "x"}, {"kind": "route", "points": [{"lat": 1, "lon": 1}]}, {"kind": "waypoint", "points": [{"lat": 99, "lon": 0}]}):
+        with pytest.raises(ValueError):
+            nav.clean_target(bad)
+    # the vessel 0.3 nm along the first leg: the waypoint ahead is B
+    v0 = north(0.3)
+    assert nav.start_index(route["points"], *v0) == 1
+    t = n.start(route, *v0)
+    assert t["index"] == 1 and a.rec.cfg.settings["nav_active"]["name"] == "Leg test"
+    # steaming north at 10 kn, one fix a second
+    t0 = 1_800_000_000.0
+    out = None
+    for s in range(31):
+        la, lo = geo.destination(*v0, 0, 10 * 1852 / 3600 * s)
+        out = n.tick({"lat": la, "lon": lo, "sog": 10.0, "cog": 0.0, "mag_var": -14.0}, now=t0 + s)
+    assert out["target"] == "B" and out["vmg_kn"] == pytest.approx(10, abs=0.05) and out["sog_kn"] == pytest.approx(10, abs=0.05)
+    left = 0.7 - 10 * 30 / 3600
+    assert out["dist_m"] == pytest.approx(left * 1852, abs=2) and out["brg_t"] == pytest.approx(0, abs=0.1) and out["brg_m"] == pytest.approx(14, abs=0.1)
+    assert out["ttg_s"] == pytest.approx(left / 10 * 3600, abs=3)
+    assert out["remaining_m"] == pytest.approx((left + 2) * 1852, abs=5) and out["ttg_end_s"] == pytest.approx((left + 2) / 10 * 3600, abs=10)
+    # a fixed speed times every leg at it
+    a.rec.cfg.save_settings({"nav_eta_mode": "fixed", "nav_eta_speed_kn": 5})
+    out = n.tick({"lat": la, "lon": lo, "sog": 10.0, "cog": 0.0}, now=t0 + 31)
+    assert out["fixed_speed"] and out["ttg_end_s"] == pytest.approx((left - 10 / 3600 + 2) / 5 * 3600, abs=20)
+    a.rec.cfg.save_settings({"nav_eta_mode": "measured"})
+    # within the arrival distance of B: on to C
+    near = geo.destination(p1[0], p1[1], 180, 100)
+    out = n.tick({"lat": near[0], "lon": near[1], "sog": 10, "cog": 0}, now=t0 + 200)
+    assert out["target"] == "C" and n.take_events() == [{"arrived": "B", "last": False, "kind": "route"}]
+    # passing C abeam 0.5 nm off (beyond the arrival distance) still counts
+    wide = geo.destination(*geo.destination(p2[0], p2[1], 0, 50), 270, 0.5 * 1852)
+    out = n.tick({"lat": wide[0], "lon": wide[1], "sog": 10, "cog": 0}, now=t0 + 400)
+    assert out["target"] == "D" and n.take_events()[0]["arrived"] == "C"
+    a.rec.cfg.save_settings({"nav_pass_abeam": False})
+    # without going on by itself, Next/Previous step through; the last waypoint ends navigation
+    a.rec.cfg.save_settings({"nav_auto_advance": False})
+    assert n.step(-1)["index"] == 2 and n.step(1)["index"] == 3
+    end = geo.destination(p3[0], p3[1], 0, 50)
+    out = n.tick({"lat": end[0], "lon": end[1], "sog": 10, "cog": 90}, now=t0 + 900)
+    assert out["finished"] and n.target is None and n.take_events()[0] == {"arrived": "D", "last": True, "kind": "route"}
+    # one waypoint, through the API; no VMG while stopped → no ETA
+    r = _run(a.nav_start(_Req({"kind": "waypoint", "name": "Buoy", "points": [{"name": "Buoy", "lat": p2[0], "lon": p2[1]}]})))
+    assert r["target"]["kind"] == "waypoint"
+    stopped = n.tick({"lat": lat0, "lon": lon0, "sog": 0.0, "cog": 0.0}, now=t0 + 2000)
+    assert stopped["ttg_s"] is None and stopped["eta"] is None
+    with pytest.raises(ValueErrorMsg):
+        _run(a.settings(_Req({"updates": {"nav_arrival_nm": 50}})))
+    _run(a.settings(_Req({"updates": {"nav_active": None}})))          # not through the settings
+    assert n.target is not None
+    _run(a.nav_stop(_Req({})))
+    assert n.target is None and n.tick({"lat": lat0, "lon": lon0}) is None

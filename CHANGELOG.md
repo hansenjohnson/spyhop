@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.57.0 — 2026-11-15
+
+- **Navigate to a waypoint or along a route,** to see how long a transit will take (not for steering: no cross-track error). Start from a waypoint's popup or the Waypoints tab (**Navigate to**), the map's right-click menu (**Navigate here**), or Tools → Routes (**Navigate along this route**, **Navigate** in Saved Routes, **Navigate from here** in a route waypoint's popup). A route starts at the waypoint ahead of the vessel.
+- The route being navigated is highlighted on the map (the leg ahead in yellow, legs done faint), with the next waypoint's arrival circle and a line to it from the vessel.
+- A small **navigation box** on the map shows the distance and bearing to the next waypoint, the VMG and average speed, the time to go and ETA, and for a route the distance, time and ETA to its end, with Next / Previous / stop. VMG is how fast the distance to the waypoint is shrinking over the last minute, worked out from the positions, so it doesn't jump with each fix.
+- A waypoint is reached within the arrival distance, or once the vessel passes abeam of it on a route; Spyhop then goes on to the next one, and stops at the last. Navigation carries on after a restart, and view-only devices see it too.
+- **Settings → General → Navigation:** arrival distance (0.1 nm), how long to average VMG and speed over (60 s), ETAs from the measured speed or a fixed speed, passing abeam, going on by itself, and showing the box. They travel with the template.
+- **Settings → Templates is greyed out during a survey:** templates can't be used, saved, updated, got from the web or restored until it ends (before, using one during a survey took its preferences). Downloading a template and opening the folders still work.
+
 ## 0.56.0 — 2026-11-14
 
 - **AIS from the NMEA inputs:** Spyhop now reads AIS (`!AIVDM`) from an AIS receiver or transponder on any input in use, usually the same connection as the GPS, with no internet needed. The vessels appear as the new map layer **AIS targets (NMEA)**, drawn like the online AIS overlay (colored by type, pointing the way they're heading), with a popup: name, MMSI, call sign, type, size, destination, speed, course, heading, status, last heard, which input, and distance and bearing from your vessel. Position reports, static data and aids to navigation are read (message types 1–5, 9, 18, 19, 21 and 24), two-part messages included; your own transponder (`!AIVDO`) is ignored. Targets are dropped 20 minutes after their last report.

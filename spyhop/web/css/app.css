@@ -672,6 +672,8 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
 .toolbar .columns-btn { margin-left: auto; }
 /* 0.47: Settings → General → Data collection while a survey is active */
 #data-collection.data-locked .grid2 { opacity: 0.5; pointer-events: none; }
+#templates.tpl-locked > :not(#tpl-locked):not(h3) { opacity: 0.55; }
+#templates.tpl-locked a.button { pointer-events: auto; }
 #data-collection.data-locked input:disabled { background: var(--panel2, #eee); }
 /* 0.47: the survey's Start / End labels on the map */
 .leaflet-tooltip.survey-label { font-weight: 600; font-size: 12px; padding: 1px 6px; background: #222; color: #fff; border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.35); }
@@ -733,3 +735,16 @@ body.viewer .view-locked { cursor: not-allowed; }
 /* 0.55: satellite trackers */
 .external-input.external-stale .ext-rot { opacity: 0.6; filter: grayscale(1); }
 .src-st .tracker-st { color: var(--muted); }
+
+/* 0.57: navigation box on the map (nav.js) */
+.nav-box { background: rgba(255,255,255,0.95); padding: 6px 8px; font-size: 12px; min-width: 210px; max-width: 280px; }
+.nav-box[hidden] { display: none; }
+.nav-head { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
+.nav-head b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-head button { border: none; background: none; padding: 0 4px; font-size: 13px; cursor: pointer; color: #333; }
+.nav-table { border-collapse: collapse; width: 100%; }
+.nav-table th { text-align: left; font-weight: normal; color: #555; padding: 1px 8px 1px 0; white-space: nowrap; vertical-align: top; }
+.nav-table td { padding: 1px 0; font-variant-numeric: tabular-nums; }
+.nav-table tr.nav-eta td, .nav-table tr.nav-eta-end td { font-weight: 600; }
+.nav-btns { display: flex; gap: 4px; margin-top: 4px; }
+.nav-btns button { flex: 1; font-size: 11px; padding: 2px 4px; }

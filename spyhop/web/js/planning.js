@@ -294,7 +294,9 @@ export class Planner {
     }
     wrap.append(el('div', { class: 'pop-btns' }, el('a', { href: '#', onclick: (e) => {
       e.preventDefault(); app.map.map.closePopup(); app.showTab('route');
-    } }, 'View the route')));
+    } }, 'View the route'), app.viewer ? null : el('a', { href: '#', class: 'nav-from-here', onclick: (e) => {
+      e.preventDefault(); app.map.map.closePopup(); app.nav.alongRoute(this.state.name, r, i);
+    } }, 'Navigate from here')));
     return wrap;
   }
 
@@ -419,7 +421,15 @@ export class Planner {
     return el('div', {}, el('b', {}, `${c.name} · waypoint ${i + 1}`),
       el('div', {}, fmtPos(ll[0], ll[1], fmt)),
       v ? el('div', { class: 'pop-rel' }, `${fmtDist(distM(v, ll), this.app.unit())} from the vessel, bearing ${fmtBrg(bearing(v, ll))}T`) : null,
-      el('div', { class: 'pop-btns' }, el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.app.map.map.closePopup(); this.openSaved(file); } }, 'Open to edit')));
+      el('div', { class: 'pop-btns' }, el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.app.map.map.closePopup(); this.openSaved(file); } }, 'Open to edit'),
+        this.app.viewer ? null : el('a', { href: '#', class: 'nav-from-here', onclick: (e) => { e.preventDefault(); this.app.map.map.closePopup(); this.navigateSaved(file, i); } }, 'Navigate from here')));
+  }
+
+  // 0.57: navigate along a saved route (from the waypoint ahead, or from waypoint i)
+  async navigateSaved(file, i = 'ahead') {
+    const c = await this.savedRoute(file);
+    if (!c || c.points.length < 2) { toast('That route needs at least two waypoints.', 'warn'); return; }
+    this.app.nav.alongRoute(c.name, c.points.map((ll, k) => ({ ll, name: `WP${k + 1}` })), i);
   }
 
   setShown(file, on) {
@@ -565,6 +575,7 @@ export class Planner {
               : el('button', { disabled: !!r.error, onclick: () => this.openSaved(r.file) }, 'Open'),
             editing && this.unsaved() ? el('button', { onclick: () => this.openSaved(r.file) }, 'Revert') : null,
             el('button', { disabled: !!r.error, onclick: () => this.zoomSaved(r.file) }, 'Zoom to'),
+            el('button', { class: 'route-nav', disabled: !!r.error, title: 'Navigate along this route from the waypoint ahead of the vessel', onclick: () => this.navigateSaved(r.file) }, 'Navigate'),
             el('button', { class: 'danger-outline', onclick: () => this.deleteSaved(r.file) }, 'Delete')));
       }))))
       : el('p', { class: 'hint' }, 'No saved routes yet. Design one under Create New Route and press Save route.');
@@ -689,7 +700,9 @@ export class Planner {
           : el('button', { class: 'primary', disabled: n < 2, title: n < 2 ? 'The route needs at least two waypoints' : '', onclick: () => this.activate() }, 'Activate route'),
         el('button', { class: 'route-close', disabled: !n && !s.active && !s.file, title: 'Close this route: empty the editor and take it off the map', onclick: () => this.closeRoute() }, 'Close route'),
         el('button', { disabled: !n && !s.active, onclick: () => this.clearRoute() }, 'Clear waypoints'),
-        el('button', { disabled: !n, onclick: () => this.fit() }, 'Zoom to route')));
+        el('button', { disabled: !n, onclick: () => this.fit() }, 'Zoom to route'),
+        el('button', { id: 'route-navigate', disabled: n < 2, title: 'Navigate along this route from the waypoint ahead of the vessel: VMG, time to go and ETAs in a box on the map',
+          onclick: () => this.app.nav.alongRoute(s.name, this.route()) }, 'Navigate along this route')));
 
     const st = s.style;
     const setStyle = (k, v) => { st[k] = v; this.save(); this.draw(); };

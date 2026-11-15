@@ -27,6 +27,7 @@ from .tiles import TileService
 from . import sharing as sharing_mod
 from . import trackers as trackers_mod
 from . import ais as ais_mod
+from . import nav as nav_mod
 
 log = logging.getLogger(__name__)
 perf_log = logging.getLogger("spyhop.slow")
@@ -231,6 +232,7 @@ class App:
         self.last_reports_dir: Path | None = None      # where Run Reports last saved
         self.sources = SourceManager(self.rec.decoder)
         self.sync_ais()
+        self.nav = nav_mod.Navigator(self.rec.cfg)        # 0.57: navigation to a waypoint or along a route
         self.tiles = TileService(self.rec.cfg)
         self.tiles.on_charts_changed = lambda: self._broadcast_soon({"type": "charts", "mbtiles": self.tiles.mbtiles_info()})
         self.clients: set[web.WebSocketResponse] = set()
@@ -292,10 +294,18 @@ class App:
                 self.rec.tick_tracker()
                 self.rec.tick_externals(self.rec.decoder, getattr(self, "running_inputs", []))
                 self.rec.clock.feed(self.rec.decoder.state)
-                msg = {"type": "vessel", "vessel": self.rec.vessel(), "t": time.time(), "clock": self.rec.clock.status(),
+                vessel = self.rec.vessel()
+                before = self.nav.target
+                msg = {"type": "vessel", "vessel": vessel, "t": time.time(), "clock": self.rec.clock.status(),
                        "inst": self.rec.decoder.instruments(),
                        "others": self.others_on_map(),
-                       "failover": self.rec.decoder.failover_state()}
+                       "failover": self.rec.decoder.failover_state(),
+                       "nav": self.nav.tick(vessel)}
+                ev = self.nav.take_events()
+                if ev:
+                    msg["nav_events"] = ev
+                if self.nav.target != before:          # arrived: the next waypoint, or the end
+                    self._broadcast_soon({"type": "settings", "settings": self.rec.cfg.settings})
                 if n % 3 == 0:
                     msg["nmea"] = self.nmea_status(raw=False)
                     if self.tiles.prefetch_state["running"] or self.tiles.prefetch_state["total"]:
@@ -350,6 +360,32 @@ class App:
         if a is None:
             return json_ok(on=False, features=[], status=None)
         return json_ok(on=True, features=a.features(), status=a.status())
+
+    # -- navigation (0.57) ------------------------------------------------------------
+    def _nav_reply(self):
+        self._broadcast_soon({"type": "settings", "settings": self.rec.cfg.settings})
+        return json_ok(nav=self.nav.tick(self.rec.vessel()), target=self.nav.target)
+
+    async def nav_start(self, request):
+        """{kind: waypoint|route, name, points: [{name, lat, lon}], index (a number, or "ahead": the waypoint ahead)}"""
+        b = await request.json()
+        v = self.rec.vessel()
+        try:
+            self.nav.start(b, v.get("lat"), v.get("lon"))
+        except ValueError as e:
+            raise ValueErrorMsg(str(e))
+        return self._nav_reply()
+
+    async def nav_stop(self, request):
+        self.nav.stop()
+        return self._nav_reply()
+
+    async def nav_step(self, request):
+        b = await request.json() if request.can_read_body else {}
+        if not self.nav.target:
+            raise ValueErrorMsg("Spyhop isn't navigating.")
+        self.nav.step(-1 if int(b.get("by", 1)) < 0 else 1)
+        return self._nav_reply()
 
     def nmea_status(self, raw=True) -> dict:
         d = self.rec.decoder
@@ -705,6 +741,7 @@ class App:
         body = await request.json()
         updates = body.get("updates", {})
         updates.pop("tracking_enabled", None)        # 0.45: follows the survey (on while it's active), never set
+        updates.pop("nav_active", None)              # 0.57: only through /api/nav/…
         restart = "nmea_sources" in updates
         try:
             from .config import LOCKED_SETTINGS
@@ -743,7 +780,10 @@ class App:
         except (TypeError, ValueError) as e:
             raise ValueErrorMsg(str(e) if str(e) and not str(e).startswith("could not convert") else "That isn't a number.")
         pin_before = self.rec.cfg.settings.get("viewer_pin")
-        self.rec.cfg.save_settings(updates)
+        try:
+            self.rec.cfg.save_settings(updates)
+        except ValueError as e:                      # Config's own checks (altitude, navigation…)
+            raise ValueErrorMsg(str(e))
         if "viewer_pin" in updates and updates["viewer_pin"] != pin_before:
             self.sharing.pin_changed()
         if {"sharing_enabled", "viewer_port", "viewer_pin"} & set(updates):
@@ -1518,7 +1558,9 @@ class App:
             raise ValueErrorMsg("That check is too old. Check the template again.")
         url, t = got
         cfg = self.rec.cfg
-        during = self.rec.survey_active()       # then only the preferences (and colors) are used (0.40)
+        if self.rec.survey_active():            # 0.57: no template changes at all during a survey (0.40–0.56: preferences only)
+            raise ValueErrorMsg("A survey is under way, so templates can't be used, saved or updated until it ends (End the survey in the Survey tab).")
+        during = False
         backup = bool(b.get("backup"))
         cfg.save_settings({"template_backup": backup})
         kind = t.get("_kind", "web")
@@ -1613,6 +1655,8 @@ class App:
 
     async def templates_save(self, request):
         b = await request.json() if request.can_read_body else {}
+        if self.rec.survey_active():            # 0.57: templates are locked during a survey
+            raise ValueErrorMsg("A survey is under way, so templates can't be used, saved or updated until it ends (End the survey in the Survey tab).")
         by, notes, changed, name = (str(b.get(k, "") or "").strip() for k in ("by", "notes", "changed", "name"))
         overwrite = bool(b.get("overwrite"))
         if not by or not notes:
@@ -1840,6 +1884,9 @@ class App:
         r.add_post("/api/plan/gpx", self.plan_gpx)
         r.add_get("/api/ais", self.ais_vessels)
         r.add_get("/api/ais/local", self.ais_local)
+        r.add_post("/api/nav/start", self.nav_start)
+        r.add_post("/api/nav/stop", self.nav_stop)
+        r.add_post("/api/nav/step", self.nav_step)
         r.add_get("/api/feeds", self.feeds_list)
         r.add_get("/api/feeds/data", self.feed_data)
         r.add_post("/api/feeds/add", self.feed_add)
