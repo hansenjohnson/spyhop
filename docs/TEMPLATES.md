@@ -17,8 +17,8 @@ A template has two parts, which follow different rules:
 
 | Part | What's in it | During a survey |
 |---|---|---|
-| **Data** | The drop-down lists (species, event types, behaviors, observers, effort, visibility, weather, reticles), the data settings (magnetic variation, track point interval), the **rules** and the **saved reports**: what recorded values mean, how they are worked out, checked and reported. | **Fixed.** Copied into the survey's folder at Start (`<survey>_template.zip`), and the only part a survey's copy is compared with. Only the lists' **colors** can change, and reports can't be run or changed until the survey ends. |
-| **Preferences** | Shortcuts, map display, the other shared settings (lat/lon format, clock, bearing reference, distance unit, effort reminder, keep awake, raw NMEA log, Altitude column, automatic error check), the named GPS / NMEA inputs (serial, UDP, TCP, gpsd; which a computer uses, and its primary, stay its own choice), map feeds and online overlays. | **Can change at any time.** Using a template during a survey takes its preferences (and list colors) and leaves the data part as it is until the survey ends. |
+| **Data** | The drop-down lists (species, event types, behaviors, observers, effort, visibility, weather, reticles), the data settings (magnetic variation, track point interval) and the **saved reports**: what recorded values mean, how they are worked out and reported. | **Fixed.** Copied into the survey's folder at Start (`<survey>_template.zip`), and the only part a survey's copy is compared with. Only the lists' **colors** can change, and reports can't be run or changed until the survey ends. |
+| **Preferences** | Shortcuts, the **rules** (0.56), map display, the other shared settings (lat/lon format, clock, bearing reference, distance unit, effort reminder, keep awake, raw NMEA log, Altitude column, automatic error check), the named GPS / NMEA inputs (serial, UDP, TCP, gpsd; which a computer uses, and its primary, stay its own choice), map feeds and online overlays. | **Can change at any time.** Using a template during a survey takes its preferences (and list colors) and leaves the data part as it is until the survey ends. |
 | *Extras* | Waypoints, routes and overlays, if included. | Only ever added. |
 
 Settings → Templates shows what would change under these headings. A list change that waits until the survey ends is marked *waits until the survey ends*.
@@ -67,7 +67,7 @@ A template is a zip file (or, on GitHub, a repository or a folder in one) contai
 | `spyhop-config.json` | Everything that isn't a table (see below). |
 | `species.csv`, `event_types.csv`, `observers.csv`, `behaviors.csv`, `effort.csv`, `visibility.csv`, `weather.csv`, `reticles.csv` | The drop-down lists (the data part). |
 | `shortcuts.csv` | Keyboard shortcuts. |
-| `rules.csv` | The rules checked by the Error check (Settings → Rules; the data part). Columns: `on` (yes/no), `table` (sightings, effort or events), `level` (error, warning or info), `if` and `then` (conditions joined by ` AND `, e.g. `EventType is CTD cast`, `Count >= [Calves]`), `message` and `resights` (include or skip). |
+| `rules.csv` | The rules checked by the Error check (Settings → Rules; preferences since 0.56, so they can change during a survey). Columns: `on` (yes/no), `table` (sightings, effort or events), `level` (error, warning or info), `if` and `then` (conditions joined by ` AND `, e.g. `EventType is CTD cast`, `Count >= [Calves]`), `message` and `resights` (include or skip). |
 | `waypoints.csv` | Waypoints (optional). |
 | `routes/*.gpx` | Saved routes (optional). |
 | `overlays/*` | Imported overlays: GeoJSON, GPX or KML (optional; past surveys shown as overlays are not included). |

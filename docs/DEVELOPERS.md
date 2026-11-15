@@ -33,6 +33,7 @@ spyhop/
   layout.py       one-time moves from older folder layouts: 0.27 → 0.28, and survey files into a folder each (0.36); remove before 1.0
   nmea.py         NMEA 0183 parser, vessel state, instrument readings, raw log
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
+  ais.py          AIS from the NMEA inputs (!AIVDM, given to it by nmea.py): 6-bit payloads, multi-part messages, targets by MMSI, /api/ais/local
   trackers.py     satellite trackers (SPOT feeds, inReach MapShare): parse the feeds, poll them in the background, hand device fixes to the "other" path
   qc.py           the error check (thresholds in LIMITS); run_rules() checks the rules
   rules.py        rules (Settings → Rules, rules.csv): parse, check and evaluate "if … then …" conditions on one row

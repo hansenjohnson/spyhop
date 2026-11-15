@@ -4,6 +4,7 @@ import { shapeSvg } from './map.js';
 import { Resights } from './resights.js';
 
 const PRINTABLE = /^.$/u;
+const GRID_BOTTOM_GAP = 22;     // px kept clear under a selected row (0.56)
 // clock bearings (Ref C): each hour is 30° from the bow
 const CLOCK_ITEMS = Array.from({ length: 12 }, (_, i) => i + 1).map((h) => ({ name: String(h),
   extra: `${h} o’clock · ${h * 30 % 360}° ${h === 12 ? '(dead ahead)' : h === 3 ? '(starboard beam)' : h === 6 ? '(astern)' : h === 9 ? '(port beam)' : h < 6 ? 'to starboard' : 'to port'}` }));
@@ -281,7 +282,11 @@ export class Grid {
     if (td) {
       td.classList.add('sel');
       td.parentElement.classList.add('selrow');
-      if (scroll) this.scrollTo(td, center);
+      if (scroll) {
+        this.scrollTo(td, center);
+        // again once the layout has settled (a new row's height, an editor opening below it)
+        requestAnimationFrame(() => { if (td.isConnected && this.sel?.id === id) this.scrollTo(td, false); });
+      }
     }
     if (focus && !this.editing) this.wrap.focus({ preventScroll: true });
     this.app.onRowSelected(this.tab, id);
@@ -292,7 +297,9 @@ export class Grid {
   scrollTo(td, center = false) {
     const w = this.wrap, r = td.getBoundingClientRect(), b = w.getBoundingClientRect();
     const head = w.querySelector('thead')?.getBoundingClientRect().height || 0;
-    const top = b.top + head, bottom = b.top + w.clientHeight;
+    // 0.56: keep clear of the bottom edge: an overlay scroll bar (macOS) or the edge itself hid part of a new
+    // last row; the table has room below its last row (CSS .grid-wrap::after) so it can scroll that far
+    const top = b.top + head, bottom = b.top + w.clientHeight - GRID_BOTTOM_GAP;
     if (center && (r.top < top || r.bottom > bottom)) w.scrollTop += r.top - (top + bottom) / 2 + r.height / 2;
     else if (r.top < top) w.scrollTop -= top - r.top;
     else if (r.bottom > bottom) w.scrollTop += r.bottom - bottom;

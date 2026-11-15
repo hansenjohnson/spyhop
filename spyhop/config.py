@@ -352,6 +352,7 @@ DEFAULT_SETTINGS = {
     "check_updates_on_start": True,   # look on GitHub for a newer Spyhop when it starts (0.45: on; quick, silent offline; always asks before installing)
     "pane_layout": {},              # this computer's panes: {fx, fy, min: {map, util, data}, max} (app.js)
     "follow_vessel": True,
+    "ais_nmea": True,               # 0.56: decode AIS (!AIVDM) from the NMEA inputs and offer the "AIS targets (NMEA)" map layer
     "smooth_vessel": True,          # glide the vessel icon between fixes on the map (drawing only; map.js)
     "tile_cache_enabled": True,
     "last_version": "",             # the Spyhop version that last ran (to say when it was updated)
@@ -671,8 +672,7 @@ class Config:
     def locked_snapshot(self) -> dict:
         return {"lists": {n: [dict(r) for r in self.lists.get(n, [])] for n in LOCKED_LISTS},
                 "settings": {k: self.settings.get(k) for k in LOCKED_SETTINGS},
-                "reports": json.loads(json.dumps(self.reports)),           # saved reports: data part too (0.40)
-                "rules": self.rules_loaded}                                # and the rules (0.52)
+                "reports": json.loads(json.dumps(self.reports))}           # saved reports: data part too (0.40)
 
     def restore_locked(self, snap: dict) -> list[str]:
         """Put back the locked lists and settings from a snapshot (files too) if they changed; returns what was put back."""
@@ -685,10 +685,6 @@ class Config:
                 _write_csv(self.list_path(n), hdr, [[r.get(c, "") for c in hdr] for r in rows])
                 self.lists[n] = rows
                 back.append(f"{n}.csv")
-        if snap.get("rules") is not None and self.rules_text() != snap["rules"]:
-            self.rules_path.write_text(snap["rules"], encoding="utf-8")
-            self.reload()
-            back.append("rules.csv")
         if "reports" in snap and self.reports != snap["reports"]:
             self.save_reports(snap["reports"])
             back.append("saved reports")
@@ -870,7 +866,7 @@ class Config:
             self.rules, self.rule_problems = R.load(_read_csv(self.rules_path))
         except FileNotFoundError:
             self.rules, self.rule_problems = [], []
-        self.rules_loaded = self.rules_text()          # as read, for locked_snapshot (the file may be edited by hand)
+        self.rules_loaded = self.rules_text()          # as read
         # the online map layers are defined in code, so fixes arrive with updates
         hdr = DEFAULT_TILE_SOURCES[0]
         self.tile_sources = [dict(zip(hdr, r)) for r in DEFAULT_TILE_SOURCES[1]]

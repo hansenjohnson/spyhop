@@ -22,8 +22,8 @@ data and offline charts are never in a template. A backup (itself a template) is
 templates/backups first; restoring the backup made before a template was used also takes away what
 that template added.
 
-A template has a data part (the lists, the rules and the data settings: fixed during a survey, copied into each
-survey's folder) and preferences (everything else: may change at any time); see DATA_TABLES and part_of().
+A template has a data part (the lists and the data settings: fixed during a survey, copied into each
+survey's folder) and preferences (everything else, the rules included since 0.56: may change at any time); see DATA_TABLES and part_of().
 
 Nothing in a template is run: CSVs are checked for their columns, saved reports like any other, and
 files Spyhop doesn't know are listed and left alone.
@@ -87,7 +87,7 @@ DATA_SETTINGS_LABEL = "Data settings (magnetic variation, track point interval, 
 # copy. The preferences (shortcuts, map display, the other shared settings, network inputs, map feeds)
 # can change at any time, also during a survey.
 # Waypoints, routes and overlays are extras, only ever added to a computer.
-DATA_TABLES = tuple(f"{n}.csv" for n in LOCKED_LISTS) + ("rules.csv",)
+DATA_TABLES = tuple(f"{n}.csv" for n in LOCKED_LISTS)       # 0.56: rules.csv moved to the preferences (it only changes the Error check)
 PARTS = {"data": "Data (fixed during a survey)", "prefs": "Preferences (can change at any time)",
          "extra": "Added to this computer"}
 

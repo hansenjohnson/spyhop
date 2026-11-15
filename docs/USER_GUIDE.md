@@ -68,7 +68,7 @@ To change the template yourself:
 - **Settings → Rules:** your team's own checks, such as "every CTD cast has an ID" (see [Rules](#rules)).
 - **Settings → General** and **Tools → Reports:** shared settings, the map display and saved reports, which are part of the template too.
 
-The lists and rules can't be changed while a survey is under way (only the lists' colors), so set them up beforehand; every list has an **Other** entry for anything unexpected. When it's ready, **Settings → Templates → Save as a new template…** keeps it as one file to share with the team. See [Templates](#templates) for the details.
+The lists can't be changed while a survey is under way (only their colors), so set them up beforehand; every list has an **Other** entry for anything unexpected. When it's ready, **Settings → Templates → Save as a new template…** keeps it as one file to share with the team. See [Templates](#templates) for the details.
 
 ### d. Plan a route
 
@@ -314,6 +314,8 @@ Inputs are set up in **Settings → Inputs** (GPS / NMEA inputs).
 | **SPOT feed** | Globalstar SPOT trackers (SPOT Gen4, SPOT Trace, SPOT X…) on a buoy, a tag boat or a drifter, through their XML feed. Always an "other" input. Needs an internet connection. |
 | **inReach MapShare** | Garmin inReach devices, through their MapShare page. Always an "other" input. Needs an internet connection. |
 
+An AIS receiver or transponder usually shares a connection with the GPS: see [AIS from the NMEA inputs](#ais-from-the-nmea-inputs).
+
 Spyhop reads RMC, GGA, GLL and VTG for position, speed and course, and HDT, THS, HDG and HDM for heading. For the Instruments panel it also reads VHW and VBW (speed through water), DPT, DBT, DBS and DBK (depth), MWV, VWR, VWT and MWD (wind), MTW, MTA, MHU, MMB and MDA (weather), RPM (engines), ROT, RSA, and XDR transducers. The raw NMEA monitor at the bottom of Settings → Inputs shows exactly what is arriving.
 
 ### Satellite trackers (SPOT and inReach)
@@ -327,6 +329,16 @@ A SPOT or inReach tracker reports its position over satellite every few minutes.
 - **Status:** under the inputs, each feed's line says when it was last checked, the time and age of its newest position, its devices, and any problem: *no internet connection*, *no such feed* (check the ID), or *password protected* (type the password, or it's wrong).
 - **On the map** (Mapping 'Other' inputs): a feed's devices share its icon, color, line, trail and Record track. A tracker's marker turns grey when its last position is older than **Grey out a tracker when its last fix is older than** (30 min by default); its popup shows the last fix and how long ago it was, and the battery state for SPOT.
 - **Templates** carry tracker feeds (their ID or MapShare name and check interval), never their passwords: each computer types its own.
+
+### AIS from the NMEA inputs
+
+An AIS receiver or transponder on the boat's network sends other vessels' positions as `!AIVDM` sentences, often over the same serial, UDP or TCP connection as the GPS. Spyhop reads them from every input in use, with no internet needed, and draws the vessels as the map layer **AIS targets (NMEA)**, in the same colors and shapes as the online [AIS vessels](#online-overlays): a triangle pointing the way a moving vessel is heading, a dot for one that isn't moving, a diamond for an aid to navigation. Click one for its name, MMSI, call sign, type, size, destination, speed, course, heading, status, when it was last heard, which input it came from, and its distance and bearing from your vessel.
+
+- **Settings → Inputs → AIS from the NMEA inputs:** **Show AIS targets from the NMEA inputs** (on unless unticked, on this computer) and a line saying how many targets have a position, how many AIS messages have arrived and from which inputs. Unticked, Spyhop ignores AIS sentences and the layer leaves the layers menu.
+- Your own transponder's position (`!AIVDO`) is ignored: the vessel's position always comes from the primary input.
+- Targets are dropped 20 minutes after their last report (30 minutes for aids to navigation and base stations). **Hide AIS vessels that aren't moving** (Tools → Overlays) applies to both AIS layers.
+- View-only devices (Settings → Sharing) see this layer too.
+- AIS misses vessels without a transponder and isn't a substitute for a radar or a proper watch: **not for collision avoidance**.
 
 ### Instruments and NMEA logs
 
@@ -389,7 +401,7 @@ Phones, tablets or a screen on the bridge or in the galley can follow the survey
 1. On the laptop, open **Settings → Sharing** and tick **Let other devices on this network watch**.
 2. On the other device, join the same network (Wi-Fi or cable) and scan the QR code shown there, or type the address under it (for example `http://192.168.1.20:8766`).
 
-Settings → Sharing lists who is watching (the Survey tab shows how many). **Disconnect all viewers** closes their connections.
+Settings → Sharing lists who is watching. **Disconnect all viewers** closes their connections.
 
 - **A PIN** (optional, 4–12 letters or digits): viewers type it once on each device. Leave it blank to let anyone on the network watch. Changing the PIN, or Disconnect all viewers, asks every viewer for it again. A wrong PIN is refused, and each wrong try makes the next one wait longer.
 - **What viewers see:** everything but the laptop's folders, its GPS / NMEA inputs and the details remembered from earlier surveys. The survey details shown in the Summary are included. Viewers see the settings tabs, but nothing there can be changed except how Spyhop looks in that browser: text size, the map display, columns, lat/lon format, clock. **Use the laptop's settings again** (in their Settings → General) undoes those. Each viewer also keeps its own tab, map view and Follow vessel choice.
@@ -404,7 +416,7 @@ Settings → Sharing lists who is watching (the Survey tab shows how many). **Di
 
 **Tools → Error check:** press **Run error check** before you finish a survey (or any time). It lists problems as **errors** (must fix), **warnings** (probably wrong) and **notes** (worth a look). **Show** takes you to the row and column in the data table (the row flashes). It doesn't change anything, except when you press a **Fix** button. **Save report…** downloads the list as a CSV.
 
-The counts of the last check (errors, warnings, notes) show at the right of the data tables' header, next to the Sightings, Effort and Events tabs; click them to open the Error check. A dot means the data has changed since. **What is checked** lists every check, with a link to your rules (Settings → Rules).
+**Error check** and the counts of the last check (errors, warnings, notes) show at the right of the data tables' header, next to the Sightings, Effort and Events tabs, whenever a survey is open (– – – until it's been checked). Click it to run the check and open the Error check. A dot means the data has changed since. **What is checked** lists every check, with a link to your rules (Settings → Rules).
 
 **Check automatically** runs the check quietly every 1, 2, 5, 10, 15 or 30 minutes while a survey is active (off by default). The counts next to the data tabs, the highlights in the tables are kept up to date, and a message pops up when a check finds more errors or warnings than the one before. It's a shared setting, so it travels with the template.
 
@@ -443,7 +455,7 @@ The last one is the rule Spyhop starts with: there can't be more calves than ani
 - **Level:** whether a broken rule is an error, a warning or a note. **Message:** what the Error check says (blank: the rule itself). **On:** untick to keep a rule without checking it. For Sightings, **Resights** says whether resights are checked too.
 - **Test on this survey** lists the rows of the open survey that break the rule as it is on screen, saved or not; click one to go to it. It works during a survey too.
 - **Save** keeps the rules; Spyhop says what's wrong and saves nothing until it's fixed. **Revert** discards unsaved changes.
-- The rules are in the template (`rules.csv`, in its data part), so every computer using it checks the same way, and **they can't change during a survey**. For many changes at once, edit `rules.csv` like the lists, and press **Reload from the file**.
+- The rules are in the template (`rules.csv`, in its preferences), so every computer using it checks the same way. They only change what the Error check reports, never the data, so **they can be changed during a survey** too. For many changes at once, edit `rules.csv` like the lists, and press **Reload from the file**.
 
 ## Summary
 
@@ -589,7 +601,7 @@ In **Settings → Shortcuts**, click a shortcut's keys and press the new ones, c
 
 ### What can't change during a survey
 
-From Start until End, nothing in the template's data part can change: the drop-down lists (except their colors), the reticles, the rules, the saved reports, the track point interval and the magnetic variation. Their controls are greyed out, editing their files by hand is undone when they're read again, and **using a template during a survey takes only its preferences** (and list colors): its data part waits until the survey ends. So the copy of the template kept with each survey is exactly what its data were recorded with.
+From Start until End, nothing in the template's data part can change: the drop-down lists (except their colors), the reticles, the saved reports, the track point interval and the magnetic variation. Their controls are greyed out, editing their files by hand is undone when they're read again, and **using a template during a survey takes only its preferences** (and list colors): its data part waits until the survey ends. So the copy of the template kept with each survey is exactly what its data were recorded with.
 
 ### A survey recorded with another template
 

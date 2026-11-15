@@ -26,6 +26,7 @@ from . import tiles as tiles_mod
 from .tiles import TileService
 from . import sharing as sharing_mod
 from . import trackers as trackers_mod
+from . import ais as ais_mod
 
 log = logging.getLogger(__name__)
 perf_log = logging.getLogger("spyhop.slow")
@@ -229,6 +230,7 @@ class App:
         self.rec = Recorder(data_dir)
         self.last_reports_dir: Path | None = None      # where Run Reports last saved
         self.sources = SourceManager(self.rec.decoder)
+        self.sync_ais()
         self.tiles = TileService(self.rec.cfg)
         self.tiles.on_charts_changed = lambda: self._broadcast_soon({"type": "charts", "mbtiles": self.tiles.mbtiles_info()})
         self.clients: set[web.WebSocketResponse] = set()
@@ -333,9 +335,25 @@ class App:
         if now != before:
             self._broadcast_soon({"type": "awake", "awake": now})
 
+    def sync_ais(self):
+        """0.56: decode AIS from the NMEA inputs while settings ais_nmea is on (this computer's choice)."""
+        d = self.rec.decoder
+        on = bool(self.rec.cfg.settings.get("ais_nmea", True))
+        if on and d.ais is None:
+            d.ais = ais_mod.AisTargets()
+        elif not on:
+            d.ais = None
+
+    async def ais_local(self, request):
+        """AIS targets heard on the NMEA inputs, shaped like /api/ais (no internet involved)."""
+        a = self.rec.decoder.ais
+        if a is None:
+            return json_ok(on=False, features=[], status=None)
+        return json_ok(on=True, features=a.features(), status=a.status())
+
     def nmea_status(self, raw=True) -> dict:
         d = self.rec.decoder
-        out = {"sources": list(self.sources.status.values()) + list(self.trackers.status.values()), "counts": d.counts,
+        out = {"ais": d.ais.status() if d.ais is not None else None, "sources": list(self.sources.status.values()) + list(self.trackers.status.values()), "counts": d.counts,
                "errors": d.errors, "log": self.rec.raw_log_status(),
                "position_source": d.state.source if d.state.updated and time.time() - d.state.updated < 10 else ""}
         if raw:
@@ -704,6 +722,8 @@ class App:
                 raise ValueError("The effort segment column is show or hide.")
             if "column_layout" in updates:
                 updates["column_layout"] = clean_column_layout(updates["column_layout"])
+            if "ais_nmea" in updates and not isinstance(updates["ais_nmea"], bool):
+                raise ValueError("AIS from the NMEA inputs is on or off (true or false).")
             if "smooth_vessel" in updates and not isinstance(updates["smooth_vessel"], bool):
                 raise ValueError("Smooth vessel movement is on or off (true or false).")
             if "pane_layout" in updates:
@@ -731,6 +751,8 @@ class App:
             self.sharing.changed()
         if "keep_awake" in updates or "keep_screen_on" in updates:
             self.sync_awake()
+        if "ais_nmea" in updates:
+            self.sync_ais()
         if restart or "nmea_failover" in updates:
             await self.start_inputs()
         self._broadcast_soon({"type": "settings", "settings": self.rec.cfg.settings})
@@ -767,11 +789,8 @@ class App:
         return json_ok()
 
     async def save_rules(self, request):
-        """0.52: Settings → Rules. The rules are in the template's data part, so they can't change during a survey."""
+        """0.52: Settings → Rules. 0.56: they only change what the Error check reports, so they can change during a survey."""
         b = await request.json()
-        if self.rec.survey_active():
-            raise ValueErrorMsg("A survey is under way, so the rules can't change until it ends (they're part of the "
-                                "template's data part, like the drop-down lists).")
         try:
             self.rec.cfg.save_rules(b.get("rules") or [])
         except ValueError as e:
@@ -1820,6 +1839,7 @@ class App:
         r.add_delete("/api/overlays/{name}", self.overlay_delete)
         r.add_post("/api/plan/gpx", self.plan_gpx)
         r.add_get("/api/ais", self.ais_vessels)
+        r.add_get("/api/ais/local", self.ais_local)
         r.add_get("/api/feeds", self.feeds_list)
         r.add_get("/api/feeds/data", self.feed_data)
         r.add_post("/api/feeds/add", self.feed_add)

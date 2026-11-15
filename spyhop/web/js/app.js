@@ -231,7 +231,7 @@ class App {
         el('section', { id: 'data-pane', class: 'pane', 'aria-label': 'Data tables' },
           el('div', { class: 'pane-head' }, el('nav', { id: 'tabs', class: 'pane-tabs', role: 'tablist' }), el('span', { class: 'tabs-spacer' }),
             // 0.54: the last Error check's counts (in the status bar before)
-            el('button', { id: 'sf-qc', class: 'qc-head', hidden: true, title: 'The last Error check — click to open it (Tools → Error check)', onclick: () => this.showTab('qc') }),
+            el('button', { id: 'sf-qc', class: 'qc-head', hidden: true, title: 'Run the Error check (Tools → Error check)', onclick: () => { this.showTab('qc'); this.runQc(); } }),
             ...winBtns('data', 'the data tables')),
           el('div', { class: 'pane-body', id: 'data-body' }),
           el('footer', { id: 'bottom' })),
@@ -831,6 +831,7 @@ class App {
         // 0.47: inputs changed (here, in another window or over the API): bring the map's "other" inputs up to date
         if (JSON.stringify(prev.nmea_sources) !== JSON.stringify(m.settings.nmea_sources)) this.refreshExternals();
         this.refreshFormats();
+        this.online?.syncAisLocal();         // 0.56: the AIS (NMEA) layer follows ais_nmea
         for (const g of Object.values(this.grids)) g.refreshColumns?.();
         this.updateStatus();
         if (this.shown('survey') && !document.activeElement?.closest('#pane-survey input[type=text], #pane-survey textarea')) this.renderSurvey();
@@ -1304,11 +1305,7 @@ class App {
           el('tr', {}, el('th', {}, 'Trackline'), el('td', {}, sv.active ? `● recording (a point every ${S.config.settings.tracking_interval || 1} s while the survey is active)` : 'stopped (the survey has ended)')),
           el('tr', {}, el('th', {}, 'Folder'), el('td', {}, el('span', { class: 'mono' }, sv.prefix), ' in the data folder · ',
             el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.open('survey'); } }, 'Open folder'))),
-          el('tr', { id: 'survey-template-row' }, el('th', {}, 'Template'), el('td', {}, this.surveyTemplateLine(sv))),
-          // 0.53: other devices watching (Settings → Sharing)
-          S.viewer ? null : el('tr', { id: 'survey-sharing-row' }, el('th', {}, 'Sharing'), el('td', {},
-            S.sharing?.listening ? `on: ${S.sharing.viewers.length} watching · ` : 'off · ',
-            el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('sharing'); } }, 'Settings → Sharing'))))),
+          el('tr', { id: 'survey-template-row' }, el('th', {}, 'Template'), el('td', {}, this.surveyTemplateLine(sv))))),
         this.surveyTemplateNote(sv),
         this.metaForm(sv),
         el('div', { class: 'btnrow' },
@@ -1634,14 +1631,15 @@ class App {
     if (!f) return;
     const rep = this.qcReport, sv = this.S.survey;
     const auto = Number(this.S.config.settings.qc_auto_minutes) || 0;
+    // 0.56: shown whenever a survey is open; '–' until its first check; a click runs the check and opens it
+    f.hidden = !sv;
     if (!sv || !rep || rep.survey !== sv.prefix) {
-      f.hidden = !(sv?.active && auto);
-      f.replaceChildren('Error check: ', el('span', { class: 'hint' }, `every ${auto} min`));
+      f.title = `Not checked yet${auto && sv?.active ? `; checked automatically every ${auto} min` : ''} — click to run the Error check`;
+      f.replaceChildren('Error check ', ...['error', 'warning', 'info'].flatMap((k) => [el('span', { class: `qc-pill ${k} none` }, '–'), ' ']));
       return;
     }
-    f.hidden = false;
     const c = rep.counts, t = timeParts(rep.generated, this.clock());
-    f.title = `Error check at ${t.time.slice(0, 5)} ${t.abbr}${this.qcStale ? ' (the data has changed since)' : ''}${auto ? `; checked automatically every ${auto} min` : ''} — click to open it`;
+    f.title = `Error check at ${t.time.slice(0, 5)} ${t.abbr}${this.qcStale ? ' (the data has changed since)' : ''}${auto ? `; checked automatically every ${auto} min` : ''} — click to run it again`;
     f.replaceChildren('Error check ',
       el('span', { class: 'qc-pill error' }, String(c.error)), ' ',
       el('span', { class: 'qc-pill warning' }, String(c.warning)), ' ',
@@ -3036,7 +3034,7 @@ class App {
 
   // ---------------------------------------------------------------- Settings → Rules (0.52)
   // A team's own checks of one row of Sightings, Effort or Events: "if … then …", run by the Error check.
-  // Saved in the template's rules.csv (its data part: they can't change during a survey).
+  // Saved in the template's rules.csv (its preferences since 0.56: they only change the Error check, so they can change during a survey).
   rulesInfo() { return this.S.config.rules_info || { tests: {}, test_order: [], columns: {}, levels: [] }; }
   ruleCols(table) { return this.rulesInfo().columns[table] || []; }
   ruleListValues(list) {
@@ -3062,7 +3060,7 @@ class App {
     const pane = $('#pane-rules');
     if (!pane) return;
     const S = this.S, I = this.rulesInfo();
-    const locked = !!S.survey?.active;
+    const locked = false;          // 0.56: the rules only change the Error check, so they can change during a survey
     const saved = JSON.parse(JSON.stringify(S.config.rules || []));
     const rules = this.rulesDraft || saved;
     const dirty = !!this.rulesDraft && JSON.stringify(this.rulesDraft) !== JSON.stringify(saved);
@@ -3145,9 +3143,7 @@ class App {
     const probs = S.config.rule_problems || [];
     pane.replaceChildren(el('section', { class: `settings-sec rules-sec${locked ? ' dd-locked' : ''}` },
       el('h3', {}, 'Rules'),
-      locked ? el('p', { class: 'warnbox', id: 'rules-locked' }, el('b', {}, 'A survey is under way, so the rules can’t be changed. '),
-        'They’re part of the template’s data part, like the drop-down lists. You can still test them on this survey. End the survey (in Survey) to edit them.') : null,
-      el('p', { class: 'hint help' }, 'Your team’s own checks of the values in a row of Sightings, Effort or Events: if every “if” condition is true, every “then” condition must be true too. The Error check (Tools → Error check) lists each row that breaks a rule, at the rule’s level and with its message. For example: if Event is CTD cast, then ID isn’t blank; if Weather is Fog, then Glare is not Severe; if Behaviors includes Mom/calf, then Calves > 0. A value in [brackets] is another column of the same row (Num ≥ [Calves]). A condition on a blank cell is false, except “is blank”. The rules are part of the template, so every computer using it checks the same way.'),
+      el('p', { class: 'hint help' }, 'Your team’s own checks of the values in a row of Sightings, Effort or Events: if every “if” condition is true, every “then” condition must be true too. The Error check (Tools → Error check) lists each row that breaks a rule, at the rule’s level and with its message. For example: if Event is CTD cast, then ID isn’t blank; if Weather is Fog, then Glare is not Severe; if Behaviors includes Mom/calf, then Calves > 0. A value in [brackets] is another column of the same row (Num ≥ [Calves]). A condition on a blank cell is false, except “is blank”. The rules are part of the template, so every computer using it checks the same way. They only change what the Error check reports, never the data, so they can be changed during a survey too.'),
       probs.length ? el('div', { class: 'errbox', id: 'rules-problems' }, el('b', {}, 'rules.csv has rules that can’t be used (they aren’t checked):'), el('ul', {}, probs.map((p) => el('li', {}, p)))) : null,
       el('div', { id: 'rules-list' }, rules.length ? rules.map(card) : el('p', { class: 'hint' }, 'No rules yet.')),
       el('div', { class: 'btnrow' },
@@ -3332,10 +3328,7 @@ class App {
         let r;
         try { r = await api('/api/pick-file', { current: s.path || '' }); } catch { return; }
         if (r.path) { s.path = r.path; markDirty(); draw(); }
-      } }, 'Choose…') : null]),
-      // 0.55: a tracker's feed comes over the internet
-      TRACKER(s.type) ? el('div', { class: 'hint tracker-note' }, '⚠ Needs an internet connection on this computer (positions come from ',
-        s.type === 'spot' ? 'SPOT’s servers' : 'Garmin’s MapShare', '). Each device in the feed is its own “other” source, named after the device. The password stays on this computer (templates leave it out).') : null);
+      } }, 'Choose…') : null]));
     const draw = () => {
       fixPrimary();
       list.replaceChildren(el('div', { class: 'table-scroll' }, el('table', { class: 'nmea-table' },
@@ -3508,11 +3501,34 @@ class App {
       el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('survey'); } }, sv ? 'start a new survey' : 'start or open a survey'), ' in the Survey tab.');
   }
 
+  // 0.56: Settings → Inputs → AIS from the NMEA inputs: decode !AIVDM on every input in use (this computer's
+  // setting ais_nmea, saved at once) and draw the targets as the map layer "AIS targets (NMEA)".
+  aisSection() {
+    const on = this.S.config.settings.ais_nmea !== false;
+    return el('section', { class: 'settings-sec', id: 'ais-nmea-sec' },
+      el('h3', {}, 'AIS from the NMEA inputs'),
+      el('p', { class: 'hint help' }, 'An AIS receiver or transponder on the NMEA network sends other vessels’ positions (!AIVDM sentences), often on the same connection as the GPS. Spyhop reads them from every input in use and draws them as the map layer “AIS targets (NMEA)”, in the same colors and shapes as the online AIS overlay. No internet is needed. Targets are dropped after 20 minutes without a report. Not for collision avoidance.'),
+      el('label', { class: 'check' }, el('input', { type: 'checkbox', id: 'ais-nmea', checked: on,
+        onchange: (e) => this.saveSettings({ ais_nmea: e.target.checked }) }), el('span', {}, 'Show AIS targets from the NMEA inputs')),
+      el('p', { id: 'ais-nmea-status', class: 'hint' }));
+  }
+
+  updateAisStatus() {
+    const box = $('#ais-nmea-status');
+    if (!box) return;
+    const a = this.S.nmea?.ais;
+    if (this.S.config.settings.ais_nmea === false) { box.textContent = 'Off.'; return; }
+    if (!a || !a.messages) { box.textContent = 'No AIS heard yet on the inputs in use.'; return; }
+    const t = a.last ? timeParts(new Date(a.last * 1000).toISOString(), this.clock()) : null;
+    box.textContent = `${a.targets} target${a.targets === 1 ? '' : 's'} with a position · ${a.messages} messages${a.errors ? `, ${a.errors} unreadable` : ''}`
+      + (t ? ` · last at ${t.time} ${t.abbr}` : '') + (a.inputs?.length ? ` · from ${a.inputs.map((x) => `“${x}”`).join(', ')}` : '');
+  }
+
   // Settings → Inputs: the GPS / NMEA inputs
   renderInputs() {
     const pane = $('#pane-inputs');
     if (!pane) return;
-    pane.replaceChildren(this.nmeaSection(), this.mappingSection(), el('p', { class: 'hint' }, 'Live readings from these inputs and the raw NMEA log are in ',
+    pane.replaceChildren(this.nmeaSection(), this.mappingSection(), this.aisSection(), el('p', { class: 'hint' }, 'Live readings from these inputs and the raw NMEA log are in ',
       el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('nmea'); } }, 'Tools → Instruments'), '. The online overlays (AIS, weather radar, map feeds) are in ',
       el('a', { href: '#', onclick: (e) => { e.preventDefault(); this.showTab('overlays'); } }, 'Tools → Overlays'), '.'));
     this.updateNmeaStatus();
@@ -3589,6 +3605,7 @@ class App {
     }),
     el('div', { class: 'hint' }, `Sentences: ${Object.entries(n.counts || {}).map(([k, v]) => `${k} ${v}`).join(', ') || 'none yet'}${n.errors ? ` · ${n.errors} unreadable` : ''}`));
     if (withRaw && n.raw) $('#nmea-raw').textContent = n.raw.join('\n');
+    this.updateAisStatus();
   }
 
   // Tools → Overlays: imported GeoJSON/GPX/KML files and past surveys, each shown or hidden

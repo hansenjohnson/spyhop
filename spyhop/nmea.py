@@ -163,6 +163,7 @@ class NmeaDecoder:
         self.others: dict[str, VesselState] = {}
         self.externals: set[str] = set()     # 0.42: inputs that aren't the platform (drone, buoy, other vessel)
         self.heard: dict[str, float] = {}    # source -> wall clock of its last position
+        self.ais = None                      # 0.56: ais.AisTargets while AIS from the inputs is on (settings ais_nmea)
 
     def feed(self, line: str, source: str = "") -> bool:
         line = line.strip()
@@ -194,9 +195,16 @@ class NmeaDecoder:
             ok = False
         finally:
             self.state = saved
-        if ok and not main and self.failover and source not in self.externals:
+        if ok and not main and self.failover and source not in self.externals and typ not in ("VDM", "VDO"):
             self._stand_in(source, st)
         return ok
+
+    # -- AIS (0.56): other vessels' transponders; VDO is this vessel's own and is ignored --------
+    def _VDM(self, f, source):
+        return self.ais.sentence(f, source) if self.ais is not None else False
+
+    def _VDO(self, f, source):
+        return False
 
     def failover_state(self) -> dict | None:
         """While a secondary stands in for the primary: {from, primary, quiet_s}; else None."""

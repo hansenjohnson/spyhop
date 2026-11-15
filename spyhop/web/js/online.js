@@ -12,6 +12,8 @@
 import { el, esc, api, toast, confirmBox, fmtPos, fmtDist, fmtBrg, distM, bearing, timeParts } from './util.js';
 
 export const AIS_NAME = 'AIS vessels (Open Waters, online)';
+export const AIS_LOCAL_NAME = 'AIS targets (NMEA)';        // 0.56: from the AIS receiver on the NMEA inputs
+const AIS_LOCAL_EVERY_MS = 5000;
 export const RADAR_US_NAME = 'Weather radar, US (NOAA NEXRAD, online)';
 export const RADAR_WORLD_NAME = 'Weather radar, worldwide (RainViewer, online)';
 const PREFS = 'wsr.onlineOverlays';
@@ -64,6 +66,15 @@ export class OnlineOverlays {
     let on = null;
     try { on = JSON.parse(localStorage.getItem('wsr.overlays') || 'null'); } catch {}
     this.feeds = []; this.presets = []; this.feedLayers = {};
+    // 0.56: AIS from the NMEA inputs: a layer of its own in the Layers menu (no internet, so viewers get it too)
+    this.aisLocal = L.layerGroup();
+    this.aisLocal._group = 'offline';
+    this.localState = { count: 0, at: null };
+    this._aisLocalOn = on;
+    map.on('overlayadd', (e) => { if (e.layer === this.aisLocal) this.loadAisLocal(); });
+    map.on('overlayremove', (e) => { if (e.layer === this.aisLocal) this.aisLocal.clearLayers(); });
+    setInterval(() => this.loadAisLocal(), AIS_LOCAL_EVERY_MS);
+    this.syncAisLocal();
     if (app.S.viewer) return;        // 0.53: a view-only window: no online overlays (they'd come through the laptop's internet)
     for (const [name, layer] of layers) {
       layer._group = 'online';
@@ -171,6 +182,41 @@ export class OnlineOverlays {
     if (html) ctl.addAttribution(html);
   }
 
+  // ------------------------------------------------------------------ AIS from the NMEA inputs (0.56)
+  // In the Layers menu while settings ais_nmea is on (on by default the first time it's listed).
+  syncAisLocal() {
+    const mv = this.app.map, map = mv.map;
+    const want = this.app.S.config.settings.ais_nmea !== false;
+    const listed = !!mv.overlays[AIS_LOCAL_NAME];
+    if (want && !listed) {
+      mv.overlays[AIS_LOCAL_NAME] = this.aisLocal;
+      mv.layerControl.addOverlay(this.aisLocal, AIS_LOCAL_NAME);
+      let seen = null;
+      try { seen = JSON.parse(localStorage.getItem('wsr.overlays.seen') || 'null'); } catch {}
+      // at start: as it was left; switched back on in Settings: shown
+      const on = !this._aisLocalListed && this._aisLocalOn && seen?.includes(AIS_LOCAL_NAME) ? this._aisLocalOn.includes(AIS_LOCAL_NAME) : true;
+      this._aisLocalListed = true;
+      if (on) this.aisLocal.addTo(map);
+      mv.saveOverlayState();
+    } else if (!want && listed) {
+      mv.layerControl.removeLayer(this.aisLocal);
+      delete mv.overlays[AIS_LOCAL_NAME];
+      if (map.hasLayer(this.aisLocal)) map.removeLayer(this.aisLocal);
+      this.aisLocal.clearLayers();
+    }
+  }
+
+  async loadAisLocal() {
+    const map = this.app.map.map;
+    if (!map.hasLayer(this.aisLocal) || document.hidden || this._localBusy) return;
+    this._localBusy = true;
+    let r;
+    try { r = await (await fetch('/api/ais/local')).json(); } catch { r = null; } finally { this._localBusy = false; }
+    if (!r || !map.hasLayer(this.aisLocal)) return;
+    this.localState.count = this.drawAis(r.features || [], this.aisLocal);
+    this.localState.at = new Date();
+  }
+
   // ------------------------------------------------------------------ AIS
   async loadAis() {
     const map = this.app.map.map;
@@ -211,8 +257,8 @@ export class OnlineOverlays {
     this.app.onlineChanged?.();
   }
 
-  drawAis(features) {
-    this.ais.clearLayers();
+  drawAis(features, layer = this.ais) {
+    layer.clearLayers();
     let n = 0;
     for (const f of features) {
       const c = f.geometry?.coordinates, p = f.properties || {};
@@ -232,10 +278,11 @@ export class OnlineOverlays {
       L.marker(ll, { icon, keyboard: false, zIndexOffset: -200 })
         .bindTooltip(esc(p.name || `MMSI ${p.mmsi}`), { direction: 'top', offset: [0, -8] })
         .bindPopup(() => this.aisPopup(ll, p), { minWidth: 220, maxWidth: 320 })
-        .addTo(this.ais);
+        .addTo(layer);
       n++;
     }
-    this.state.aisCount = n;
+    if (layer === this.ais) this.state.aisCount = n;
+    return n;
   }
 
   aisPopup(ll, p) {
@@ -247,12 +294,18 @@ export class OnlineOverlays {
     if (Number.isFinite(+p.cog) && +p.cog < 360) rows.push(['Course', `${Math.round(+p.cog).toString().padStart(3, '0')}°T`]);
     if (Number.isFinite(+p.heading) && +p.heading < 360) rows.push(['Heading', `${Math.round(+p.heading).toString().padStart(3, '0')}°T`]);
     if (Number.isFinite(+p.nav_status) && NAV_STATUS[+p.nav_status]) rows.push(['Status', NAV_STATUS[+p.nav_status]]);
+    if (p.callsign) rows.push(['Call sign', p.callsign]);
+    if (p.length) rows.push(['Size', `${p.length} m${p.beam ? ` × ${p.beam} m` : ''}`]);
+    if (p.destination) rows.push(['Destination', p.destination]);
+    if (p.cls) rows.push(['AIS class', p.cls]);
     const seen = seenDate(p.seen);
     if (seen) { const t = timeParts(seen, app.clock()); rows.push(['Last heard', `${t.time.slice(0, 5)} ${t.abbr} (${ago(seen)})`]); }
     const wrap = el('div', { html: `<b>${esc(p.name || 'Unnamed vessel')}</b><table class="pop">${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(String(v))}</td></tr>`).join('')}</table>` });
     const v = app.S.vessel;
     if (v && v.lat !== null && v.lat !== undefined) wrap.append(el('div', { class: 'pop-rel' }, `${fmtDist(distM([v.lat, v.lon], ll), app.unit())} from the vessel, bearing ${fmtBrg(bearing([v.lat, v.lon], ll))}T`));
-    wrap.append(el('div', { class: 'hint' }, 'From Open Waters AIS, online; may be minutes old or incomplete. Not for navigation or collision avoidance.'));
+    wrap.append(el('div', { class: 'hint' }, p.local
+      ? `From the AIS receiver on the NMEA inputs${p.source ? ` (“${p.source}”)` : ''}. Not for collision avoidance.`
+      : 'From Open Waters AIS, online; may be minutes old or incomplete. Not for navigation or collision avoidance.'));
     return wrap;
   }
 
@@ -481,7 +534,7 @@ export class OnlineOverlays {
       el('div', { class: 'grid2' },
         el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Radar opacity'), op),
         el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: !!this.prefs.hideStopped,
-          onchange: (e) => { this.prefs.hideStopped = e.target.checked; this.savePrefs(); this.loadAis(); } }), el('span', {}, 'Hide AIS vessels that aren’t moving'))),
+          onchange: (e) => { this.prefs.hideStopped = e.target.checked; this.savePrefs(); this.loadAis(); this.loadAisLocal(); } }), el('span', {}, 'Hide AIS vessels that aren’t moving (online and NMEA)'))),
       status.length ? el('p', { class: 'hint', id: 'online-status' }, status.join(' ')) : null,
       el('p', { class: 'hint help' }, 'AIS colors: cargo green, tanker red, passenger blue, fishing orange, sailing and pleasure purple, tugs and special craft teal, other gray; a triangle points the way a moving vessel is heading, a dot is a vessel that isn’t moving, a diamond an aid to navigation. AIS from the internet can be minutes old and misses vessels without AIS or out of receiver range: not for navigation or collision avoidance.'),
       this.feedsBlock());

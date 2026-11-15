@@ -36,7 +36,7 @@ COOKIE = "spyhop_view"
 ALLOWED = {
     ("GET", "/"), ("GET", "/ws"), ("GET", "/static"),
     ("GET", "/api/bootstrap"), ("GET", "/api/changelog"), ("GET", "/api/guide"),
-    ("GET", "/api/instruments/history"), ("GET", "/api/reports"), ("GET", "/api/externals"),
+    ("GET", "/api/instruments/history"), ("GET", "/api/reports"), ("GET", "/api/externals"), ("GET", "/api/ais/local"),
     ("GET", "/api/routes"), ("GET", "/api/routes/file"), ("GET", "/api/tiles"), ("GET", "/api/clock"),
     ("GET", "/overlays/{name}"),
     ("GET", "/tiles/s/{i}/{z}/{x}/{y}"), ("GET", "/tiles/mb/{name}/{z}/{x}/{y}"),

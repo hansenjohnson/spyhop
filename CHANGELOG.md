@@ -6,6 +6,16 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.56.0 — 2026-11-14
+
+- **AIS from the NMEA inputs:** Spyhop now reads AIS (`!AIVDM`) from an AIS receiver or transponder on any input in use, usually the same connection as the GPS, with no internet needed. The vessels appear as the new map layer **AIS targets (NMEA)**, drawn like the online AIS overlay (colored by type, pointing the way they're heading), with a popup: name, MMSI, call sign, type, size, destination, speed, course, heading, status, last heard, which input, and distance and bearing from your vessel. Position reports, static data and aids to navigation are read (message types 1–5, 9, 18, 19, 21 and 24), two-part messages included; your own transponder (`!AIVDO`) is ignored. Targets are dropped 20 minutes after their last report.
+- **Settings → Inputs → AIS from the NMEA inputs** switches it on or off (on unless unticked, on this computer) and shows how many targets and messages have arrived, and from which inputs. View-only devices see the layer too.
+- **Error check** in the data tables' header now shows whenever a survey is open, with – – – until the first check. Clicking it runs the check and opens Tools → Error check.
+- **Rules can be changed during a survey:** they only change what the Error check reports, so they're now among the template's preferences (they were in its data part).
+- **New rows** in a long table are no longer partly hidden at the bottom of the table: the table keeps a margin below the selected row.
+- Removed the "needs an internet connection" note under SPOT and inReach inputs, which made their row very tall (the guide still says so).
+- The Survey tab no longer shows a Sharing row (Settings → Sharing has it).
+
 ## 0.55.0 — 2026-11-13
 
 - **Satellite trackers as inputs:** two new kinds in Settings → Inputs, **SPOT feed** (Globalstar SPOT Gen4, SPOT Trace…: the XML Feed ID, an optional feed password, how often to check, at least every 150 s) and **inReach MapShare** (Garmin: the MapShare name, an optional password, how often to check). They're always "other" inputs and need an internet connection. Each device in a feed is its own "other" source, named after the device: its map layer, trail and popup, and its track in `<survey>_<device>_gps.gpx` while a survey is active.

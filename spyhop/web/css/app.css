@@ -114,6 +114,7 @@ label.inline { display: inline-flex; align-items: center; gap: 0.35em; }
 
 /* ------------------------------------------------------------ grid */
 .grid-wrap { flex: 1; overflow: auto; outline: none; position: relative; }
+.grid-wrap::after { content: ''; display: block; height: 24px; }   /* room under the last row (0.56) */
 .tab-pane.overdue .grid-wrap { background: var(--overdue); }
 table.grid { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--grid-font); font-variant-numeric: tabular-nums; }
 table.grid th { position: sticky; top: 0; z-index: 2; background: var(--panel2); border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
@@ -703,6 +704,7 @@ h2.route-group { font-size: 1.15em; margin: 0.2em 0 0.5em; }
   font-size: 0.85em; color: var(--muted); white-space: nowrap; cursor: pointer; }
 #sf-qc.qc-head:hover { border-color: var(--line); background: var(--panel); }
 #sf-qc .qc-pill { font-size: 0.85em; padding: 0 0.4em; }
+#sf-qc .qc-pill.none { min-width: 1.4em; text-align: center; }
 
 /* 0.53: view-only windows and Settings → Sharing */
 #conn-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 3000; background: #a1271c; color: #fff; text-align: center;
@@ -730,5 +732,4 @@ body.viewer .view-locked { cursor: not-allowed; }
 
 /* 0.55: satellite trackers */
 .external-input.external-stale .ext-rot { opacity: 0.6; filter: grayscale(1); }
-.tracker-note { margin-top: 0.3em; max-width: 46em; white-space: normal; }
 .src-st .tracker-st { color: var(--muted); }

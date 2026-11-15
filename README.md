@@ -25,6 +25,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
   - one **primary** input for the platform, **secondary** inputs (a backup GPS, the depth sounder), with an optional fallback to a secondary and a red banner while it's used
   - **other** sources, such as a drone, a drifting buoy or a second vessel, each with its own icon, color and trail on the map and its own track file
   - satellite trackers as other sources: **Globalstar SPOT** (XML feeds) and **Garmin inReach** (MapShare), checked over the internet, each device on the map with its own trail and GPX track
+  - **AIS targets** from an AIS receiver or transponder on the NMEA network, drawn on the map with no internet needed
   - depth, wind, weather and engine readings with time-series plots, every reading logged with its source
   - raw NMEA logging, and a built-in **simulator** for practice
 - **Accurate times:** Spyhop checks the computer's clock against the GPS and, if they differ by more than 2 seconds, offers to set the clock before a survey starts

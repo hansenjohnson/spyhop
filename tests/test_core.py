@@ -3127,9 +3127,9 @@ def test_rules_parse_evaluate_and_template(rec, tmp_path):
     from spyhop import rules as R, templates
     from spyhop.qc import run_qc
     cfg = rec.cfg
-    # the default rule ships in templates/current/rules.csv, part of the template's data part
+    # the default rule ships in templates/current/rules.csv, part of the template's preferences (0.56; data part before)
     assert cfg.rules_path.exists() and len(cfg.rules) == 1 and cfg.rules[0]["then"][0]["value"] == "[Calves]"
-    assert "rules.csv" in templates.DATA_TABLES and templates.part_of("rules.csv") == "data"
+    assert "rules.csv" not in templates.DATA_TABLES and templates.part_of("rules.csv") == "prefs"
     assert "rules.csv" in zipfile.ZipFile(io.BytesIO(templates.make_zip(cfg))).namelist()
     # parsing: tests with spaces in them, "is one of" lists, [column] values, written without spaces
     c = R.parse_conditions("Count>=1 AND Weather is not one of Fog | Rain AND Glare is not blank")
@@ -3172,7 +3172,7 @@ def test_rules_parse_evaluate_and_template(rec, tmp_path):
     assert any(c[0] == "Rules" for c in r["checks"])
 
 
-def test_rules_api_and_locked_during_survey(tmp_path):
+def test_rules_api_and_changeable_during_survey(tmp_path):
     import asyncio
     from spyhop.server import App
     a = App(tmp_path / "a")
@@ -3188,12 +3188,11 @@ def test_rules_api_and_locked_during_survey(tmp_path):
     a.rec.new_row("events", {"EventType": "Other"})
     t = _run(a.test_rule(_Req({"rule": rule})))
     assert t["count"] == 1 and t["applies"] == 1 and t["total"] == 2 and t["rows"][0]["column"] == "ID", t
-    with pytest.raises(ValueErrorMsg, match="survey is under way"):
-        asyncio.run(a.save_rules(_Req({"rules": []})))
-    # the rules are kept with the other locked parts: a hand-edited rules.csv is put back during a survey
+    # 0.56: the rules only change the Error check, so they can change during a survey (and a hand edit is kept)
+    assert _run(a.save_rules(_Req({"rules": [rule, {**rule, "then": "ID is not EV"}]})))["ok"] and len(a.rec.cfg.rules) == 2
     a.rec.cfg.rules_path.write_text("on,table,level,if,then,message,resights\n")
     k = _run(a.reload_config(_Req()))
-    assert "rules.csv" in k["kept"] and len(a.rec.cfg.rules) == 1
+    assert "rules.csv" not in k.get("kept", []) and a.rec.cfg.rules == []
 
 
 def test_viewer_port_allows_only_its_list(tmp_path):
@@ -3419,3 +3418,52 @@ def test_tracker_poller_records_device_fixes(rec):
     assert d["feed_id"] == "0abc" and "password" not in d and d["role"] == "other"
     merged = merge_inputs(inputs, [d])
     assert next(x for x in merged if x["name"] == "Tags")["password"] == "secret"
+
+
+def test_ais_from_nmea_inputs(tmp_path):
+    """0.56: !AIVDM sentences on the NMEA inputs: single and two-part messages decoded and merged per MMSI,
+    VDO (this vessel) ignored, served by /api/ais/local in the online overlay's shape, and switched off by ais_nmea."""
+    import time
+    from spyhop.ais import AisTargets
+    from spyhop.nmea import NmeaDecoder, checksum
+    from spyhop.server import App
+
+    def s(body):
+        return "!" + body + "*" + checksum(body)
+    lines = [s(x) for x in (
+        "AIVDM,1,1,,B,177KQJ5000G?tO`K>RA1wUbN0TKH,0",                                                   # type 1
+        "AIVDM,2,1,1,A,55?MbV02;H;s<HtKR20EHE:0@T4@Dn2222222216L961O5Gf0NSQEp6ClRp8,0",                 # type 5, part 1
+        "AIVDM,2,2,1,A,88888888880,2",                                                                    # part 2
+        "AIVDM,1,1,,B,B52K>;h00Fc>jpUlNV@ikwpUoP06,0",                                                   # type 18 (Class B)
+        "AIVDO,1,1,,B,177KQJ5000G?tO`K>RA1wUbN0TKH,0")]                                                   # own vessel
+    d = NmeaDecoder()
+    assert not d.feed(lines[0], "ais")            # off: nothing decoded
+    d.ais = AisTargets()
+    for ln in lines:
+        d.feed(ln, "ais")
+    t = d.ais.targets
+    assert t[477553000]["lat"] == pytest.approx(47.582833) and t[477553000]["lon"] == pytest.approx(-122.345833)
+    assert t[477553000]["nav_status"] == 5 and t[477553000]["heading"] == 181 and t[477553000]["cls"] == "A"
+    assert t[351759000]["name"] == "EVER DIADEM" and t[351759000]["type"] == 70 and t[351759000]["destination"] == "NEW YORK"
+    assert t[338087471]["cls"] == "B" and t[338087471]["sog"] == 0.1
+    assert d.state.lat is None                     # AIS never moves this vessel
+    # the static report joins a later position for the same MMSI; a part that never completes is dropped
+    d.ais.sentence(["2", "2", "7", "A", "88888888880", "2"], "ais")
+    f = {x["properties"]["mmsi"]: x for x in d.ais.features()}
+    assert set(f) == {477553000, 338087471} and f[477553000]["geometry"]["coordinates"] == [-122.345833, 47.582833]
+    assert f[477553000]["properties"]["local"] and f[477553000]["properties"]["source"] == "ais"
+    st = d.ais.status()
+    assert st["targets"] == 2 and st["messages"] == 3 and st["inputs"] == ["ais"]
+    # old targets are dropped
+    d.ais.prune(now=time.time() + 3600)
+    assert not d.ais.targets
+    # the server: on by default; the setting switches it
+    a = App(tmp_path / "a")
+    assert a.rec.decoder.ais is not None
+    a.rec.decoder.feed(lines[0], "UDP")
+    r = _run(a.ais_local(_Req()))
+    assert r["on"] and len(r["features"]) == 1 and r["status"]["targets"] == 1
+    _run(a.settings(_Req({"updates": {"ais_nmea": False}})))
+    assert a.rec.decoder.ais is None and not _run(a.ais_local(_Req()))["on"]
+    with pytest.raises(ValueErrorMsg):
+        _run(a.settings(_Req({"updates": {"ais_nmea": "yes"}})))
