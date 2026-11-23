@@ -1200,11 +1200,44 @@ class Recorder:
         return self.new_row("sightings", prefill)
 
     # -- computed fields -----------------------------------------------------------
+    def guessed_unit(self, distance) -> str | None:
+        """0.62: the Unit Settings → General's guess gives a distance (None when guessing is off or it isn't a number)."""
+        s = self.cfg.settings
+        if not s.get("unit_guess"):
+            return None
+        try:
+            d = float(distance)
+        except (TypeError, ValueError):
+            return None
+        if d < float(s.get("unit_guess_below", 5)):
+            return s.get("unit_guess_small") or "nm"
+        if d > float(s.get("unit_guess_above", 10)):
+            return s.get("unit_guess_large") or "m"
+        unit = s.get("distance_unit", "nm")
+        return None if schema.reticle_name(unit) else unit
+
+    def _guess_unit(self, row: dict, changed: set[str]):
+        """When Dist is typed and Unit isn't (in the same edit), guess Unit from the number, unless the row's Unit
+        is one nobody would guess (a reticle reading, or a unit the guess doesn't use), which was chosen on purpose."""
+        if "Distance" not in changed or "DistUnit" in changed:
+            return
+        g = self.guessed_unit(row.get("Distance"))
+        if g is None:
+            return
+        s = self.cfg.settings
+        cur = row.get("DistUnit") or ""
+        if schema.reticle_name(cur):                   # a reticle reading: never guessed over
+            return
+        guessable = {s.get("unit_guess_small") or "nm", s.get("unit_guess_large") or "m", s.get("distance_unit", "nm"), ""}
+        if cur in guessable:
+            row["DistUnit"] = g
+
     def compute(self, tab: str, row: dict, changed: set[str], old: dict | None = None) -> list[str]:
         warnings = []
         if tab == "effort":
             self._glare_rule(row, changed)
         if tab == "sightings":
+            self._guess_unit(row, changed)
             keys = {"Bearing", "BrgRef", "Distance", "DistUnit", "Lat", "Lon", "VesHdg", "Altitude"}
             b, d = row.get("Bearing", ""), row.get("Distance", "")
             if b == "" or d == "":

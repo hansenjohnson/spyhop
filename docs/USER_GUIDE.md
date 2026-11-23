@@ -218,6 +218,7 @@ The tables work like a spreadsheet:
 
 - New rows get the time, vessel position and the next **SigNo** (the CSV column is SightNo). **FieldID** is free text for your own ID (photo-ID, catalog number…); it becomes the sighting's map label, and the cursor skips it on a new row so you go straight to Species. **Calves** takes a number, or **NA** where calves don't apply (dead birds, fishing gear, vessels…). **Cue** is the sighting cue, what first drew the observer's eye to the animals (Blow, Body at surface, Body subsurface, Water disturbance, Breach or Other unless your template's Cues list says otherwise); the drop-down shows each cue's definition.
 - Enter **Bearing** and **Distance**, and the animals' position (**SigLat/SigLon**) is worked out. Bearings can be negative and count back from 360 (−10 is stored as 350), which is handy for relative bearings to port. Without a bearing and distance, SigLat/SigLon are the vessel position. A position picked on the map gets its bearing and distance worked out backwards.
+- **Guessing the Unit** (optional, Settings → General → Bearings, distances and time → **Guess the distance unit from the distance typed**): when you type Dist and haven't picked the Unit, Spyhop picks it from the number: below 5 → nautical miles, above 10 → meters, in between the default distance unit (the limits and units can be changed). The Unit cell shows the guess, so check it and change it if it's wrong. A Unit you picked yourself (km, or a reticle reading) is left alone. It travels with the template.
 - Each row stores its own bearing reference (**Ref**: M magnetic, T true, R relative to the bow, **C clock**) and distance **Unit**, so changing the defaults in Settings never changes old rows. The vessel heading is saved in the CSV (`VesHdg`, not shown) so relative bearings can be converted. Magnetic bearings use the World Magnetic Model.
 - **Clock bearings (Ref C):** the Bearing cell offers 1 to 12 o'clock. Each hour is 30° from the bow: 12 dead ahead, 3 the starboard beam, 6 astern, 9 the port beam. Choose C as the **Default bearing reference** in Settings → General to have it on every new sighting.
 - **Reticle distances** (Settings → Dropdowns → Reticles): each entry of the reticles list is a **Unit**, `reticles-<name>` (e.g. `reticles-binos`), offered in the Unit column and as the default distance unit. With one, Dist is a reading, and Spyhop works out the distance from it and the sighting's **Alt** (filled in from the **Default observer altitude**, Settings → General → Altitude and reticles; edit it if the height was different), allowing for the curvature of the earth (Lerczak & Hobbs 1998). A reading at or above the horizon gives no distance. Each entry has a **name** (letters, digits, `-`, `_` and `.`; no spaces) and a method:
@@ -276,6 +277,8 @@ A resight is another sighting of animals already recorded: closing in for photos
 | Ctrl+PageUp/PageDown, Alt+←/→ | Previous/next tab |
 | Ctrl+Shift+C | Center on the vessel |
 | Ctrl+Shift+M | Minimize / restore the data tables |
+
+Settings → Shortcuts can also give keys to **Maximize / restore the data tables**, **Minimize / restore the map**, **Maximize / restore the map**, **Minimize / restore Survey · Tools · Settings** and **Maximize / restore Survey · Tools · Settings** (they have no keys unless you give them some), and to **Start or stop measuring on the map**.
 
 **Mod** in Settings → Shortcuts is ⌘ (Command) on a Mac and Ctrl on Windows and Linux, so one template works on both. On a Mac the Control key isn't used for shortcuts.
 
@@ -591,7 +594,7 @@ Every computer has a **current template**: the one in use, kept unzipped in `tem
 
 **Settings → Dropdowns** edits the lists of the current template: **Species**, **Events**, **Behaviors**, **Cues**, **Observers**, **Effort**, **Visibility**, **Weather** and **Reticles**.
 
-- Each entry has a name (initials, for observers), a code, and for species and events a color (typed as a name like `red`, or picked). Behaviors and cues have a **definition**, shown in the Behaviors checklist and the Cue drop-down; effort entries have a status, a definition and a color.
+- Each entry has a name (initials, for observers), a code, and for species and events a color: a color name such as `red` or `darkorange`, a code such as `#1f6fd1`, or picked with the color picker beside it. **Color names…** (below the list) shows every color name Spyhop understands as a chart of swatches: click one to use it for the row whose color box you clicked last. The color boxes also suggest names as you type. Behaviors and cues have a **definition**, shown in the Behaviors checklist and the Cue drop-down; effort entries have a status, a definition and a color.
 - **↑ ↓** set the order of the drop-down, **✕** removes an entry, **Add entry** and **Sort A–Z** do what they say, and **Save** keeps the changes.
 - Names and codes must be unique. Spyhop shows what's wrong and saves nothing until it's fixed.
 - Renaming or removing an entry doesn't change rows already recorded; the Error check flags values that are no longer in the list.

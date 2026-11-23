@@ -3502,3 +3502,26 @@ def test_short_time_zone_names_on_every_system():
     assert zone_abbr(z("W. Europe Standard Time", 60)) == "UTC+01:00"
     assert zone_abbr(z("India Standard Time", 330)) == "UTC+05:30" and zone_abbr(z("Newfoundland Standard Time", -210)) == "NST"
     assert zone_abbr(z("EST", -300)) == "EST" and zone_abbr(z("CEST", 120)) == "CEST"
+
+
+def test_guess_the_distance_unit(rec):
+    """0.62: with Settings → General's guess on, a Dist typed without a Unit gets one from the number (below 5 nm,
+    above 10 m, in between the default); a Unit picked on purpose (km, a reticle) is kept; the limits are checked."""
+    s = rec.new_row("sightings", {"Species": "Humpback whale", "Count": "1", "Bearing": "10", "Distance": "800"})["row"]
+    assert s["DistUnit"] == "nm"                                         # off: the default, as before
+    rec.cfg.save_settings({"unit_guess": True, "distance_unit": "km"})
+    s = rec.new_row("sightings", {"Species": "Humpback whale", "Count": "1", "Bearing": "10", "Distance": "800"})["row"]
+    assert s["DistUnit"] == "m"
+    rid = s["RowID"]
+    assert rec.edit("sightings", rid, {"Distance": "1.5"})["row"]["DistUnit"] == "nm"
+    assert rec.edit("sightings", rid, {"Distance": "7"})["row"]["DistUnit"] == "km"          # in between: the default
+    assert rec.edit("sightings", rid, {"Distance": "3", "DistUnit": "mi"})["row"]["DistUnit"] == "mi"   # typed together
+    assert rec.edit("sightings", rid, {"Distance": "300"})["row"]["DistUnit"] == "mi"       # picked on purpose: kept
+    rec.edit("sightings", rid, {"DistUnit": "reticles-binos"})
+    assert rec.edit("sightings", rid, {"Distance": "2"})["row"]["DistUnit"] == "reticles-binos"
+    rec.cfg.save_settings({"unit_guess_below": 1, "unit_guess_small": "km", "unit_guess_above": 2, "unit_guess_large": "yd"})
+    assert rec.guessed_unit("0.5") == "km" and rec.guessed_unit("3") == "yd" and rec.guessed_unit("1.5") == "km"
+    for bad in ({"unit_guess_small": "furlong"}, {"unit_guess_below": 20}, {"unit_guess_above": "x"}, {"unit_guess": "yes"}):
+        with pytest.raises(ValueError):
+            rec.cfg.save_settings(bad)
+    rec.cfg.save_settings({"unit_guess": False, "distance_unit": "nm"})

@@ -2,9 +2,7 @@
 
 Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS and instruments over NMEA 0183, shows a live chart, and logs **sightings, effort and environmental conditions, events, the trackline and instrument readings and more** to plain CSV files as you type. It also has some handy features for survey planning, error checking, and reporting. Best of all, it's totally free, open source, runs on any laptop (Mac, Windows or Linux) and needs no internet once installed.
 
-![Spyhop](docs/screenshot.png)
-
-> **Active development.** Spyhop is developed for our own vessel-based whale surveys at the New England Aquarium, and its default lists, checks and reports follow our protocols. Other groups are welcome to use and adapt it: lists, shortcuts and reports are config files, not code. Expect changes between versions, and check the exported columns against your own pipelines before relying on them. Version: see [CHANGELOG.md](CHANGELOG.md) (also shown in Spyhop under Settings → About).
+> **Active development.** Spyhop is developed for our own vessel-based whale surveys at the New England Aquarium, and its default lists, checks and reports follow our protocols. Other groups are welcome to use and adapt it: lists, shortcuts, rules and reports are part of a template you edit in Spyhop, not code. Expect changes between versions, and check the exported columns against your own pipelines before relying on them. Version: see [CHANGELOG.md](CHANGELOG.md) (also shown in Spyhop under Settings → About).
 
 ## Features
 
@@ -12,8 +10,9 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
   - Sightings, Effort and Events tables with drop-downs that filter as you type, keyboard shortcuts (including species shortcuts) and per-table undo/redo
   - time and position filled in from the GPS, conditions copied forward, and a reminder to update the conditions
   - **resights**: link a later look at the same animals to the first sighting, so they're counted once
-  - sighting positions worked out from bearing and distance, including **reticle** readings (binoculars, calibrated marks or an inclinometer) and **clock bearings** (1–12 o'clock)
-  - columns you can reorder and resize, and three resizable panes: the map, Survey/Tools/Settings, and the data tables
+  - sighting positions worked out from bearing and distance, including **reticle** readings (binoculars, calibrated marks or an inclinometer) and **clock bearings** (1–12 o'clock); optionally the distance unit guessed from the number
+  - a sighting **cue** and **behaviors**, each from your own list with definitions
+  - columns you can reorder, resize and hide, and three resizable panes (the map, Survey/Tools/Settings, and the data tables), each with shortcuts to minimize or maximize it
 - **Your own effort codes:** an Effort list (ON, TRANSECT, DIRECTED, PHOTO-ID, FOLLOW, OFF… by default) with a status (on or off effort), a definition and a color for each, used on the map, in the Summary, in reports and in the Error check
 - **Platforms:** shipboard, aerial (with altitude) and **stationary** surveys. A stationary survey can use a fixed station position instead of a GPS.
 - **Live chart:**
@@ -54,7 +53,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
 - **Summary and reports:**
   - a Summary (totals, conditions, observers, a map), saved as HTML or PDF
   - **Reports:** pick species or event types, conditions and columns from any table, see the result live, and save it as CSV, HTML or PDF; save reports by name, share them in templates, and run them all at once
-- **Templates:** save a team's setup as one small `.spyhop-template.zip` file: its **data part** (the lists, reticles, saved reports and the settings that change what's recorded) and its **preferences** (shortcuts, map display, inputs, map feeds), and optionally waypoints, routes and overlays. Switch between templates, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer gets the latest with one button and keeps a backup. During a survey the data part is locked, so every record of a survey is made with the same lists and settings.
+- **Templates:** save a team's setup as one small `.spyhop-template.zip` file: its **data part** (the lists, reticles, saved reports and the settings that change what's recorded) and its **preferences** (shortcuts, rules, map display, inputs, map feeds, navigation), and optionally waypoints, routes and overlays. Switch between templates, and share one with the team on the web (e.g. Google Drive, Dropbox or GitHub). Each computer gets the latest with one button and keeps a backup. During a survey the data part is locked and templates can't be used or saved, so every record of a survey is made with the same lists and settings.
 - **Export:** separate CSVs, a merged time-ordered CSV (sightings, effort, events and track) with the conditions on every row, GPX, GeoJSON, the summary and saved reports, in one zip.
 - **Help built in:** the user guide, with a quick start and contents, in **Settings → Guide**, a **?** next to each section heading, a description of every column, and in-app updates.
 
@@ -63,7 +62,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
 - **Operating system:** macOS 12 (Monterey) or newer, on Apple silicon or Intel; or Windows 10 or 11 (64-bit). Linux works too.
 - **Python:** 3.10 to 3.15 (3.13 recommended). A newer Python than Spyhop has been tested with isn't used. See [Installation](#installation) below.
 - **Browser:** Google Chrome or Microsoft Edge are recommended. Spyhop opens in a Chrome/Edge "app" window, and they're needed for saving reports as PDF. Without either, Spyhop opens in your default browser.
-- **Internet:** once, the first time Spyhop starts (and after an update that adds packages), to install its Python packages. It's not needed after that.
+- **Internet:** once, the first time Spyhop starts (and after an update that changes its packages), to install its Python packages. It's not needed after that, except for the online maps and overlays and satellite trackers, if you use them.
 - **Disk:** roughly 100 MB with its Python packages, plus your data and any offline charts.
 - **Screen:** 1280 × 800 or larger is comfortable.
 - **GPS:** any NMEA 0183 source: a USB GPS, or a ship's network sending NMEA over UDP or TCP. You don't need one to try Spyhop: use the simulator. A stationary survey can use a typed-in station position instead.
@@ -90,7 +89,7 @@ Don't use the `python3` that comes with Apple's Command Line Tools or Xcode: on 
 #### Spyhop
 
 1. Download Spyhop from the [latest release](https://github.com/hansenjohnson/spyhop/releases/latest): under **Assets**, click **Source code (zip)**. Unzip it.
-   - **Rename the folder** from `spyhop-0.48.0` (or similar) to `spyhop`. In-app updates replace the files in place, so the folder keeps its name; a version number in it would soon be wrong.
+   - **Rename the folder** from `spyhop-0.62.0` (or similar) to `spyhop`. In-app updates replace the files in place, so the folder keeps its name; a version number in it would soon be wrong.
    - Put the folder where it will stay, e.g. in Documents, **before** the first start: the Spyhop icon points at this folder.
    - Developers can `git clone https://github.com/hansenjohnson/spyhop.git` instead. Spyhop then updates itself with `git pull`.
 2. Double-click **`Start Spyhop (Mac).command`**.
@@ -115,8 +114,8 @@ If typing `python` opens the Microsoft Store instead, that's Windows' shortcut, 
 #### Spyhop
 
 1. Download Spyhop from the [latest release](https://github.com/hansenjohnson/spyhop/releases/latest): under **Assets**, click **Source code (zip)**. Unzip it (right-click → **Extract All…**).
-   - **Rename the folder** from `spyhop-0.48.0` (or similar) to `spyhop`. In-app updates replace the files in place, so the folder keeps its name; a version number in it would soon be wrong.
-   - Windows often unzips into a folder inside a folder of the same name (`spyhop-0.48.0\spyhop-0.48.0`). Use the inner one, which contains `README.md` and the start files.
+   - **Rename the folder** from `spyhop-0.62.0` (or similar) to `spyhop`. In-app updates replace the files in place, so the folder keeps its name; a version number in it would soon be wrong.
+   - Windows often unzips into a folder inside a folder of the same name (`spyhop-0.62.0\spyhop-0.62.0`). Use the inner one, which contains `README.md` and the start files.
    - Put the folder where it will stay, e.g. in Documents, **before** the first start: the Spyhop icon points at this folder.
    - Developers can `git clone https://github.com/hansenjohnson/spyhop.git` instead. Spyhop then updates itself with `git pull`.
 2. Double-click **`Start Spyhop (Windows).bat`**. If Windows says it protected your PC, click **More info → Run anyway**.
@@ -166,9 +165,9 @@ See [Starting, quitting and updating](#starting-quitting-and-updating) and, if a
    - **UDP** or **TCP** for a ship's network
    - **SIMULATOR** to practice
 
-   Make it the **Primary** and press **Apply**. The status bar shows the position once there's a fix, and **Tools → Instruments** shows everything coming in.
-2. **Check your lists** (once): species, event types, behaviors, observers, effort codes, visibility, weather and reticles are in **Settings → Dropdowns**, and the keyboard shortcuts in **Settings → Shortcuts**. If your team shares a template, use it from **Settings → Templates** instead. The lists can't change during a survey, so set them up beforehand (each list has an **Other** entry for anything unexpected).
-3. **Plan the route** (optional): **Tools → Routes**, then **Save route** and **Activate route**.
+   Set its role to **Primary** and press **Apply**. The status bar shows the position once there's a fix, and **Tools → Instruments** shows everything coming in.
+2. **Check your lists** (once): species, event types, behaviors, cues, observers, effort codes, visibility, weather and reticles are in **Settings → Dropdowns**, the keyboard shortcuts in **Settings → Shortcuts**, and your own checks in **Settings → Rules**. If your team shares a template, use it from **Settings → Templates** instead. The lists can't change during a survey, so set them up beforehand (each list has an **Other** entry for anything unexpected).
+3. **Plan the route** (optional): **Tools → Routes**, then **Save route** and **Activate route**. **Navigate along this route** shows the distance, VMG and ETA to each waypoint in a box on the map.
 4. **Start:** in **Survey**, press **Start New Survey…**. Enter a name (in your team's own naming convention) and the survey details: platform name and type (for a stationary platform, its position if there's no GPS), organization and chief scientist. Spyhop then checks the GPS and the computer's clock, adds the *Start* row to Effort and starts the trackline.
 5. **Go on effort:** Ctrl+Shift+F (⌘⇧F on a Mac) adds an Effort row that switches effort ON or OFF. Fill in the conditions and the observers.
 6. **Record sightings and events:** press **Add row** in the Sightings or Events tab, use a shortcut (Ctrl/⌘+Shift+S for a sighting, Ctrl/⌘+Shift+V for an event), or right-click the map.

@@ -224,7 +224,8 @@ def without_colors(rows) -> list[dict]:
     return [{k: str(v or "").strip() for k, v in r.items() if k not in COLOR_COLUMNS} for r in rows or []]
 SHORTCUT_VERBS = {"add", "tab"}            # verbs that take ":<argument>"
 SHORTCUT_ACTIONS = {"add-current", "add-resight", "toggle-effort", "undo", "redo", "next-tab", "prev-tab",
-                    "center-vessel", "toggle-log", "max-log", "measure"}
+                    "center-vessel", "toggle-log", "max-log", "measure",
+                    "toggle-map", "max-map", "toggle-util", "max-util"}      # 0.62: the map and Survey/Tools/Settings panes
 _COLOR = re.compile(r"^(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6}|[a-zA-Z]{3,30})$")
 _MODS = {"mod": "Mod", "cmd": "Mod", "ctrl": "Mod", "shift": "Shift", "alt": "Alt", "option": "Alt"}
 
@@ -330,6 +331,11 @@ DEFAULT_SETTINGS = {
     "timezone": "local",            # local | UTC | auto (from the position) | UTC±hh:mm
     "bearing_reference": "M",
     "distance_unit": "nm",
+    # 0.62: guess a sighting's Unit from the distance typed: below unit_guess_below → unit_guess_small, above
+    # unit_guess_above → unit_guess_large, in between the default unit (Settings → General)
+    "unit_guess": False,
+    "unit_guess_below": 5, "unit_guess_small": "nm",
+    "unit_guess_above": 10, "unit_guess_large": "m",
     "map_distance_unit": "nm",      # distances on the map, in popups, routes and the Summary (no reticles)
     "mag_variation": "auto",
     "tracking_interval": 1,         # 0.47: a track point every second (was 10)
@@ -391,6 +397,9 @@ SHARED_SETTINGS = {
     "bearing_reference": "Bearing reference",
     "distance_unit": "Distance unit",
     "map_distance_unit": "Map distance unit",
+    "unit_guess": "Guess the distance unit",
+    "unit_guess_below": "Guess: below (Dist)", "unit_guess_small": "Guess: unit below",
+    "unit_guess_above": "Guess: above (Dist)", "unit_guess_large": "Guess: unit above",
     "mag_variation": "Magnetic variation",
     "tracking_interval": "Track point every (s)",
     "effort_reminder_min": "Effort reminder (min)",
@@ -981,6 +990,24 @@ class Config:
                 if not lo <= f <= hi:
                     raise ValueError(what)
                 updates = {**updates, k: int(f) if k == "nav_average_s" else f}
+        for k in ("unit_guess_below", "unit_guess_above"):
+            if updates and k in updates:
+                try:
+                    f = float(updates[k])
+                except (TypeError, ValueError):
+                    raise ValueError("The distance-unit guess limits are numbers.") from None
+                if not 0 <= f <= 100000:
+                    raise ValueError("The distance-unit guess limits are 0 to 100000.")
+                updates = {**updates, k: int(f) if f == int(f) else f}
+        for k in ("unit_guess_small", "unit_guess_large"):
+            if updates and k in updates and updates[k] not in ("m", "km", "nm", "mi", "yd"):
+                raise ValueError("A guessed unit is m, km, nm, mi or yd.")
+        if updates and "unit_guess" in updates and not isinstance(updates["unit_guess"], bool):
+            raise ValueError("Guessing the distance unit is on or off.")
+        lo = (updates or {}).get("unit_guess_below", self.settings.get("unit_guess_below", 5))
+        hi = (updates or {}).get("unit_guess_above", self.settings.get("unit_guess_above", 10))
+        if updates and ({"unit_guess_below", "unit_guess_above"} & set(updates)) and float(lo) > float(hi):
+            raise ValueError("The “below” limit of the distance-unit guess must not be more than the “above” limit.")
         if updates and "nav_eta_mode" in updates and updates["nav_eta_mode"] not in ("measured", "fixed"):
             raise ValueError("ETAs come from the measured speed or a fixed speed.")
         for k in ("nav_auto_advance", "nav_show_box"):

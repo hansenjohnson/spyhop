@@ -2033,6 +2033,10 @@ class App {
       case 'tab': this.showTab(arg); break;
       case 'toggle-log': this.setPaneMin('data', !this.paneLayout().min.data); break;
       case 'max-log': this.setPaneMax('data'); break;
+      case 'toggle-map': this.setPaneMin('map', !this.paneLayout().min.map); break;       // 0.62
+      case 'max-map': this.setPaneMax('map'); break;
+      case 'toggle-util': this.setPaneMin('util', !this.paneLayout().min.util); break;
+      case 'max-util': this.setPaneMax('util'); break;
       case 'next-tab': this.showTab(tabs[(tabs.indexOf(this.tab) + 1) % tabs.length]); break;
       case 'prev-tab': this.showTab(tabs[(tabs.indexOf(this.tab) - 1 + tabs.length) % tabs.length]); break;
       case 'center-vessel': this.map.centerVessel(); break;
@@ -2668,6 +2672,15 @@ class App {
           el('label', { class: 'row' }, 'Map distance unit', sel('map_distance_unit', [['nm', 'Nautical miles'], ['km', 'Kilometers'], ['m', 'Meters'], ['mi', 'Statute miles'], ['yd', 'Yards']])),
           el('label', { class: 'row' }, 'Lat/lon format', sel('latlon_format', [['DDM', 'Deg + decimal min'], ['DD', 'Decimal degrees'], ['DMS', 'Deg min sec']])),
           el('label', { class: 'row' }, 'Clock', sel('timezone', this.clockOptions()), this.clockHint())),
+        // 0.62: guess a sighting's Unit from the distance typed
+        el('div', { class: 'grid2 checks' }, Object.assign(chk('unit_guess', 'Guess the distance unit from the distance typed'), { id: 'unit-guess-row' })),
+        el('div', { class: `unit-guess${st.unit_guess ? '' : ' off'}`, id: 'unit-guess' },
+          'Below ', Object.assign(num('unit_guess_below', 0, 100000, 'any'), { id: 'unit-guess-below', style: 'width:5em' }), ' → ',
+          Object.assign(sel('unit_guess_small', UNIT_OPTS), { id: 'unit-guess-small' }),
+          ' · above ', Object.assign(num('unit_guess_above', 0, 100000, 'any'), { id: 'unit-guess-above', style: 'width:5em' }), ' → ',
+          Object.assign(sel('unit_guess_large', UNIT_OPTS), { id: 'unit-guess-large' }),
+          el('span', { class: 'hint' }, ' · in between: the default distance unit')),
+        el('p', { class: 'hint help' }, 'Guess the distance unit: when you type a sighting’s Dist and haven’t picked its Unit, Spyhop picks it from the number, e.g. below 5 → nautical miles, above 10 → meters, in between the default distance unit. The Unit cell shows the guess: change it if it’s wrong (a Unit you picked yourself, such as a reticle reading or km, is left alone). It travels with the template.'),
         el('p', { class: 'hint help' }, 'The map distance unit is used for the measuring tool, popups, routes and the Summary’s distances; the Sightings default is the Unit of new sightings. A clock bearing (Ref C) is picked from 1 to 12 o’clock, each hour 30° from the bow (3 = starboard beam). Each sighting row stores its own bearing reference and distance unit, so changing these defaults never changes old rows. The clock setting changes how all times are shown; the files always store the UTC offset with each time.')),
       this.altitudeSection(sec, sel),
       // 0.57: navigation to a waypoint or along a route (nav.py, nav.js)
@@ -2809,6 +2822,8 @@ class App {
       ...this.allTabs().map((k) => [`tab:${k}`, `Show ${tabName[k] || k}`]),
       ['center-vessel', 'Center the map on the vessel'], ['measure', 'Start or stop measuring on the map'],
       ['toggle-log', 'Minimize / restore the data tables'], ['max-log', 'Maximize / restore the data tables'],
+      ['toggle-map', 'Minimize / restore the map'], ['max-map', 'Maximize / restore the map'],
+      ['toggle-util', 'Minimize / restore Survey · Tools · Settings'], ['max-util', 'Maximize / restore Survey · Tools · Settings'],
     ];
   }
 
@@ -2952,6 +2967,31 @@ class App {
     toast('Shortcuts saved');
   }
 
+  // 0.62: Settings → Dropdowns → Color names…: every color name a color box understands (the CSS names), as
+  // swatches sorted by hue; a click fills the row whose color box was last clicked (or copies the name)
+  colorGuide() {
+    const hsl = (name) => {
+      const c = document.createElement('canvas').getContext('2d'); c.fillStyle = name;
+      const h = c.fillStyle, r = parseInt(h.slice(1, 3), 16) / 255, g = parseInt(h.slice(3, 5), 16) / 255, b = parseInt(h.slice(5, 7), 16) / 255;
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+      if (!d) return [-1, 0, l];                                        // grays, white and black first, by lightness
+      const sat = d / (1 - Math.abs(2 * l - 1));
+      const hue = mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      return [sat < 0.12 ? -1 : hue * 60, sat, l];
+    };
+    const names = [...CSS_COLOR_NAMES].map((n) => [n, hsl(n)]).sort((a, b) => a[1][0] - b[1][0] || a[1][2] - b[1][2]).map(([n]) => n);
+    const tgt = this._ddColorTarget;
+    const body = el('div', {},
+      el('p', { class: 'hint' }, 'A color box takes any of these names (upper or lower case; grey works as well as gray), or a code like #1f6fd1 (the color picker beside each box gives one). ',
+        tgt ? `Click a color to use it for “${tgt.name}”.` : 'Click a color to copy its name; click a row’s color box first to fill it in instead.'),
+      el('div', { class: 'color-guide', id: 'color-guide' }, names.map((n) => el('button', { class: 'cg-item', 'data-color': n, title: n,
+        onclick: () => {
+          if (this._ddColorTarget) { this._ddColorTarget.set(n); toast(`${n} → ${this._ddColorTarget.name}`); }
+          else navigator.clipboard?.writeText(n).then(() => toast(`Copied “${n}”`)).catch(() => {});
+        } }, el('span', { class: 'cg-sw', style: { background: n } }), el('span', { class: 'cg-name' }, n)))));
+    modal({ title: 'Color names', body, width: '46em', closeOnOutside: true, buttons: [{ label: 'Close', value: null, primary: true }] });
+  }
+
   // ---------------------------------------------------------------- Settings → Dropdowns: the drop-down lists
   dropdownLists() { return [['species', 'Species'], ['event_types', 'Events'], ['behaviors', 'Behaviors'], ['cues', 'Cues'], ['observers', 'Observers'],
     ['effort', 'Effort'], ['visibility', 'Visibility'], ['weather', 'Weather'], ['reticles', 'Reticles']]; }
@@ -2973,7 +3013,7 @@ class App {
     const rows = this.ddDrafts[cur] || saved;
     const dirty = !!this.ddDrafts[cur] && JSON.stringify(this.ddDrafts[cur]) !== JSON.stringify(saved);
     const edit = () => { if (!this.ddDrafts[cur]) this.ddDrafts[cur] = rows.map((r) => ({ ...r })); return this.ddDrafts[cur]; };
-    const markDirty = () => { const b = $('#btn-dd-save'); if (b) { b.classList.add('dirty'); b.textContent = 'Save — unsaved changes'; } };
+    const markDirty = () => { const b = $('#btn-dd-save'); if (b) { b.classList.add('dirty'); b.textContent = 'Save — unsaved changes'; } const rv = $('#btn-dd-revert'); if (rv) rv.disabled = false; };
     const uniq = cols.filter((c) => c === 'name' || /_code$/.test(c));
     const counts = Object.fromEntries(uniq.map((c) => [c, {}]));
     rows.forEach((r) => uniq.forEach((c) => { const v = (r[c] || '').trim().toLowerCase(); if (v) counts[c][v] = (counts[c][v] || 0) + 1; }));
@@ -3017,10 +3057,14 @@ class App {
       }
       if (c === 'color') {
         const sw = el('span', { class: 'swatch', style: { background: okColor(r.color) ? r.color || 'transparent' : 'transparent' } });
-        const txt = el('input', { type: 'text', value: r.color, class: okColor(r.color) ? null : 'invalid', size: 12,
+        const txt = el('input', { type: 'text', value: r.color, class: okColor(r.color) ? null : 'invalid', size: 12, list: 'css-color-names',
+          title: 'A color name (see Color names…) or #rrggbb',
           oninput: (e) => { edit()[i].color = e.target.value.trim(); const ok = okColor(e.target.value.trim()); e.target.classList.toggle('invalid', !ok); sw.style.background = ok ? e.target.value : 'transparent'; markDirty(); } });
         const pick = el('input', { type: 'color', value: toHex(r.color), title: 'Pick a color',
           oninput: (e) => { edit()[i].color = e.target.value; txt.value = e.target.value; txt.classList.remove('invalid'); sw.style.background = e.target.value; markDirty(); } });
+        // 0.62: the Color names guide fills the row whose color was last clicked
+        const set = (v) => { edit()[i].color = v; txt.value = v; txt.classList.remove('invalid'); sw.style.background = v; pick.value = toHex(v); markDirty(); };
+        for (const x of [txt, pick]) x.addEventListener('focus', () => { this._ddColorTarget = { set, name: r.name || `row ${i + 1}` }; });
         return el('td', { class: 'color-cell' }, sw, txt, pick);
       }
       const v = r[c] ?? '';
@@ -3059,11 +3103,13 @@ class App {
       el('div', { class: 'btnrow' },
         el('button', { disabled: locked, onclick: () => { edit().push({ ...Object.fromEntries(cols.map((c) => [c, ''])), ...(cur === 'reticles' ? { method: 'binoculars' } : cur === 'effort' ? { status: 'on' } : {}) }); this.renderDropdowns();
           const ins = $$('#pane-dropdowns tbody tr:last-child input[type=text]'); ins[0]?.focus(); } }, 'Add entry'),
-        el('button', { disabled: locked, onclick: () => { edit().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })); this.renderDropdowns(); } }, 'Sort A–Z')),
+        el('button', { disabled: locked, onclick: () => { edit().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })); this.renderDropdowns(); } }, 'Sort A–Z'),
+        cols.includes('color') ? el('button', { id: 'btn-color-guide', title: 'The color names Spyhop understands, as swatches', onclick: () => this.colorGuide() }, 'Color names…') : null),
+      cols.includes('color') ? el('datalist', { id: 'css-color-names' }, CSS_COLOR_NAMES.map((n) => el('option', { value: n }))) : null,
       el('div', { id: 'dd-errors' }),
       el('div', { class: 'btnrow' },
         el('button', { id: 'btn-dd-save', class: `primary${dirty ? ' dirty' : ''}`, disabled: locked && !cols.includes('color'), onclick: () => this.saveDropdown(cur) }, dirty ? 'Save — unsaved changes' : 'Save'),
-        el('button', { disabled: !this.ddDrafts[cur] || (locked && !cols.includes('color')), onclick: () => { delete this.ddDrafts[cur]; this.renderDropdowns(); } }, 'Revert')),
+        el('button', { id: 'btn-dd-revert', disabled: !this.ddDrafts[cur] || (locked && !cols.includes('color')), onclick: () => { delete this.ddDrafts[cur]; this.renderDropdowns(); } }, 'Revert')),
       el('p', { class: 'hint help' }, 'The order here is the order in the drop-down. Renaming or removing an entry doesn’t change rows already recorded; the Error check flags values that are no longer in the list. Every list has Other, a placeholder for anything missing from it: lists can’t change during a survey (only their colors can), so record it as Other and fill in the right entry afterwards — the Error check lists the rows that use Other.'),
       this.fileBox(`${cur}.csv`, `config:${cur}`, () => { delete this.ddDrafts[cur]; }, locked)));
   }
@@ -3855,6 +3901,24 @@ function card(label, value, live = false) {
   return el('div', { class: `card${live ? ' live' : ''}` }, el('div', { class: 'card-v' }, String(value)),
     el('div', { class: 'card-l' }, live ? '● ' : '', label));
 }
+
+// the CSS color names (CSS Color Module 4): what a color box in Settings → Dropdowns understands, besides #rrggbb
+const CSS_COLOR_NAMES = ['aliceblue', 'antiquewhite', 'aqua', 'aquamarine', 'azure', 'beige', 'bisque', 'black', 'blanchedalmond', 'blue',
+  'blueviolet', 'brown', 'burlywood', 'cadetblue', 'chartreuse', 'chocolate', 'coral', 'cornflowerblue', 'cornsilk', 'crimson', 'cyan',
+  'darkblue', 'darkcyan', 'darkgoldenrod', 'darkgray', 'darkgreen', 'darkkhaki', 'darkmagenta', 'darkolivegreen', 'darkorange', 'darkorchid',
+  'darkred', 'darksalmon', 'darkseagreen', 'darkslateblue', 'darkslategray', 'darkturquoise', 'darkviolet', 'deeppink', 'deepskyblue',
+  'dimgray', 'dodgerblue', 'firebrick', 'floralwhite', 'forestgreen', 'fuchsia', 'gainsboro', 'ghostwhite', 'gold', 'goldenrod', 'gray',
+  'green', 'greenyellow', 'honeydew', 'hotpink', 'indianred', 'indigo', 'ivory', 'khaki', 'lavender', 'lavenderblush', 'lawngreen',
+  'lemonchiffon', 'lightblue', 'lightcoral', 'lightcyan', 'lightgoldenrodyellow', 'lightgray', 'lightgreen', 'lightpink', 'lightsalmon',
+  'lightseagreen', 'lightskyblue', 'lightslategray', 'lightsteelblue', 'lightyellow', 'lime', 'limegreen', 'linen', 'magenta', 'maroon',
+  'mediumaquamarine', 'mediumblue', 'mediumorchid', 'mediumpurple', 'mediumseagreen', 'mediumslateblue', 'mediumspringgreen',
+  'mediumturquoise', 'mediumvioletred', 'midnightblue', 'mintcream', 'mistyrose', 'moccasin', 'navajowhite', 'navy', 'oldlace', 'olive',
+  'olivedrab', 'orange', 'orangered', 'orchid', 'palegoldenrod', 'palegreen', 'paleturquoise', 'palevioletred', 'papayawhip', 'peachpuff',
+  'peru', 'pink', 'plum', 'powderblue', 'purple', 'rebeccapurple', 'red', 'rosybrown', 'royalblue', 'saddlebrown', 'salmon', 'sandybrown',
+  'seagreen', 'seashell', 'sienna', 'silver', 'skyblue', 'slateblue', 'slategray', 'snow', 'springgreen', 'steelblue', 'tan', 'teal',
+  'thistle', 'tomato', 'turquoise', 'violet', 'wheat', 'white', 'whitesmoke', 'yellow', 'yellowgreen'];
+
+const UNIT_OPTS = [['nm', 'nautical miles'], ['m', 'meters'], ['km', 'kilometers'], ['mi', 'statute miles'], ['yd', 'yards']];
 
 function toHex(color) {
   const c = document.createElement('canvas').getContext('2d');

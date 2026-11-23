@@ -136,6 +136,9 @@ export const fmtBrg = (b) => (b === null || b === undefined || isNaN(b)) ? '—'
 // ------------------------------------------------------------------ toasts
 export function toast(text, level = 'info', ms = 4500) {
   const box = $('#toasts');
+  // 0.62: at the top of the window, just under the status bar (however many lines it takes)
+  const bar = document.getElementById('status');
+  if (box && bar) box.style.top = `${Math.max(8, Math.round(bar.getBoundingClientRect().bottom) + 6)}px`;
   const t = el('div', { class: `toast ${level}` }, text);
   t.addEventListener('click', () => t.remove());
   box.append(t);

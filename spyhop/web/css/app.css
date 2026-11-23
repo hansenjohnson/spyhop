@@ -183,7 +183,7 @@ label.stack { display: flex; flex-direction: column; gap: 0.4em; }
 .ms-item.hi .dd-code { color: inherit; opacity: 0.8; }
 .ms-def { min-height: 3.6em; margin-top: 0.5em; padding: 0.4em 0.6em; background: var(--panel2); border-radius: 4px; font-size: 0.95em; line-height: 1.35; }
 .ms-item .dd-code { margin-left: auto; color: var(--muted); font-size: 0.85em; }
-#toasts { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 5000; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
+#toasts { position: fixed; top: 40px; left: 50%;   /* 0.62: at the top (at the bottom they covered the row being entered) */ transform: translateX(-50%); z-index: 5000; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
 .toast { pointer-events: auto; background: #233; color: #fff; padding: 0.5em 1em; border-radius: 6px; box-shadow: 0 3px 12px rgba(0,0,0,.3); max-width: 70vw; cursor: pointer; }
 .toast.warn { background: #9a6a00; }
 .toast.error { background: #a93226; }
@@ -749,3 +749,12 @@ body.viewer .view-locked { cursor: not-allowed; }
 .nav-table tr.nav-eta td, .nav-table tr.nav-eta-end td { font-weight: 600; }
 .nav-btns { display: flex; gap: 4px; margin-top: 4px; }
 .nav-btns button { flex: 1; font-size: 11px; padding: 2px 4px; }
+/* 0.62: the distance-unit guess */
+.unit-guess { margin: 0.2em 0 0.6em 1.8em; }
+.unit-guess.off { opacity: 0.5; }
+/* 0.62: Settings → Dropdowns → Color names… */
+.color-guide { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5em, 1fr)); gap: 3px; max-height: 60vh; overflow: auto; }
+.cg-item { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border: 1px solid transparent; background: none; text-align: left; cursor: pointer; font-size: 12px; }
+.cg-item:hover { border-color: var(--line, #ccc); background: var(--panel2, #f4f4f4); }
+.cg-sw { width: 22px; height: 16px; border: 1px solid rgba(0,0,0,.25); border-radius: 3px; flex: none; }
+.cg-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

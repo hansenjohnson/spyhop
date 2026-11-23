@@ -94,7 +94,7 @@ function lockControls(app) {
 }
 
 // the shortcuts a viewer can use (they only move around)
-export const VIEWER_ACTIONS = new Set(['tab', 'next-tab', 'prev-tab', 'toggle-log', 'max-log', 'center-vessel', 'measure']);
+export const VIEWER_ACTIONS = new Set(['tab', 'next-tab', 'prev-tab', 'toggle-log', 'max-log', 'toggle-map', 'max-map', 'toggle-util', 'max-util', 'center-vessel', 'measure']);
 
 export function viewerRefuses(app, action) {
   if (!app.viewer) return false;

@@ -6,6 +6,15 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.62.0 — 2026-11-16
+
+- **Color names guide:** in Settings → Dropdowns, lists with colors (Species, Events, Effort) have a **Color names…** button showing every color name Spyhop understands as a chart of swatches, sorted by hue. Click one to use it for the row whose color box you clicked last (or, with none, to copy its name). The color boxes also suggest the names as you type.
+- **Guess the distance unit** (Settings → General → Bearings, distances and time; off unless ticked): when a sighting's Dist is typed without picking its Unit, Spyhop picks the Unit from the number: below 5 → nautical miles, above 10 → meters, in between the default unit. The limits and both units can be changed; a Unit picked on purpose (km, a reticle reading) is left alone. It travels with the template.
+- **Notifications appear at the top** of the window, just under the status bar, instead of at the bottom, where they could cover the row being entered.
+- **New shortcut actions:** minimize / restore and maximize / restore the **map** and **Survey · Tools · Settings** (Settings → Shortcuts; no keys unless you give them some), like the ones the data tables already had.
+- In Settings → Dropdowns, **Revert** is available as soon as anything is changed (it waited for the list to be drawn again).
+- README: the screenshot is gone (`docs/screenshot.png` removed), and the text is brought up to date (cues, rules, hidden columns, navigation, templates locked during a survey, internet use).
+
 ## 0.61.3 — 2026-11-15
 
 - A test of the Error check's "Positions match the trackline" failed on GitHub's Windows machine, which ran the tests about twice as slowly: its rows were made a second after the only track point (the one at Start), so there was no trackline to check them against. The test now records a track point after its rows. Spyhop itself was fine: it records a track point every second.
