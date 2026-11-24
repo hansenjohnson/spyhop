@@ -3480,6 +3480,7 @@ def test_python_versions_and_pinned_requirements():
     wf = (root / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
     for m in range(lo[1], hi[1] + 1):
         assert f'"3.{m}"' in wf, m
+    assert "workflow_dispatch" in wf and "push:" not in wf and "schedule:" not in wf      # 0.62.1: only by hand
     # every direct requirement has an upper limit, and the lock pins it with checksums
     direct = [ln.split("#")[0].strip() for ln in (root / "requirements.txt").read_text(encoding="utf-8").splitlines()]
     direct = [d for d in direct if d and not d.startswith("tzdata")]

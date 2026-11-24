@@ -179,7 +179,7 @@ The **Quick start** of the user guide, in **Settings → Guide** (also [docs/USE
 
 - [docs/USER_GUIDE.md](docs/USER_GUIDE.md): the user guide (also in Spyhop under **Settings → Guide**): a quick start that walks through a survey, then every tab, templates, the files Spyhop writes, export formats and offline maps.
 - [docs/TEMPLATES.md](docs/TEMPLATES.md): sharing a team's template (lists, settings, saved reports and more) across computers.
-- [docs/DEVELOPERS.md](docs/DEVELOPERS.md): running from source, the code layout, the tests (and the automatic tests on GitHub, Dependabot, package versions) and writing code that works on Windows.
+- [docs/DEVELOPERS.md](docs/DEVELOPERS.md): running from source, the code layout, the tests (and the tests on GitHub, Dependabot, package versions) and writing code that works on Windows.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
 
 ## Feedback

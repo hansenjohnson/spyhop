@@ -6,6 +6,10 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.62.1 — 2026-11-24
+
+- **The tests on GitHub now run only when started by hand** (Actions → Tests → Run workflow), not on every push and every Monday. They still cover macOS, Windows and Linux with Python 3.10 to 3.15, plus the newest-libraries check. docs/DEVELOPERS.md says when it's worth running them, and how to test a Dependabot pull request's branch.
+
 ## 0.62.0 — 2026-11-16
 
 - **Color names guide:** in Settings → Dropdowns, lists with colors (Species, Events, Effort) have a **Color names…** button showing every color name Spyhop understands as a chart of swatches, sorted by hue. Click one to use it for the row whose color box you clicked last (or, with none, to copy its name). The color boxes also suggest the names as you type.

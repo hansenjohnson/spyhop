@@ -117,16 +117,16 @@ A git checkout is updated with `git pull --ff-only` instead. `SPYHOP_UPDATE_API`
 - **Updating the lock** (on purpose, after the "Newest libraries" tests pass): `uv pip compile requirements.txt --universal --python-version 3.10 --generate-hashes --no-header -o requirements.lock`, keeping the two comment lines at its top. Then run the tests, and commit both files. A new major version of a library means changing its upper limit in `requirements.txt` (and `pyproject.toml`) first.
 - **A new Python version:** when it's released and the tests pass on it, raise the upper limit everywhere it appears: `PYTHON_TESTED` in `spyhop/__init__.py`, `requires-python` in `pyproject.toml`, `PY_OK` and the version lists in the three start files, the README, and the matrix in `.github/workflows/tests.yml`. `test_python_versions_and_pinned_requirements` fails if they disagree.
 
-## Automatic tests on GitHub
+## Tests on GitHub
 
-`.github/workflows/tests.yml` runs pytest on every push and pull request, every Monday and by hand (Actions → Tests → Run workflow):
+`.github/workflows/tests.yml` runs pytest on GitHub's machines, **only when started by hand**: on GitHub, **Actions → Tests → Run workflow**, choose the branch (normally `main`) and press **Run workflow**. It doesn't run on pushes or on a schedule (it did until 0.62.1). The repository is public, so GitHub's standard runners cost nothing. A good time to run it: before publishing a release, after changing `requirements.lock`, and after changes that might behave differently on Windows.
 
 - **Tested versions:** macOS, Windows and Ubuntu × Python 3.10 to 3.15 (pre-releases too, as an early warning), installing `requirements.lock`.
 - **Newest libraries:** the newest release of every library, ignoring the upper limits, on the newest Python. It may fail without failing the run: it's the early warning that a library release would break Spyhop.
 
 The Playwright walkthroughs aren't run there.
 
-**Reading the results:** each push shows a ✓ or ✗ beside the commit, and the **Actions** tab lists the runs. Open a run and a failed job (red ✗), then its **Run the tests** step; the end of that log names each failing test and why. A failure in only one system or Python version usually means a difference in that system (see *Writing code that works on Windows* below). A failure in a "Newest libraries" job doesn't fail the run: it warns that a newer library would break Spyhop, before anyone installs it.
+**Reading the results:** the **Actions** tab lists the runs, with a ✓ or ✗ beside each (about 5 minutes). Open a run and a failed job (red ✗), then its **Run the tests** step; the end of that log names each failing test and why. A failure in only one system or Python version usually means a difference in that system (see *Writing code that works on Windows* below). A failure in a "Newest libraries" job doesn't fail the run: it warns that a newer library would break Spyhop, before anyone installs it.
 
 ### Dependabot
 
@@ -134,9 +134,9 @@ The Playwright walkthroughs aren't run there.
 
 What to do with one:
 
-1. **Open the pull request and look at its checks.** GitHub runs the whole test workflow with the new version.
+1. **Run the tests on its branch.** The tests don't run by themselves any more: **Actions → Tests → Run workflow**, and under *Use workflow from* choose the pull request's branch (it starts with `dependabot/`).
 2. **All green: merge it** (*Merge pull request*). The release notes are listed in the pull request; for these actions there's rarely anything to do.
-3. **Red:** if `main` fails the same way, the update isn't the cause: fix `main` first, then comment `@dependabot rebase` on the pull request to run it again. If only the pull request fails, the new version broke something: look at the log, or close the pull request (Dependabot won't offer that version again).
+3. **Red:** if `main` fails the same way, the update isn't the cause: fix `main` first, then comment `@dependabot rebase` on the pull request and run the tests on its branch again. If only the pull request fails, the new version broke something: look at the log, or close the pull request (Dependabot won't offer that version again).
 4. **Afterwards, `git pull`** in your own copy, so it has the merged `tests.yml`. When updates are copied in by hand from elsewhere (a zip), don't copy an older `.github/` over a merged one: that would quietly put the old versions back. Only copy `.github/` when an update says it changed it.
 
 ### Writing code that works on Windows
