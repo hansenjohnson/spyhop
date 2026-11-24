@@ -3,15 +3,12 @@
 #  - "Newest libraries" installs the newest release of every library, ignoring the upper limits in
 #    requirements.txt, so a library release that would break Spyhop shows up here first (it is allowed to
 #    fail; then update requirements.txt / requirements.lock on purpose, see docs/DEVELOPERS.md).
-# Runs on every push and pull request, every Monday, and by hand (Actions → Tests → Run workflow).
+# Runs only when started by hand: Actions → Tests → Run workflow (0.62.1; it ran on every push and every Monday before).
+# The repository is public, so GitHub's standard runners cost nothing.
 # The supported Python versions must match pyproject.toml, spyhop/__init__.py and the start files (a test checks).
 name: Tests
 
 on:
-  push:
-  pull_request:
-  schedule:
-    - cron: "17 6 * * 1"
   workflow_dispatch:
 
 permissions:
