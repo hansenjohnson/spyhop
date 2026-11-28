@@ -128,8 +128,11 @@ export class Planner {
     const map = this.app.map.map;
     this._syncing = true;
     try {
-      if (this.state.layerOn && !map.hasLayer(this.routesLayer)) this.routesLayer.addTo(map);
-      else if (!this.state.layerOn && map.hasLayer(this.routesLayer)) map.removeLayer(this.routesLayer);
+      // 0.63: "Routes" in the layers menu always decides, also for an active route and in the Routes tab
+      // (opening the tab used to switch it back on); it comes back on when you add or move waypoints
+      const on = this.state.layerOn;
+      if (on && !map.hasLayer(this.routesLayer)) this.routesLayer.addTo(map);
+      else if (!on && map.hasLayer(this.routesLayer)) map.removeLayer(this.routesLayer);
     } finally { this._syncing = false; }
     const want = this.inTab || this.state.active;
     if (want && !this.routesLayer.hasLayer(this.layer)) this.routesLayer.addLayer(this.layer);
@@ -193,7 +196,6 @@ export class Planner {
   // ------------------------------------------------------------------ map
   show() {
     this.inTab = true;
-    if (!this.state.layerOn) { this.state.layerOn = true; this.save(); }   // you're editing it: show it
     this.sync();
     this.updateClickMode();
   }
@@ -208,6 +210,7 @@ export class Planner {
   updateClickMode() {
     const on = this.inTab && !this.state.active && (this.adding || this.picking);
     this.app.map.setClickHook(on ? (ll) => this.onMapClick(ll) : null);
+    if (on && !this.state.layerOn) { this.state.layerOn = true; this.save(); this.sync(); }   // editing: show it
   }
 
   onMapClick(ll) {
@@ -658,7 +661,8 @@ export class Planner {
       s.active
         ? el('p', {}, el('b', { class: 'route-active' }, '● Active. '), 'The waypoints are locked and the route is drawn on the map from every tab',
           s.layerOn ? '' : ' (it is hidden now: tick “Routes” in the map’s layers menu)', '. Deactivate it to change it.')
-        : el('p', { class: 'hint' }, 'Draft: drawn on the map only while this tab is open. Activate it to lock the waypoints and keep it on the map.'),
+        : el('p', { class: 'hint' }, 'Draft: drawn on the map only while this tab is open. Activate it to lock the waypoints and keep it on the map.',
+          s.layerOn ? '' : ' Hidden now: tick “Routes” in the map’s layers menu (adding a waypoint does it too).'),
       el('div', { class: 'btnrow' },
         s.active
           ? el('button', { onclick: () => this.deactivate() }, 'Deactivate (edit the route)')

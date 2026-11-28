@@ -6,6 +6,16 @@ The numbers are MAJOR.MINOR.PATCH. MINOR goes up for new features and PATCH for 
 
 Earlier builds had no version numbers; the entries for 0.1–0.4 were reconstructed afterwards.
 
+## 0.63.0 — 2026-11-28
+
+- **Tools → Reminders** (new): the conditions reminder has moved here from Settings → General and is now called **Weather** (every 30 minutes; a new Effort row still starts it again). Add your own reminders, such as **Watch change** or **Visual scan**, each with its interval and when it runs (in a survey, on effort, or always). Tick **Clock** to have one fall due on the clock (on the hour, half hour, quarter hour…) instead of counting from the last time. Due reminders show in the status bar (click one when it's done), with a message and a chime. Reminders travel with the template.
+- **Battery warning** (Tools → Reminders → Battery): Spyhop reads the laptop's battery (macOS, Windows, Linux; no extra software) and warns below a level (20 % by default, again every 5 % lower) and when the computer is unplugged. While it runs on battery, the status bar shows **Battery N%**.
+- **Settings → General has a table of contents**, like the Guide's: beside the settings in a wide pane, a bar across the top in a narrow one. Its "Reminders and sleep" section is now **Sleep**.
+- **The map's layers menu opens only when clicked**, not when the mouse passes over it, so it no longer covers the map by accident. Click elsewhere or press Esc to close it.
+- **Turning Routes off in the layers menu hides an activated route** too, and it stays off when the Routes tab is opened or Spyhop restarts (opening the tab used to switch it back on). Adding a waypoint switches it back on.
+- **Clock bearings no longer fill themselves in:** typing in the Bearing cell (Ref C) or Gstart/Gend (Gref C) saves what you type, so a degree value isn't turned into an hour. The arrow keys or the mouse still pick an hour.
+- **Bigger minimize / maximize buttons** on the panes, outlined, for touch screens and mice.
+
 ## 0.62.1 — 2026-11-24
 
 - **The tests on GitHub now run only when started by hand** (Actions → Tests → Run workflow), not on every push and every Monday. They still cover macOS, Windows and Linux with Python 3.10 to 3.15, plus the newest-libraries check. docs/DEVELOPERS.md says when it's worth running them, and how to test a Dependabot pull request's branch.

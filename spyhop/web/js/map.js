@@ -1453,6 +1453,22 @@ const GroupedLayers = L.Control.Layers.extend({
     layer._isOverlay = !!overlay;
     return L.Control.Layers.prototype._addLayer.call(this, layer, name, overlay);
   },
+  // 0.63: opens on a click (or Enter) only, not when the mouse passes over it (that covered the map too easily);
+  // closes on a click anywhere outside it (the map or another pane) or Escape
+  onAdd(map) {
+    const c = L.Control.Layers.prototype.onAdd.call(this, map);
+    L.DomEvent.off(c, { mouseenter: this._expandSafely, mouseleave: this.collapse }, this);
+    this._outside = (e) => { if (!c.contains(e.target)) this.collapse(); };
+    this._esc = (e) => { if (e.key === 'Escape') this.collapse(); };
+    document.addEventListener('pointerdown', this._outside, true);
+    document.addEventListener('keydown', this._esc);
+    return c;
+  },
+  onRemove(map) {
+    document.removeEventListener('pointerdown', this._outside, true);
+    document.removeEventListener('keydown', this._esc);
+    return L.Control.Layers.prototype.onRemove.call(this, map);
+  },
   _update() {
     L.Control.Layers.prototype._update.call(this);
     if (!this._baseLayersList) return this;

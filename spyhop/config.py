@@ -339,7 +339,15 @@ DEFAULT_SETTINGS = {
     "map_distance_unit": "nm",      # distances on the map, in popups, routes and the Summary (no reticles)
     "mag_variation": "auto",
     "tracking_interval": 1,         # 0.47: a track point every second (was 10)
-    "effort_reminder_min": 30,
+    # 0.63: Tools → Reminders. Weather (the conditions check, was effort_reminder_min) is always first and is
+    # reset by a new Effort row; the others are the team's own (watch change, visual scan…). every: minutes;
+    # sync: due on the clock (:00, :15, :30…) rather than counted from the last one; when: survey | effort | always
+    "reminders": [{"id": "weather", "name": "Weather", "every": 30, "sync": False, "when": "survey", "on": True}],
+    "reminder_sound": True,         # a chime when a reminder falls due
+    # 0.63: warn when this computer's battery runs low (battery.py)
+    "battery_warn": True,
+    "battery_warn_pct": 20,
+    "battery_warn_unplug": True,    # … and when it is unplugged (starts running on battery)
     "keep_awake": "survey",         # stop the computer sleeping: off | survey (while one is active) | always
     "keep_screen_on": False,        # … and keep the screen on too
     "nmea_log_enabled": False,      # write every received NMEA sentence to <data folder>/nmea_logs
@@ -367,6 +375,7 @@ DEFAULT_SETTINGS = {
                                     # are also nmea_inputs in spyhop-config.json, which wins when they differ
     # --- this computer only: spyhop-local.json
     "last_meta": {},                # survey details used last time, offered for the next survey
+    "reminder_done": {},            # 0.63: when each reminder (by id) was last marked done here: {id: ISO time}
     "tracking_enabled": False,
     "clock_zone_last": "",          # the zone last found from the position (used until there's a fix)
     "sharing_enabled": False,       # 0.53: Settings → Sharing: other devices on the network can watch (view only)
@@ -402,7 +411,11 @@ SHARED_SETTINGS = {
     "unit_guess_above": "Guess: above (Dist)", "unit_guess_large": "Guess: unit above",
     "mag_variation": "Magnetic variation",
     "tracking_interval": "Track point every (s)",
-    "effort_reminder_min": "Effort reminder (min)",
+    "reminders": "Reminders",
+    "reminder_sound": "Reminder sound",
+    "battery_warn": "Battery warning",
+    "battery_warn_pct": "Battery warning below (%)",
+    "battery_warn_unplug": "Battery warning when unplugged",
     "keep_awake": "Keep the computer awake",
     "keep_screen_on": "Keep the screen on",
     "nmea_log_enabled": "Raw NMEA log",
@@ -581,6 +594,56 @@ def _write_csv(path: Path, header: list[str], rows: list[list[str]]):
         w.writerow(header)
         w.writerows(rows)
 
+
+
+REMINDER_WHEN = ("survey", "effort", "always")
+
+
+def weather_minutes(settings: dict) -> float:
+    """The Weather (conditions) reminder's interval in minutes (0.63; was effort_reminder_min)."""
+    for r in settings.get("reminders") or []:
+        if isinstance(r, dict) and r.get("id") == "weather":
+            try:
+                return float(r.get("every") or 30)
+            except (TypeError, ValueError):
+                break
+    return 30.0
+
+
+def clean_reminders(items) -> list:
+    """0.63: Tools → Reminders, checked: Weather first (always there), then the others with unique ids."""
+    if not isinstance(items, list):
+        raise ValueError("Reminders are a list.")
+    out, seen = [], set()
+    for x in items:
+        if not isinstance(x, dict):
+            continue
+        rid = re.sub(r"[^a-z0-9_-]", "", str(x.get("id") or "").lower())[:40]
+        name = str(x.get("name") or "").strip()[:60]
+        if rid == "weather":
+            name = "Weather"
+        if not name:
+            raise ValueError("Each reminder needs a name.")
+        if not rid or rid in seen:
+            base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:30] or "reminder"
+            rid, n = base, 2
+            while rid in seen or rid == "weather":
+                rid, n = f"{base}-{n}", n + 1
+        try:
+            every = float(x.get("every"))
+        except (TypeError, ValueError):
+            raise ValueError(f"{name}: every how many minutes?") from None
+        if not 1 <= every <= 24 * 60:
+            raise ValueError(f"{name}: every 1 to 1440 minutes.")
+        when = x.get("when") if x.get("when") in REMINDER_WHEN else "survey"
+        seen.add(rid)
+        out.append({"id": rid, "name": name, "every": int(every) if every == int(every) else every,
+                    "sync": bool(x.get("sync")), "when": when, "on": x.get("on") is not False})
+    if "weather" not in seen:
+        out.insert(0, dict(DEFAULT_SETTINGS["reminders"][0]))
+    else:
+        out.sort(key=lambda r: r["id"] != "weather")
+    return out[:20]
 
 class Config:
     """Spyhop's folder: the current template (templates/current), this computer's settings
@@ -921,6 +984,10 @@ class Config:
             s["nmea_sources"] = merge_inputs(s.get("nmea_sources") or [], doc["nmea_inputs"])
         s["nmea_sources"] = clean_inputs(s.get("nmea_sources"))
         s["timezone"] = clean_timezone(s.get("timezone"))
+        try:
+            s["reminders"] = clean_reminders(s.get("reminders"))
+        except ValueError:
+            s["reminders"] = [dict(r) for r in DEFAULT_SETTINGS["reminders"]]
         self.settings = s
         display = dict(DEFAULT_DISPLAY)
         if isinstance(doc.get("map_display"), dict):
@@ -956,6 +1023,19 @@ class Config:
         _write_json(self.local_path, {"settings": local, "current_survey": self.survey_record})
 
     def save_settings(self, updates: dict | None = None):
+        if updates and "reminders" in updates:
+            updates = {**updates, "reminders": clean_reminders(updates["reminders"])}
+        if updates and "reminder_done" in updates:
+            d = updates["reminder_done"]
+            updates = {**updates, "reminder_done": {str(k)[:40]: str(v)[:40] for k, v in d.items()} if isinstance(d, dict) else {}}
+        if updates and "battery_warn_pct" in updates:
+            try:
+                n = int(float(updates["battery_warn_pct"]))
+            except (TypeError, ValueError):
+                raise ValueError("The battery warning level is a percentage.") from None
+            if not 1 <= n <= 95:
+                raise ValueError("The battery warning level is 1–95 %.")
+            updates = {**updates, "battery_warn_pct": n}
         if updates and "timezone" in updates:
             updates = {**updates, "timezone": clean_timezone(updates["timezone"])}
         if updates and "nmea_sources" in updates:

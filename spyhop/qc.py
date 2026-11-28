@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import geo, resights, schema
+from .config import weather_minutes
 
 LIMITS = {
     "max_sighting_nm": 10.0,        # animals further than this from the vessel
@@ -389,7 +390,7 @@ def run_qc(rec, data: tuple | None = None) -> dict:
                 break
         return cur
 
-    remind_min = float(cfg.settings.get("effort_reminder_min", 30) or 30)
+    remind_min = weather_minutes(cfg.settings)       # 0.63: Tools → Reminders → Weather
     # "NA" (None) is a placeholder for an empty position, not a person: it can fill several
     # positions at once and isn't counted as on watch
     full = {o.get("name", ""): o.get("full_name", "") for o in cfg.lists.get("observers", [])}

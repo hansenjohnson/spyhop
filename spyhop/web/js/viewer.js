@@ -7,7 +7,7 @@ import { $, $$, el, setViewer, viewOnlyToast, VIEW } from './util.js';
 const STORE = 'wsr.viewer.prefs';
 
 // Panes whose controls are all turned off for a viewer, and what stays usable in the others.
-const LOCKED_PANES = ['survey', 'inputs', 'shortcuts', 'dropdowns', 'templates', 'marks', 'overlays', 'route', 'about'];
+const LOCKED_PANES = ['survey', 'inputs', 'shortcuts', 'dropdowns', 'templates', 'marks', 'overlays', 'route', 'reminders', 'about'];
 const PARTLY = {
   settings: '#data-collection',                                   // General: data collection only (the rest is this browser's view)
   basemap: 'section:not(#basemap-choice)',                        // the map tiles can be chosen; downloads can't

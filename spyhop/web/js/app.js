@@ -10,6 +10,7 @@ import { buildSummaryHtml } from './summary_html.js';
 import { openInstrumentPlot } from './plot.js';
 import { Planner } from './planning.js';
 import { Navigation } from './nav.js';
+import { Reminders } from './reminders.js';
 import { ReportsTool } from './reports.js';
 import { OnlineOverlays } from './online.js';
 import { setupViewer, applyViewerPrefs, viewerRefuses, connectionBanner } from './viewer.js';
@@ -38,6 +39,8 @@ class App {
     this.resightTool = new ResightTool(this);
     this.online = new OnlineOverlays(this);
     this.nav = new Navigation(this);                // 0.57
+    this.reminders ||= new Reminders(this);         // 0.63
+    this.reminders.onBattery(this.S.battery ?? null);
     this.applyDisplay();
     this.renderAll();
     this.applyLayout();
@@ -125,6 +128,7 @@ class App {
     this.S = await api('/api/bootstrap');
     applyViewerPrefs(this);
     setEffortList(this.S.config.lists.effort);
+    if (this.reminders) this.reminders.onBattery(this.S.battery ?? null);   // a reload (reconnected)
   }
 
   // the Refresh buttons of the survey list and the overlays: read those folders again
@@ -194,7 +198,7 @@ class App {
   topTabs() { return ['sightings', 'effort', 'events']; }
   tabGroups() {
     return [
-      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Routes'], ['nmea', 'Instruments'], ['resights', 'Resights'], ['qc', 'Error check'], ['summary', 'Summary'], ['reports', 'Reports']]],
+      ['tools', 'Tools', [['marks', 'Waypoints'], ['overlays', 'Overlays'], ['route', 'Routes'], ['reminders', 'Reminders'], ['nmea', 'Instruments'], ['resights', 'Resights'], ['qc', 'Error check'], ['summary', 'Summary'], ['reports', 'Reports']]],
       ['config', 'Settings', [['settings', 'General'], ['basemap', 'Basemap'], ['inputs', 'Inputs'], ['shortcuts', 'Shortcuts'], ['dropdowns', 'Dropdowns'], ['rules', 'Rules'],
         ['templates', 'Templates'], ...(this.S?.viewer ? [] : [['sharing', 'Sharing']]), ['guide', 'Guide'], ['about', 'About']]]];
   }
@@ -258,7 +262,8 @@ class App {
       f('sf-clockcheck', 'The computer’s clock against the GPS — click to check or sync it'),
       f('sf-pos', 'Vessel position from GPS', el('span', { id: 'pos-text' }), el('span', { id: 'pos-flag' })),
       f('sf-nav', 'Speed / course / heading'),
-      f('sf-remind', 'Time until the next Effort/conditions check — click to open the Effort table (the interval is in Settings → General)'),
+      f('sf-remind', 'Reminders (Tools → Reminders): the time until each is due'),
+      f('sf-battery', 'This computer’s battery (warning level: Tools → Reminders → Battery)'),
       f('sf-survey', 'Current survey'),
       f('sf-track', 'Internal trackline (recorded while a survey is active)'),
       f('sf-effort', 'Latest effort state'),
@@ -268,7 +273,9 @@ class App {
     $('#sf-version').addEventListener('click', () => this.showTab('about'));
     $('#sf-clockcheck').addEventListener('click', () => this.clockDialog());
     this.updateClockCheck();
-    $('#sf-remind').addEventListener('click', () => this.showTab('effort'));
+    $('#sf-remind').addEventListener('click', (e) => this.reminders?.onStatusClick(e));
+    $('#sf-battery').addEventListener('click', () => this.showTab('reminders'));
+    $('#sf-battery').hidden = true;
     $('#sf-survey').addEventListener('click', () => this.showTab('survey'));
     $('#sf-viewer').hidden = !this.S.viewer;
     this.updateSharingStatus();
@@ -626,7 +633,7 @@ class App {
     const f = { survey: this.renderSurvey, settings: this.renderSettings, shortcuts: this.renderShortcuts, dropdowns: this.renderDropdowns, rules: this.renderRules, sharing: this.renderSharing, nmea: this.renderNmea,
       inputs: this.renderInputs, templates: this.renderTemplates, overlays: this.renderOverlays, basemap: this.renderBasemap,
       qc: this.renderQc, summary: this.renderSummaryPane, resights: () => this.resightTool.render(), reports: () => this.reportsTool.render(), guide: this.renderGuide, about: this.renderAbout,
-      route: () => this.planner.render() }[tab];
+      route: () => this.planner.render(), reminders: () => this.reminders?.render() }[tab];
     if (f) f.call(this);
   }
 
@@ -851,6 +858,7 @@ class App {
         this.updateStatus();
         if (this.shown('survey') && !document.activeElement?.closest('#pane-survey input[type=text], #pane-survey textarea')) this.renderSurvey();
         if (this.shown('settings') && !document.activeElement?.closest('#pane-settings')) this.renderSettings();
+        if (this.shown('reminders') && !document.activeElement?.closest('#pane-reminders input[type=text], #pane-reminders input[type=number]')) this.reminders.render();
         if (this.shown('nmea') && !document.activeElement?.closest('#pane-nmea')) this.renderNmea();
         if (this.shown('inputs') && !document.activeElement?.closest('#pane-inputs input[type=text], #pane-inputs input[type=number], #pane-inputs select')) this.renderInputs();
         if (this.shown('basemap') && !document.activeElement?.closest('#pane-basemap input, #pane-basemap select')) this.renderBasemap();
@@ -874,6 +882,7 @@ class App {
         if (this.shown('resights')) this.resightTool.render();
         break;
       case 'notice': toast(m.text, m.level || 'info', m.level === 'error' ? 12000 : 5000); break;
+      case 'battery': this.reminders?.onBattery(m.battery); break;
       case 'awake':
         this.S.awake = m.awake;
         { const p = document.getElementById('awake-status'); if (p) p.textContent = this.awakeText(); }
@@ -991,22 +1000,9 @@ class App {
     flag.textContent = v.station ? ' STATION' : v.lost ? (v.lat === null ? ' NO GPS' : ' GPS LOST') : v.frozen ? ' NOT MOVING' : '';
     $('#sf-pos').classList.toggle('alert', !!(v.lost || v.frozen));
     $('#sf-nav').textContent = `${v.sog !== null && v.sog !== undefined ? v.sog.toFixed(1) : '—'} kn · COG ${fmtBrg(v.cog)} · HDG ${fmtBrg(v.best_heading)}`;
-    // effort reminder
+    // 0.63: Weather (the conditions check) and the other reminders
+    this.reminders?.tick();
     const last = this.lastEffortRow();
-    const rem = $('#sf-remind');
-    const mins = +st.effort_reminder_min || 30;
-    let overdue = false;
-    if (!this.S.survey?.active) {
-      rem.textContent = '';
-    } else if (last && last.DateTime) {
-      const due = new Date(last.DateTime).getTime() + mins * 60000;
-      const left = (due - Date.now()) / 1000;
-      overdue = left < 0;
-      rem.textContent = overdue ? `Conditions check OVERDUE ${fmtDuration(-left)}` : `Next check ${fmtDuration(left)}`;
-    } else rem.textContent = `Check every ${mins} min`;
-    rem.classList.toggle('alert', overdue);
-    $('#pane-effort')?.classList.toggle('overdue', overdue);
-    $('#tabs [data-tab="effort"]')?.classList.toggle('overdue', overdue);
     const sv = this.S.survey;
     $('#sf-survey').textContent = !sv ? 'No survey open' : `Survey: ${sv.name}${sv.ended ? ' (ended)' : ''}`;
     const title = `Spyhop ${this.S.about?.spyhop || ''}${sv ? ` — ${sv.name}` : ''}`;
@@ -1716,61 +1712,73 @@ class App {
     // links inside the guide ([Templates](#templates)) scroll to their heading
     tut.querySelectorAll('a[data-anchor]').forEach((a) => a.addEventListener('click', (e) => {
       e.preventDefault();
-      const h = wrap.querySelector(`.tutorial [data-slug="${CSS.escape(a.dataset.anchor)}"]`);
-      if (h) { h.scrollIntoView({ block: 'start' }); mark(h.id); }
+      const h = tut.querySelector(`[data-slug="${CSS.escape(a.dataset.anchor)}"]`);
+      if (h) { h.scrollIntoView({ block: 'start' }); toc?.mark(h.id); }
     }));
-    const tops = heads.filter((h) => h.tagName === 'H4');
-    if (tops.length < 2) return;
+    if (heads.filter((h) => h.tagName === 'H4').length < 2) return;
+    const wrap = el('div', { class: 'guide-wrap' });
+    tut.replaceWith(wrap);
+    const toc = this.contentsNav(heads, 'H4', $('#pane-guide'), 'Guide contents', () => wrap.scrollIntoView({ block: 'start' }));
+    wrap.append(toc.nav, tut);
+    toc.update();
+  }
+
+  // 0.63: a contents list kept in view (the Guide's, and Settings → General's): beside the text in a wide
+  // pane; in a narrow one, a bar across the top naming the section you're in, which opens the list when
+  // clicked (0.50). heads: the headings, with ids, top-level ones (tag top) and their subsections.
+  contentsNav(heads, top, scroller, label, toTop) {
+    const name = (h) => h.dataset.toc || h.textContent;
     const go = (h) => (e) => { e.preventDefault(); h.scrollIntoView({ block: 'start' }); mark(h.id); };
     const items = [], links = [];
     let cur = null;
     for (const h of heads) {
-      const a = el('a', { href: `#${h.id}`, 'data-sec': h.id, onclick: go(h) }, h.textContent);
+      const a = el('a', { href: `#${h.id}`, 'data-sec': h.id, onclick: go(h) }, name(h));
       links.push(a);
-      if (h.tagName === 'H4') { cur = { li: el('li', {}, a), sub: null, ids: [h.id] }; items.push(cur); }
+      if (h.tagName === top) { cur = { li: el('li', {}, a), sub: null, ids: [h.id], name: name(h) }; items.push(cur); }
       else if (cur) {
         if (!cur.sub) { cur.sub = el('ol', { class: 'guide-sub' }); cur.li.append(cur.sub); }
         cur.sub.append(el('li', {}, a)); cur.ids.push(h.id);
       }
     }
-    const top = el('a', { href: '#', class: 'guide-top', onclick: (e) => { e.preventDefault(); wrap.scrollIntoView({ block: 'start' }); } }, '↑ Top');
-    // the contents stay in view while you scroll: beside the guide in a wide pane; in a narrow one, a bar
-    // across the top naming the section you're in, which opens the list when clicked (0.50)
+    const topLink = el('a', { href: '#', class: 'guide-top', onclick: (e) => { e.preventDefault(); toTop(); } }, '↑ Top');
     const current = el('span', { class: 'guide-current' });
     const head = el('button', { type: 'button', class: 'guide-toc-head', 'aria-expanded': 'false',
       onclick: () => { const o = nav.classList.toggle('open'); head.setAttribute('aria-expanded', String(o)); } },
       el('b', {}, 'Contents'), current);
-    const nav = el('nav', { class: 'guide-toc', 'aria-label': 'Guide contents' }, head, el('ol', {}, items.map((i) => i.li)), top);
+    const nav = el('nav', { class: 'guide-toc', 'aria-label': label }, head, el('ol', {}, items.map((i) => i.li)), topLink);
     nav.addEventListener('click', (e) => { if (e.target.closest('ol a')) { nav.classList.remove('open'); head.setAttribute('aria-expanded', 'false'); } });
     const mark = (id) => {
       links.forEach((a) => a.classList.toggle('active', a.dataset.sec === id));
       items.forEach((i) => i.li.classList.toggle('open', i.ids.includes(id)));
       const h = heads.find((x) => x.id === id), sec = items.find((i) => i.ids.includes(id));
-      current.textContent = sec ? (h && h.tagName === 'H5' ? `${sec.li.firstChild.textContent} › ${h.textContent}` : sec.li.firstChild.textContent) : '';
+      current.textContent = sec ? (h && h.tagName !== top ? `${sec.name} › ${name(h)}` : sec.name) : '';
     };
-    const wrap = el('div', { class: 'guide-wrap' }, nav, tut.cloneNode(false));
-    const body = wrap.lastChild;
-    body.append(...tut.childNodes);
-    tut.replaceWith(wrap);
-    mark(heads[0].id);
     // the section being read: the last heading at or above the top of the pane (plus a little)
-    const scroller = $('#pane-guide');
-    // the contents list is never taller than the pane, so all of it can be reached while it stays put
-    const fit = () => { if (scroller) nav.style.setProperty('--guide-pane-h', `${scroller.clientHeight}px`); };
-    fit();
-    try { new ResizeObserver(fit).observe(scroller); } catch { /* old browser: CSS fallback */ }
-    let raf = 0;
-    scroller?.addEventListener('scroll', () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        const top = getComputedStyle(nav).flexBasis === '100%' ? nav.getBoundingClientRect().bottom + 24   // below the bar
-          : scroller.getBoundingClientRect().top + 14;
-        let at = heads[0];
-        for (const h of heads) { if (h.getBoundingClientRect().top <= top) at = h; else break; }
-        mark(at.id);
-      });
-    }, { passive: true });
+    const update = () => {
+      if (!nav.isConnected || !scroller) return;
+      const y = getComputedStyle(nav).flexBasis === '100%' ? nav.getBoundingClientRect().bottom + 24   // below the bar
+        : scroller.getBoundingClientRect().top + 14;
+      let at = heads[0];
+      for (const h of heads) { if (h.getBoundingClientRect().top <= y) at = h; else break; }
+      mark(at.id);
+    };
+    mark(heads[0].id);
+    if (scroller) {
+      // the contents list is never taller than the pane, so all of it can be reached while it stays put
+      const fit = () => nav.style.setProperty('--guide-pane-h', `${scroller.clientHeight}px`);
+      fit();
+      scroller._toc = { update, fit };            // the pane's current list (Settings draws a new one each time)
+      if (!scroller._tocWired) {
+        scroller._tocWired = true;
+        try { new ResizeObserver(() => scroller._toc?.fit()).observe(scroller); } catch { /* old browser: CSS fallback */ }
+        let raf = 0;
+        scroller.addEventListener('scroll', () => {
+          if (raf) return;
+          raf = requestAnimationFrame(() => { raf = 0; scroller._toc?.update(); });
+        }, { passive: true });
+      }
+    }
+    return { nav, mark, update };
   }
 
   aboutSection() {
@@ -2657,9 +2665,9 @@ class App {
           el('span', { id: 'clock-check-line' }, this.S.gpsClock?.known ? `The computer’s clock is ${this.clockText()}.` : 'No GPS time yet (the primary GPS input needs a fix).'),
           ' ', el('button', { id: 'btn-clock-check', onclick: () => this.clockDialog() }, 'Check / sync the clock…')),
         el('p', { class: 'hint help' }, 'These change what is recorded or how it is worked out, so they can’t change while a survey is active, like the drop-down lists (Settings → Dropdowns) and the rest of the template’s data part. The trackline is recorded whenever a survey is active, a point every this many seconds, and stops at its End. Every record is stamped with the computer’s clock: Spyhop compares it with the primary GPS all the time, warns in the status bar when they differ by more than 2 s, checks at Start New Survey, and can sync the computer’s clock to the GPS between surveys (the computer asks for administrator rights). It is broken on the map, and left out of the Summary’s distances, only where the Effort table has an ERROR row (Tools → Error check finds GPS jumps and gaps and its Fix adds one). “auto” variation uses the World Magnetic Model if installed, otherwise the GPS; it turns magnetic bearings into true ones.')),
-      sec('Reminders and sleep',
+      // 0.63: the Conditions reminder is now Weather, in Tools → Reminders (with the battery warning)
+      sec('Sleep',
         el('div', { class: 'grid2' },
-          el('label', { class: 'row' }, 'Conditions reminder (min)', num('effort_reminder_min', 1, 600)),
           el('label', { class: 'row' }, 'Keep the computer awake', sel('keep_awake', [['survey', 'During a survey'], ['always', 'Always'], ['off', 'Never']]))),
         el('div', { class: 'grid2 checks' }, chk('keep_screen_on', 'Keep the screen on too')),
         el('p', { class: 'hint', id: 'awake-status' }, this.awakeText()),
@@ -2762,7 +2770,29 @@ class App {
     for (const row of pane.querySelectorAll('label.row')) {
       const first = row.firstChild;
       if (first && first.nodeType === 3) row.replaceChild(el('span', { class: 'lbl' }, first.textContent), first);
-    }  }
+    }
+    this.settingsContents(pane);
+  }
+
+  // 0.63: Settings → General's contents, like the Guide's: its sections (h3) and their parts (h4)
+  settingsContents(pane) {
+    const heads = [...pane.querySelectorAll(':scope > section > h3, :scope > section > h4')];
+    if (heads.filter((h) => h.tagName === 'H3').length < 2) return;
+    const used = new Set();
+    for (const h of heads) {
+      const t = (h.firstChild?.nodeType === 3 ? h.firstChild.textContent : h.textContent).trim();
+      h.dataset.toc = t;
+      let id = `set-${t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+      while (used.has(id)) id += '-';
+      used.add(id); h.id = id;
+    }
+    const body = el('div', { class: 'settings-body' }, ...pane.children);
+    const wrap = el('div', { class: 'guide-wrap settings-wrap' });
+    pane.replaceChildren(el('div', { class: 'toc-host', id: 'settings-toc-host' }, wrap));
+    const toc = this.contentsNav(heads, 'H3', pane, 'Settings contents', () => { pane.scrollTop = 0; });
+    wrap.append(toc.nav, body);
+    toc.update();
+  }
 
   // Settings → Basemap: map layers, downloads for offline use and the charts folder
   renderBasemap() {

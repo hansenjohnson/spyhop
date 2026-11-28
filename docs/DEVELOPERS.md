@@ -34,6 +34,7 @@ spyhop/
   sources.py      inputs: serial, UDP, TCP, gpsd, file replay, simulator
   nav.py          navigation to a waypoint or along a route (0.57): the target (setting nav_active), VMG/ETA every second, arrival
   ais.py          AIS from the NMEA inputs (!AIVDM, given to it by nmea.py): 6-bit payloads, multi-part messages, targets by MMSI, /api/ais/local
+  battery.py      this computer's battery (0.63; pmset on macOS, GetSystemPowerStatus on Windows, /sys/class/power_supply on Linux, psutil if installed) for the low-battery warning
   trackers.py     satellite trackers (SPOT feeds, inReach MapShare): parse the feeds, poll them in the background, hand device fixes to the "other" path
   qc.py           the error check (thresholds in LIMITS); run_rules() checks the rules
   rules.py        rules (Settings → Rules, rules.csv): parse, check and evaluate "if … then …" conditions on one row
@@ -59,6 +60,7 @@ spyhop/
     js/map.js            the Leaflet map, markers, track, tools
     js/depth.js          the water depth at the cursor, read from Seascape's depth tiles
     js/planning.js       Tools → Routes: the route editor, activation, and the saved routes (/api/routes*)
+    js/reminders.js      Tools → Reminders (0.63): Weather and the team's reminders, the status bar countdowns, chimes; the battery warning
     js/nav.js            navigation (0.57): the navigated route drawn, the arrival circle, the box on the map (/api/nav/*)
     js/online.js         online overlays: AIS (/api/ais; and AIS from the NMEA inputs, /api/ais/local), radar (NEXRAD tiles, /api/radar/rainviewer), map feeds (/api/feeds*)
     js/reports.js        Tools → Reports and Run Reports (runs reports on the server, /api/reports*)
@@ -152,4 +154,5 @@ The first Windows test runs (0.61.1) found these; keep them in mind for new code
 
 - `python -m pytest tests` covers parsing, storage and undo, the survey lifecycle, migrations, export, QC, the reports, the clock and the trackline-break fix.
 - A PDF test runs when Chrome/Edge is found (or `SPYHOP_CHROME` points at one).
+- `SPYHOP_FAKE_BATTERY` (tests only) makes Spyhop read the battery from a JSON file, `{"percent": 15, "plugged": false}` or `null` (no battery), every 2 s.
 - The interface was tested with Playwright walkthroughs during development. Those scripts aren't in the repository, except `tests/ui_marker_positions.js`.

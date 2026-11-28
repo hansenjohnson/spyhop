@@ -402,7 +402,7 @@ export class Grid {
     if (col.type === 'choice') this.openDropdown(col, input.value, initial === undefined);
     // a clock bearing (Ref C): pick 1–12 o'clock from a list (or type it)
     else if ((this.tab === 'sightings' && col.key === 'Bearing' && r.BrgRef === 'C')
-      || (this.tab === 'effort' && (col.key === 'GlareStart' || col.key === 'GlareEnd') && r.GlareRef === 'C')) this.openDropdown(col, input.value, initial === undefined, CLOCK_ITEMS);
+      || (this.tab === 'effort' && (col.key === 'GlareStart' || col.key === 'GlareEnd') && r.GlareRef === 'C')) this.openDropdown(col, input.value, initial === undefined, CLOCK_ITEMS, { pick: false });
     input.addEventListener('keydown', (e) => this.onEditKey(e));
     input.addEventListener('input', () => { if (this.dropdown) this.filterDropdown(input.value); });
     input.addEventListener('blur', () => setTimeout(() => {
@@ -444,7 +444,9 @@ export class Grid {
     }
   }
 
-  openDropdown(col, text, showAll, list = null) {
+  // pick: false (0.63, clock bearings) highlights nothing while you type, so Enter saves the typed text
+  // (a degree value stays a degree value); arrow keys or the mouse still pick an hour
+  openDropdown(col, text, showAll, list = null, { pick = true } = {}) {
     this.closeDropdown();
     const items = list || this.listInfo(col.list);
     const box = el('div', { class: 'dropdown' });
@@ -460,7 +462,7 @@ export class Grid {
       if (li && this.dropdown && +li.dataset.i !== this.dropdown.hi) this.highlight(+li.dataset.i, false);
     });
     document.body.append(box);
-    this.dropdown = { box, all: items, items: [], hi: -1 };
+    this.dropdown = { box, all: items, items: [], hi: -1, pick };
     this.filterDropdown(showAll ? '' : text, showAll ? text : null);
     this.positionDropdown();
   }
@@ -504,7 +506,7 @@ export class Grid {
       el('span', {}, it.name), it.code ? el('span', { class: 'dd-code' }, it.code) : null,
       it.extra ? el('span', { class: 'dd-code' }, it.extra) : null)));
     if (!items.length) dd.box.append(el('div', { class: 'dd-none' }, 'No match — Enter saves what you typed'));
-    let hi = q ? 0 : -1;
+    let hi = q && dd.pick ? 0 : -1;
     if (current) hi = items.findIndex((it) => it.name === current);
     this.highlight(items.length ? hi : -1);
   }
@@ -512,7 +514,8 @@ export class Grid {
   highlight(i, scroll = true) {
     const dd = this.dropdown;
     if (!dd) return;
-    if (dd.items.length) i = Math.max(0, Math.min(dd.items.length - 1, i)); else i = -1;
+    if (!dd.items.length || (i < 0 && !dd.pick)) i = -1;          // a clock bearing: nothing picked until you arrow (0.63)
+    else i = Math.max(0, Math.min(dd.items.length - 1, i));
     dd.hi = i;
     dd.box.querySelectorAll('.dd-item').forEach((n) => n.classList.toggle('hi', +n.dataset.i === i));
     if (scroll) dd.box.querySelector('.hi')?.scrollIntoView({ block: 'nearest' });

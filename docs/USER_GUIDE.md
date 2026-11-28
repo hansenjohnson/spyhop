@@ -20,7 +20,7 @@ The window has **three panes** under the status bar:
   - **Settings** holds General, Basemap, Inputs, Shortcuts, Dropdowns, Templates, Guide (this guide) and About.
   - The **?** beside a heading explains that section: hover to read it, click to keep it open.
 - **Data tables** (along the bottom): **Sightings**, **Effort** and **Events**.
-- **Status bar** (top): time, position, speed and course, the conditions-check countdown, the survey name, tracking and the effort in force.
+- **Status bar** (top): time, position, speed and course, the reminders (Weather, the conditions check, and your own), the survey name, tracking and the effort in force.
   - If the GPS fix is lost, it says **NO GPS** or **GPS LOST**. If the computer's clock is more than 2 seconds off the GPS time, it says so.
   - Click the version number for Settings → About.
 
@@ -94,7 +94,7 @@ If Spyhop is closed or crashes during a survey, it reopens the survey the next t
 - **Effort:**
   - choose the effort value (ON, TRANSECT, DIRECTED, PHOTO-ID, FOLLOW or OFF by default, from Settings → Dropdowns → Effort), or add a row with Ctrl/⌘+Shift+F, which toggles between on effort and OFF and copies the current conditions
   - fill in visibility, sea state, weather, glare and who is at Port, Recorder and Starboard
-  - a countdown in the status bar reminds you to update the conditions
+  - a countdown in the status bar reminds you to update the conditions (**Weather**, every 30 minutes; Tools → Reminders also has your own, such as a watch change)
 - **Sightings:**
   - press **Add row**, Ctrl/⌘+Shift+S, or a species shortcut; the time and vessel position fill in
   - type the species, number, bearing and distance; Spyhop works out the animals' position (SigLat/SigLon) and draws it
@@ -133,7 +133,7 @@ When Spyhop starts, it checks for a newer version (if there's internet) and asks
 The **map** (top left), **Survey, Tools and Settings** (top right), and the **data tables** (Sightings, Effort and Events, across the full width at the bottom so their columns have room). A data table and a Survey/Tools/Settings page show at the same time (e.g. Sightings below, Tools → Summary above).
 
 - **Resize:** drag the bar between the map and Survey/Tools/Settings, or the bar above the data tables (or click a bar and use the arrow keys; double-click it for the starting size).
-- **Minimize** (▁ in a pane's header): the map or Survey/Tools/Settings shrinks to a thin strip at the side and the other takes the top (click the strip to bring it back); the data tables shrink to their tab bar (click a tab, or ▴, to bring them back; Ctrl/⌘+Shift+M toggles it). With both top panes minimized, the data tables get almost the whole window.
+- **Minimize** (▁, the larger buttons at the right of a pane's header): the map or Survey/Tools/Settings shrinks to a thin strip at the side and the other takes the top (click the strip to bring it back); the data tables shrink to their tab bar (click a tab, or ▴, to bring them back; Ctrl/⌘+Shift+M toggles it). With both top panes minimized, the data tables get almost the whole window.
 - **Maximize** (□): one pane fills the window; ❐ restores the three panes. Going to a tab in a hidden pane (e.g. with a shortcut) brings it back.
 - **Reset the pane sizes** (Settings → General → Tables) goes back to the starting sizes; double-clicking a bar puts just that one back.
 - The sizes and which panes are minimized are kept **on this computer** (like column widths), since they depend on the screen.
@@ -143,7 +143,8 @@ The **map** (top left), **Survey, Tools and Settings** (top right), and the **da
 
 - the time, with its zone (e.g. `14:31:05 EST`; choose the clock in Settings → General), and the position, with a warning if there is **NO GPS**, the **GPS is LOST** (no fix for 10 s), or the position is **NOT MOVING** (the GPS stopped updating while under way). A stationary survey with a station position shows **STATION**.
 - speed, course and heading
-- the **conditions-check countdown** (click it to open the Effort table; the interval is in Settings → General), which flashes when overdue
+- the **reminders** (Tools → Reminders): the time until each is due, e.g. `Weather 12:30 · Watch change 41:05`. A due one turns red and flashes (`Visual scan DUE 1:20`). Click **Weather** to open the Effort table; click another due one when it's done to start its count again (any other click opens Tools → Reminders). See [Reminders and battery](#reminders-and-battery).
+- **Battery 18%**, only while the computer runs on battery: red, flashing, below the warning level (click it for Tools → Reminders)
 - the survey name, whether the trackline is being recorded (always while a survey is active), and the effort in force
 - **Clock N s ahead of / behind the GPS**, only when the computer's clock is more than 2 s off (click it; see [Clock check](#clock-check))
 - a red **GPS FALLBACK** banner across the top while a secondary input stands in for the primary (see [GPS and instruments](#gps-and-instruments))
@@ -169,7 +170,7 @@ The **map** (top left), **Survey, Tools and Settings** (top right), and the **da
   - 📏 measure: click to add points, double-click or Esc to finish, click again to clear. Each leg shows the true and magnetic bearing and the distance, and the total.
   - ◎ range rings
   - ⤢ zoom to the whole survey. When Spyhop starts with a survey open, the map starts zoomed to the whole survey, with following off (⌖ turns it back on).
-- **Layers menu** (top right): **Layers** (the **Platform icon**, **Effort** (the on-effort track), **Track** (the off-effort track), sightings, **resights** (their markers and the lines to and through them; the first sightings stay when it's off), events, waypoints, routes, imported overlays, range rings, a **graticule** (a lat/lon grid that adapts to the zoom), and each **other** GPS source in use) and **Online overlays** (AIS, weather radar, map feeds).
+- **Layers menu** (top right; click it to open, click anywhere else or press Esc to close): **Layers** (the **Platform icon**, **Effort** (the on-effort track), **Track** (the off-effort track), sightings, **resights** (their markers and the lines to and through them; the first sightings stay when it's off), events, waypoints, routes, imported overlays, range rings, a **graticule** (a lat/lon grid that adapts to the zoom), and each **other** GPS source in use) and **Online overlays** (AIS, weather radar, map feeds).
 - **Right-click menu:** add a sighting, event or waypoint at that point; measure from here; copy the position.
 - **Readout (bottom left):** the cursor position, its bearing and distance from the vessel, the depth at the cursor on the Seascape map, and a scale.
 - **Map credits (ⓘ, bottom right):** click or tap it to see who made the map tiles; click it again, or the map, to fold them away.
@@ -182,11 +183,12 @@ The **map** (top left), **Survey, Tools and Settings** (top right), and the **da
   - **Waypoints:** the waypoints table.
   - **Overlays:** offline overlays (imported files and past surveys) and online overlays (AIS, weather radar, map feeds).
   - **Routes:** saved routes and the route being designed or activated.
+  - **Reminders:** Weather (the conditions check) and your own reminders, and the battery warning (see [Reminders and battery](#reminders-and-battery)).
   - **Instruments:** instrument readings (click one to plot it) and the raw NMEA log.
   - **Resights:** swim speeds and dive times of animals with resights.
   - **Error check**, **Summary** and **Reports**.
 - **Settings:**
-  - **General:** **Data collection** first (the settings that change what's recorded: the track point interval, a point every second by default, and the magnetic variation, greyed out with a yellow note while a survey is active; and the clock check), then reminders and sleep, bearings, distances and time, altitude and reticles, tables, resights, text size and the map display.
+  - **General:** **Data collection** first (the settings that change what's recorded: the track point interval, a point every second by default, and the magnetic variation, greyed out with a yellow note while a survey is active; and the clock check), then sleep, bearings, distances and time, altitude and reticles, navigation, text size, the map display, tables and resights. Its **contents** sit beside it, like the Guide's (in a narrow pane, a bar across the top naming the section you're in: click it for the list).
   - **Basemap:** the map tiles, downloading areas for offline use, and the charts folder.
   - **Inputs:** the GPS / NMEA inputs, and how "other" inputs are drawn.
   - **Shortcuts** and **Dropdowns:** the keyboard shortcuts and the drop-down lists of the current template.
@@ -220,7 +222,7 @@ The tables work like a spreadsheet:
 - Enter **Bearing** and **Distance**, and the animals' position (**SigLat/SigLon**) is worked out. Bearings can be negative and count back from 360 (−10 is stored as 350), which is handy for relative bearings to port. Without a bearing and distance, SigLat/SigLon are the vessel position. A position picked on the map gets its bearing and distance worked out backwards.
 - **Guessing the Unit** (optional, Settings → General → Bearings, distances and time → **Guess the distance unit from the distance typed**): when you type Dist and haven't picked the Unit, Spyhop picks it from the number: below 5 → nautical miles, above 10 → meters, in between the default distance unit (the limits and units can be changed). The Unit cell shows the guess, so check it and change it if it's wrong. A Unit you picked yourself (km, or a reticle reading) is left alone. It travels with the template.
 - Each row stores its own bearing reference (**Ref**: M magnetic, T true, R relative to the bow, **C clock**) and distance **Unit**, so changing the defaults in Settings never changes old rows. The vessel heading is saved in the CSV (`VesHdg`, not shown) so relative bearings can be converted. Magnetic bearings use the World Magnetic Model.
-- **Clock bearings (Ref C):** the Bearing cell offers 1 to 12 o'clock. Each hour is 30° from the bow: 12 dead ahead, 3 the starboard beam, 6 astern, 9 the port beam. Choose C as the **Default bearing reference** in Settings → General to have it on every new sighting.
+- **Clock bearings (Ref C):** the Bearing cell offers 1 to 12 o'clock. Each hour is 30° from the bow: 12 dead ahead, 3 the starboard beam, 6 astern, 9 the port beam. Pick an hour with the arrow keys or the mouse; what you type is saved as typed (nothing is filled in for you), so a degree value such as 120 stays 120 if you then change Ref. Choose C as the **Default bearing reference** in Settings → General to have it on every new sighting.
 - **Reticle distances** (Settings → Dropdowns → Reticles): each entry of the reticles list is a **Unit**, `reticles-<name>` (e.g. `reticles-binos`), offered in the Unit column and as the default distance unit. With one, Dist is a reading, and Spyhop works out the distance from it and the sighting's **Alt** (filled in from the **Default observer altitude**, Settings → General → Altitude and reticles; edit it if the height was different), allowing for the curvature of the earth (Lerczak & Hobbs 1998). A reading at or above the horizon gives no distance. Each entry has a **name** (letters, digits, `-`, `_` and `.`; no spaces) and a method:
   - **Binocular reticles:** the number of divisions counted down from the horizon to the animals. Choose the **magnification**, which suggests the angle of one division, and correct **Degrees per division** for your binoculars. Many 7× and 10× marine binoculars have a 10-mil scale (0.573°); Fujinon 25×150 big-eyes are 0.0771° (Kinzey & Gerrodette 2001).
   - **Calibrated marks:** evenly spaced marks (e.g. on an aircraft's window or wing strut), counted down from the horizontal (mark 0). **Degrees per division** is the angle from one mark to the next; type the mark number (it can be a fraction, e.g. 2.5) in Dist.
@@ -394,8 +396,24 @@ Every time in Spyhop comes from the computer's clock, so Spyhop compares it with
 
 ### Keeping the computer awake and crash recovery
 
-- **Keeping the computer awake** (Settings → General → Reminders and sleep): a computer that goes to sleep stops recording the trackline and NMEA data, so by default Spyhop stops it sleeping **during a survey**. Choose **Always** to keep it awake whenever Spyhop is open, or **Never** to leave sleep to the computer's own settings. Tick **Keep the screen on too** to stop the screen turning off as well. Closing a laptop's lid still puts most laptops to sleep.
+- **Keeping the computer awake** (Settings → General → Sleep): a computer that goes to sleep stops recording the trackline and NMEA data, so by default Spyhop stops it sleeping **during a survey**. Choose **Always** to keep it awake whenever Spyhop is open, or **Never** to leave sleep to the computer's own settings. Tick **Keep the screen on too** to stop the screen turning off as well. Closing a laptop's lid still puts most laptops to sleep.
 - **Crash recovery:** if Spyhop is closed or crashes while a survey is active, it reopens that survey on the next start and asks whether to continue.
+
+### Reminders and battery
+
+**Tools → Reminders** lists the reminders, each with:
+
+- **On**, and its **name**
+- **Every (min):** how often (1–1440 minutes)
+- **Clock:** ticked, it falls due at whole intervals from midnight in the survey clock (every 30 min at :00 and :30, every 15 min at :00, :15, :30 and :45, every 60 min on the hour). Unticked, it's counted from the last time.
+- **When:** **In a survey** (counted from the survey's start), **On effort** (counted from when effort went on; paused off effort) or **Always** (from when Spyhop opened)
+- **Next due**, **Done** (start its count again now) and ✕ (delete)
+
+**Weather** is always first: the conditions check, 30 minutes by default, during a survey. A new Effort row (with the weather and sightability) starts its count again, and the Error check flags long stretches on effort without one. **+ Add a reminder** adds your own, e.g. **Watch change** or **Visual scan** (the name box suggests a few). On the clock, a Done or an Effort row made shortly before a slot counts for that slot: with 30 minutes on the clock, a row at 10:28 makes the next one due at 11:00, not 10:30.
+
+When one falls due, it turns red in the status bar, a message says so, and a short chime plays (untick **Chime when a reminder is due** for silence). Reminders are part of the template's preferences, so the whole team gets the same ones; when each was last done is kept on each computer.
+
+**Battery:** Spyhop reads the battery of the computer it runs on every 30 seconds (on macOS, Windows and Linux; a desktop without one shows nothing). While it runs on battery, **Battery N%** shows in the status bar; below the warning level (**Warn below**, 20 % by default) it turns red, with a message and a lower chime, and warns again every 5 % lower. **Warn when the computer is unplugged** says so as soon as it starts running on battery. Viewers (see [Sharing with other devices](#sharing-with-other-devices)) see the laptop's battery too.
 
 ## Sharing with other devices
 
@@ -434,7 +452,7 @@ It checks:
 - **Trackline:** a jump faster than **50 kn** (shipboard, and when the platform type isn't set), **30 kn** (stationary) or **200 kn** (aerial and other), or a gap with no position for over **120 s** (or 3 track intervals, if longer). The limits are fixed, so every check of every survey uses the same ones. Each jump or gap has a **Fix** button that adds an **ERROR** row to the Effort table one second after the last good track point, plus a row at its end that puts the effort and conditions back. The trackline is broken there (see *Trackline breaks* in [Map](#map)), and ERROR counts as off effort.
 - **Resights:** each ResNo names an existing earlier sighting of the same species; a **warning** when the animals would have swum faster than **30 kn** from one sighting to the next.
 - **Other placeholders:** every row that uses **Other** from a list, to fill in after the survey.
-- **Protocol:** a new Effort row at least every 1.5 × the reminder interval while on effort; nobody in two watch positions at once; the sighting's observer is on watch; a sighting entered twice or a duplicated event. Notes list sightings off effort, effort in sea state above 5 or visibility under 0.5 nm, and observers on watch over 2 hours without a break.
+- **Protocol:** a new Effort row at least every 1.5 × the Weather reminder's interval (Tools → Reminders) while on effort; nobody in two watch positions at once; the sighting's observer is on watch; a sighting entered twice or a duplicated event. Notes list sightings off effort, effort in sea state above 5 or visibility under 0.5 nm, and observers on watch over 2 hours without a break.
 - **Rules:** each row that breaks one of your team's [rules](#rules), at the rule's level and with its message. A note says when a rule names a value that's no longer in its list.
 
 ### Rules
@@ -493,7 +511,7 @@ The last one is the rule Spyhop starts with: there can't be more calves than ani
 
 **Tools → Routes.** **Saved Routes** (top of the tab) lists the routes in the `routes` folder in Spyhop's folder, one GPX file each, with its mode, waypoints, length and when it was saved:
 
-- **Show** puts a route on the map on every tab, in its own color (**Routes** in the map's layers menu switches all routes on or off). Click a waypoint for its position and distance from the vessel. **Show all** / **Hide all**.
+- **Show** puts a route on the map on every tab, in its own color (**Routes** in the map's layers menu switches all routes on or off, the activated route too, also while the Routes tab is open; adding a waypoint switches it back on). Click a waypoint for its position and distance from the vessel. **Show all** / **Hide all**.
 - **Open** loads a route into the editor below, to change it or activate it (Spyhop asks first if the route you're editing has unsaved changes). **Close** puts it away. **Zoom to** and **Delete** (after asking).
 - **New route** starts an empty one; **Import GPX…** loads a GPX file; **Open the routes folder**; **Refresh** picks up GPX files copied into the folder. A GPX file that wasn't made by Spyhop opens as a manual route.
 
@@ -580,7 +598,7 @@ A **template** is one small file, `<name>.spyhop-template.zip`, holding a team's
 - **The preferences**, which can change at any time:
   - the keyboard shortcuts
   - the map display (markers, trackline, lines, fading, overlay colors)
-  - shared settings: lat/lon format, clock, default bearing reference and distance unit, map distance unit, effort reminder, keep awake, raw NMEA log, altitude and segment columns, automatic error check
+  - shared settings: lat/lon format, clock, default bearing reference and distance unit, map distance unit, reminders and the battery warning, keep awake, raw NMEA log, altitude and segment columns, automatic error check
   - the named GPS / NMEA inputs (serial, UDP, TCP, gpsd, SPOT and inReach feeds), with each "other" input's look on the map; tracker passwords stay on each computer
   - the map feeds (their addresses, not their data) and which online overlays are on
 - **Optionally** (ticked when saving): waypoints, routes and offline overlays. These are only ever added to a computer, never replacing what it already has.

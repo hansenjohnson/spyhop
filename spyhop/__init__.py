@@ -4,8 +4,8 @@
 # MAJOR.MINOR.PATCH: MINOR for new features, PATCH for fixes only. MAJOR goes to 1 for
 # the first release used on real surveys; after that, MAJOR changes only when data
 # files change in a way older versions can't read. See CHANGELOG.md.
-__version__ = "0.62.1"
-VERSION_DATE = "2026-11-24"
+__version__ = "0.63.0"
+VERSION_DATE = "2026-11-28"
 
 # 0.60: the Python versions Spyhop is tested with (released ones). Keep in step with pyproject.toml,
 # the start files' PY_OK and .github/workflows/tests.yml.

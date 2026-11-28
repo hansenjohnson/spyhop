@@ -21,7 +21,7 @@ VIEWER_KEY = web.AppKey("viewer", bool)
 PERF_KEY = web.AppKey("perf", object)
 
 from .recorder import Recorder, ValueErrorMsg
-from . import awake, __version__, diag, feeds, reports, routes, schema, templates, uninstall, updater
+from . import awake, battery, __version__, diag, feeds, reports, routes, schema, templates, uninstall, updater
 from .browser import find_chrome, html_to_pdf, PdfError
 from .sources import SourceManager, list_serial_ports, clean_path
 from .store import safe_name
@@ -255,6 +255,7 @@ class App:
         self._loop_task = None
         self.perf = diag.PerfMonitor()
         self.awake = awake.KeepAwake()
+        self.battery = None                     # 0.63: {percent, plugged} or None (battery.py)
         self._nmea_lines0 = 0
         self.sharing = sharing_mod.Sharing(self)       # 0.53: view-only devices on the network
         # 0.55: SPOT / inReach feeds, polled in the background; their devices are "other" sources
@@ -443,6 +444,20 @@ class App:
             self.spawn(self._startup_update_check())
         self.sync_awake()
         self.spawn(self.sharing.sync())        # 0.53: the viewer port, when sharing is on
+        self.spawn(self.battery_watch())       # 0.63: the low-battery warning
+
+    async def battery_watch(self):
+        """0.63: read this computer's battery every 30 s; the windows warn (Tools → Reminders → Battery)."""
+        loop = asyncio.get_running_loop()
+        while True:
+            try:
+                b = await loop.run_in_executor(None, battery.read)
+            except Exception:
+                b = None
+            if b != self.battery:
+                self.battery = b
+                self._broadcast_soon({"type": "battery", "battery": b})
+            await asyncio.sleep(30 if not os.environ.get("SPYHOP_FAKE_BATTERY") else 2)
 
     async def _startup_update_check(self):
         """0.45: on by default; a quick look (gives up after a few seconds, silently, when offline). A newer
@@ -574,6 +589,7 @@ class App:
         data["mbtiles"] = self.tiles.mbtiles_info()
         data["nmea"] = self.nmea_status()
         data["awake"] = self.awake.status()
+        data["battery"] = self.battery
         cfg = self.rec.cfg
         data["about"] = diag.system_info(cfg.root, cfg.data_dir) | {"log_folder": str(diag.log_dir(cfg.root))}
         data["startup_update"] = getattr(self, "startup_update", None)

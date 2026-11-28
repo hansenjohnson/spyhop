@@ -8,7 +8,7 @@ Spyhop is a python-based data recorder for marine mammal surveys. It reads GPS a
 
 - **Data entry built for the flying bridge:**
   - Sightings, Effort and Events tables with drop-downs that filter as you type, keyboard shortcuts (including species shortcuts) and per-table undo/redo
-  - time and position filled in from the GPS, conditions copied forward, and a reminder to update the conditions
+  - time and position filled in from the GPS, conditions copied forward, and reminders: to update the conditions (Weather), and your own (watch change, visual scan…), on the clock if you like; and a warning when the laptop's battery runs low
   - **resights**: link a later look at the same animals to the first sighting, so they're counted once
   - sighting positions worked out from bearing and distance, including **reticle** readings (binoculars, calibrated marks or an inclinometer) and **clock bearings** (1–12 o'clock); optionally the distance unit guessed from the number
   - a sighting **cue** and **behaviors**, each from your own list with definitions

@@ -700,6 +700,9 @@ def template_to_zip(t: dict) -> bytes:
 
 # ------------------------------------------------------------------ comparing
 def _fmt(v):
+    if isinstance(v, list) and all(isinstance(x, dict) and "every" in x for x in v):      # 0.63: reminders
+        return ", ".join(f"{x.get('name')} every {x.get('every')} min{' on the clock' if x.get('sync') else ''}"
+                         f"{'' if x.get('on', True) else ' (off)'}" for x in v) or "none"
     return "on" if v is True else "off" if v is False else ("—" if v in (None, "") else str(v))
 
 

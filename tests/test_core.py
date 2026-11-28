@@ -1843,7 +1843,7 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
 
     a, b = App(tmp_path / "a"), App(tmp_path / "b")
     ca, cb = a.rec.cfg, b.rec.cfg
-    ca.save_settings({"timezone": "UTC", "effort_reminder_min": 20,
+    ca.save_settings({"timezone": "UTC", "reminders": [{"id": "weather", "every": 20}, {"name": "Watch change", "every": 60, "sync": True}],
                       "nmea_sources": [{"type": "serial", "port": "COM4", "baud": 4800}, {"type": "udp", "port": 2000}],
                       "online_feeds": [{"id": "abc12345", "name": "SMAs", "url": "https://example.org/FeatureServer/3",
                                         "color": "#ff0000", "refresh_min": 60}]})
@@ -1889,10 +1889,12 @@ def test_template_carries_settings_feeds_waypoints_routes_overlays(tmp_path):
     assert st["waypoints.csv"]["status"] == "new" and st["waypoints.csv"]["add"] == 1 and "kept" in st["waypoints.csv"]["detail"]
     assert st["routes/Line 1.gpx"]["status"] == "kept" and st["overlays/zones.geojson"]["status"] == "new"
     assert st["Map feed: SMAs"]["status"] == "new" and "UTC" in st[templates.SETTINGS_LABEL]["detail"]
+    assert "Watch change every 60 min on the clock" in st[templates.SETTINGS_LABEL]["detail"]
     assert chk["info"]["min_spyhop"] == "0.28.0" and chk["online"]["ais"] is True and chk["online"]["feed_names"] == ["SMAs"]
     res = _run(b.templates_use(_Req({"token": chk["token"], "backup": True})))
     assert res["added"] == {"waypoints": 1, "routes": 0, "overlays": 1, "feeds": 1}
-    assert cb.settings["timezone"] == "UTC" and cb.settings["effort_reminder_min"] == 20
+    assert cb.settings["timezone"] == "UTC" and [(r["name"], r["every"], r["sync"]) for r in cb.settings["reminders"]] == [
+        ("Weather", 20, False), ("Watch change", 60, True)]        # 0.63: Tools → Reminders travel with templates
     pick = lambda L: [(x["name"], x["enabled"], x["role"] == "primary") for x in L]  # noqa: E731
     # none of B's inputs has those names, so the first is put in use, as the primary
     assert pick(cb.settings["nmea_sources"]) == [("Serial COM4 @ 4800", True, True), ("UDP port 2000", False, False)]
@@ -3526,3 +3528,68 @@ def test_guess_the_distance_unit(rec):
         with pytest.raises(ValueError):
             rec.cfg.save_settings(bad)
     rec.cfg.save_settings({"unit_guess": False, "distance_unit": "nm"})
+
+
+def test_reminders_settings_and_weather_interval(tmp_path):
+    """0.63: Tools → Reminders: Weather is always first (was effort_reminder_min); others are checked."""
+    from spyhop.config import Config, clean_reminders, weather_minutes, DEFAULT_SETTINGS
+    assert DEFAULT_SETTINGS["reminders"][0] == {"id": "weather", "name": "Weather", "every": 30, "sync": False, "when": "survey", "on": True}
+    assert "effort_reminder_min" not in DEFAULT_SETTINGS
+    r = clean_reminders([{"name": "Visual scan", "every": "15", "sync": 1, "when": "effort"}, {"id": "weather", "name": "x", "every": 45},
+                         {"name": "Visual scan", "every": 5, "when": "nonsense", "on": False}])
+    assert [(x["id"], x["name"], x["every"], x["sync"], x["when"], x["on"]) for x in r] == [
+        ("weather", "Weather", 45, False, "survey", True), ("visual-scan", "Visual scan", 15, True, "effort", True),
+        ("visual-scan-2", "Visual scan", 5, False, "survey", False)]
+    assert weather_minutes({"reminders": r}) == 45 and weather_minutes({}) == 30
+    for bad, msg in (([{"name": "", "every": 5}], "needs a name"), ([{"name": "A", "every": 0}], "1 to 1440"),
+                     ([{"name": "A", "every": "x"}], "how many minutes"), ("x", "a list")):
+        with pytest.raises(ValueError, match=msg):
+            clean_reminders(bad)
+    cfg = Config(tmp_path)
+    cfg.save_settings({"reminders": [{"name": "Watch change", "every": 60, "sync": True}], "battery_warn_pct": "25",
+                       "reminder_done": {"watch-change": "2026-11-28T10:00:00Z"}})
+    assert [x["name"] for x in cfg.settings["reminders"]] == ["Weather", "Watch change"] and cfg.settings["battery_warn_pct"] == 25
+    with pytest.raises(ValueError, match="1–95"):
+        cfg.save_settings({"battery_warn_pct": 0})
+    # reminders are shared (the template's preferences); when each was done is this computer's
+    shared = json.loads(cfg.config_path.read_text(encoding="utf-8"))["settings"]
+    local = json.loads(cfg.local_path.read_text(encoding="utf-8"))["settings"]
+    assert shared["reminders"][1]["name"] == "Watch change" and "reminder_done" not in shared
+    assert local["reminder_done"] == {"watch-change": "2026-11-28T10:00:00Z"} and "reminders" not in local
+    # a broken list in the config file comes back as the default
+    doc = json.loads(cfg.config_path.read_text(encoding="utf-8"))
+    doc["settings"]["reminders"] = "garbage"
+    cfg.config_path.write_text(json.dumps(doc), encoding="utf-8")
+    assert Config(tmp_path).settings["reminders"] == DEFAULT_SETTINGS["reminders"]
+
+
+def test_battery_readings(tmp_path, monkeypatch):
+    """0.63: the battery for the low-battery warning, without extra packages."""
+    from spyhop import battery
+    on_batt = "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1234)\t84%; discharging; 4:12 remaining present: true\n"
+    on_ac = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1234)\t100%; charged; 0:00 remaining present: true\n"
+    assert battery.parse_pmset(on_batt) == {"percent": 84, "plugged": False}
+    assert battery.parse_pmset(on_ac) == {"percent": 100, "plugged": True}
+    assert battery.parse_pmset("Now drawing from 'AC Power'\n") is None            # a Mac without a battery
+    root = tmp_path / "ps"
+    def dev(name, **files):
+        (root / name).mkdir(parents=True)
+        for k, v in files.items():
+            (root / name / k).write_text(v + "\n", encoding="utf-8")
+    assert battery.read_sysfs(root) is None
+    dev("AC", type="Mains", online="0")
+    dev("BAT0", type="Battery", capacity="40", status="Discharging")
+    dev("BAT1", type="Battery", capacity="60", status="Discharging")
+    dev("hid-mouse", type="Battery", capacity="5", scope="Device")                  # a mouse's battery: ignored
+    assert battery.read_sysfs(root) == {"percent": 50, "plugged": False}
+    (root / "AC" / "online").write_text("1\n", encoding="utf-8")
+    assert battery.read_sysfs(root) == {"percent": 50, "plugged": True}
+    fake = tmp_path / "bat.json"
+    fake.write_text('{"percent": 12, "plugged": false}', encoding="utf-8")
+    monkeypatch.setenv("SPYHOP_FAKE_BATTERY", str(fake))
+    assert battery.read() == {"percent": 12, "plugged": False}
+    fake.write_text("null", encoding="utf-8")
+    assert battery.read() is None
+    monkeypatch.delenv("SPYHOP_FAKE_BATTERY")
+    r = battery.read()                       # this machine: a reading or None, never an error
+    assert r is None or (0 <= r["percent"] <= 100 and isinstance(r["plugged"], bool))

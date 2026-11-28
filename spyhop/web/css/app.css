@@ -49,7 +49,18 @@ a { color: var(--accent); }
 #sf-pos.alert, .sf.alert { color: var(--alert); font-weight: 700; }
 #pos-flag { color: var(--alert); font-family: system-ui, sans-serif; }
 #sf-remind, #sf-track, #sf-survey { cursor: pointer; }
-#sf-remind.alert { background: var(--alert-bg); padding: 0 0.5em; border-radius: 4px; animation: blink 1.6s infinite; }
+#sf-remind.alert { background: var(--alert-bg); padding: 0 0.5em; border-radius: 4px; }
+/* 0.63: one part per reminder (Tools → Reminders); only the due ones blink */
+#sf-remind .rem.late { font-weight: 700; color: var(--alert); animation: blink 1.6s infinite; }
+#sf-battery { cursor: pointer; }
+#sf-battery.alert { background: var(--alert-bg); padding: 0 0.5em; border-radius: 4px; animation: blink 1.6s infinite; }
+#reminder-table td { vertical-align: middle; }
+.table-scroll { overflow-x: auto; max-width: 100%; }
+#reminder-table td.rem-next, #reminder-table td:last-child { white-space: nowrap; }
+#reminder-table th { font-weight: 600; font-size: 0.92em; }
+#reminder-table td, #reminder-table th { padding-left: 0.25em; padding-right: 0.25em; }
+#reminder-table td:last-child button { padding: 0.2em 0.5em; }
+#reminder-table td.late { color: var(--alert); font-weight: 700; }
 #sf-track.on { color: var(--ok); }
 @keyframes blink { 50% { opacity: 0.55; } }
 .pill { display: inline-block; padding: 0 0.5em; border-radius: 9px; font-weight: 700; font-size: 0.9em; }
@@ -69,8 +80,11 @@ a { color: var(--accent); }
 .pane-body { flex: 1; min-height: 0; position: relative; }
 #map { position: absolute; inset: 0; background: var(--sea); }
 .tabs-spacer { flex: 1; }
-.pane-btn { align-self: center; margin-bottom: 2px; min-width: 28px; height: 26px; padding: 0 0.4em; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text); }
-.pane-btn:hover { border-color: var(--line); background: var(--panel); }
+/* 0.63: larger, always outlined, for a touch screen as well as a mouse */
+.pane-btn { align-self: center; margin: 2px 0 3px 4px; min-width: 40px; height: 34px; padding: 0 0.5em; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel); color: var(--text); font-size: 1.25em; line-height: 1; cursor: pointer; touch-action: manipulation; }
+.pane-btn:hover { border-color: var(--accent); background: #e3eff7; }
+.pane-btn:active { background: #d0e4f2; }
 .strip-btn { display: none; }
 /* minimized: a strip with a button to bring the pane back (the data pane keeps its tabs) */
 .pane[data-mode="vstrip"] > :not(.strip-btn), .pane[data-mode="hstrip"] > :not(.strip-btn) { display: none !important; }
@@ -565,6 +579,10 @@ h2 .help-btn, h3 .help-btn, h4 .help-btn { font-size: 0.72rem; }
 
 /* Settings → Guide: contents beside the guide, or above it in a narrow pane (0.39) */
 #guide-section { container-type: inline-size; max-width: none; }
+/* 0.63: Settings → General has the same contents list */
+.toc-host { container-type: inline-size; }
+.settings-wrap .settings-body { flex: 1 1 30em; min-width: 0; }
+.settings-body h3, .settings-body h4 { scroll-margin-top: 0.4em; }
 .guide-wrap { display: flex; flex-wrap: wrap; gap: 1em 2em; align-items: flex-start; }
 .guide-wrap .tutorial { flex: 1 1 30em; min-width: 0; }
 .guide-toc { flex: 0 0 15em; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); padding: 0.6em 0.9em; }
@@ -594,6 +612,7 @@ h2 .help-btn, h3 .help-btn, h4 .help-btn { font-size: 0.72rem; }
   .guide-toc > ol, .guide-toc .guide-top { display: none; }
   .guide-toc.open > ol { display: block; max-height: calc(var(--guide-pane-h, 60vh) - 5em); overflow: auto; }
   .tutorial h4, .tutorial h5 { scroll-margin-top: 3.2em; }
+  .settings-body h3, .settings-body h4 { scroll-margin-top: 3.2em; }
 }
 
 /* Tools → Routes: Saved Routes, then Create New Route (0.39) */
